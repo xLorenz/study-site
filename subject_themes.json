@@ -1,0 +1,8 @@
+{
+  "_default": {
+    "primary":   "#6366f1",
+    "secondary": "#a78bfa",
+    "accent":    "#22d3ee",
+    "icon":      "📚"
+  }
+}
