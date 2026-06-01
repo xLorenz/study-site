@@ -178,9 +178,11 @@ pre:hover .copy-btn{opacity:1}
   position:relative}
 #main-area .placeholder{
   text-align:center;color:var(--text-dim)}
-#main-area .placeholder span{font-size:48px;display:block;margin-bottom:var(--space-3)}
-#main-area .placeholder p{font-size:var(--font-size-sm)}
-#graph-canvas{display:block;width:100%;height:100%}
+#main-area .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:100%;height:100%}
+#main-area .placeholder span{font-size:32px;display:block;margin-bottom:var(--space-3)}
+#main-area .placeholder p{font-size:var(--font-size-base)}
+#graph-canvas{display:none;width:100%;height:100%}
 #object-frame{display:none;width:100%;height:100%;border:none;background:#fff}
 
 /* ── Search Bar ── */
@@ -535,7 +537,22 @@ function reloadAll(subject) {
   currentSubject = subject;
   reloadObjectTree(subject);
   reloadFileTree(subject);
-  // Phase 5 will add: reloadGraph(subject);
+
+  // Reset main area to default view
+  const placeholder = document.getElementById('main-placeholder');
+  const frame = document.getElementById('object-frame');
+  const canvas = document.getElementById('graph-canvas');
+
+  frame.style.display = 'none';
+  frame.src = '';
+  canvas.style.display = 'none';
+
+  if (subject) {
+    placeholder.style.display = 'none';
+    // Phase 5: canvas.style.display = 'block'; reloadGraph(subject);
+  } else {
+    placeholder.style.display = 'flex';
+  }
 }
 
 // ── Event Listeners ──
