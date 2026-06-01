@@ -77,23 +77,35 @@ a:hover{color:var(--text-bright)}
 
 /* ── Sidebars ── */
 aside{
-  width:var(--sidebar-width);
   background:var(--surface);
   border:1px solid var(--border);
-  overflow-y:auto;
+  overflow:hidden;
   transition:width .2s ease;
   flex-shrink:0;
   display:flex;flex-direction:column}
-aside.collapsed{width:0;overflow:hidden;border-color:transparent}
+aside[data-collapsed="true"]{border-color:transparent}
 
 #sidebar-left{border-left:none;border-top:none}
 #sidebar-right{border-right:none;border-top:none}
+
+/* ── Resize Handles ── */
+.resize-handle{
+  width:4px;
+  cursor:col-resize;
+  background:transparent;
+  flex-shrink:0;
+  position:relative;
+  z-index:5;
+  transition:background .15s}
+.resize-handle:hover,
+.resize-handle.active{background:var(--accent)}
 
 /* ── Sidebar Sections ── */
 .sidebar-section{padding:var(--space-3);border-bottom:1px solid var(--border);
   flex-shrink:0}
 .sidebar-section h3{font-size:var(--font-size-xs);color:var(--text-dim);
   text-transform:uppercase;letter-spacing:1px;margin-bottom:var(--space-2)}
+.sidebar-section.grow{flex:1;overflow-y:auto;flex-shrink:1}
 .placeholder-text{font-size:var(--font-size-sm);color:var(--text-dim);
   padding:var(--space-4);text-align:center;
   background:var(--surface-2);border-radius:var(--radius-md);
@@ -128,8 +140,10 @@ aside.collapsed{width:0;overflow:hidden;border-color:transparent}
   line-height:1.4}
 
 /* ── File Preview ── */
-#file-preview{overflow-y:auto;flex:1;padding:var(--space-3)}
-#file-preview-content{font-size:var(--font-size-sm);line-height:1.6}
+#file-preview{overflow-y:auto;flex:1;padding:var(--space-3);
+  display:flex;flex-direction:column}
+#file-preview-content{font-size:var(--font-size-sm);line-height:1.6;
+  flex:1;overflow-y:auto}
 #file-preview-content h1{font-size:var(--font-size-md);color:var(--text-bright);
   margin-bottom:var(--space-2)}
 #file-preview-content h2{font-size:var(--font-size-base);color:var(--text-bright);
@@ -154,11 +168,12 @@ aside.collapsed{width:0;overflow:hidden;border-color:transparent}
   font-size:var(--font-size-xs);opacity:0;transition:opacity .15s}
 pre:hover .copy-btn{opacity:1}
 
-#btn-close-preview{width:100%;margin-top:var(--space-2);
+#btn-close-preview{width:100%;margin-bottom:var(--space-2);
   padding:var(--space-2);background:var(--surface-2);
   border:1px solid var(--border);color:var(--text-dim);
   border-radius:var(--radius-sm);cursor:pointer;
-  font-size:var(--font-size-sm);transition:all .15s}
+  font-size:var(--font-size-sm);transition:all .15s;
+  flex-shrink:0}
 #btn-close-preview:hover{background:var(--border-2);color:var(--text-bright)}
 
 /* ── Upload Zone ── */
@@ -177,8 +192,8 @@ pre:hover .copy-btn{opacity:1}
   border-top:none;
   position:relative}
 #main-area .placeholder{
-  text-align:center;color:var(--text-dim)}
-#main-area .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;color:var(--text-dim);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
   width:100%;height:100%}
 #main-area .placeholder span{font-size:32px;display:block;margin-bottom:var(--space-3)}
 #main-area .placeholder p{font-size:var(--font-size-base)}
@@ -250,7 +265,7 @@ pre:hover .copy-btn{opacity:1}
 <div id="app">
 
   <!-- Left Sidebar — Objects -->
-  <aside id="sidebar-left">
+  <aside id="sidebar-left" style="width:240px" data-expanded-width="240" data-collapsed="false">
     <div class="sidebar-section">
       <h3>Study Objects</h3>
       <div id="objects-tree">
@@ -258,6 +273,9 @@ pre:hover .copy-btn{opacity:1}
       </div>
     </div>
   </aside>
+
+  <!-- Left Resize Handle -->
+  <div id="resize-handle-left" class="resize-handle"></div>
 
   <!-- Main Area — Graph / Object Viewer -->
   <main id="main-area">
@@ -270,30 +288,36 @@ pre:hover .copy-btn{opacity:1}
     </div>
   </main>
 
-  <!-- Right Sidebar — Files -->
-  <aside id="sidebar-right">
-    <div class="sidebar-section" style="flex-shrink:0">
+  <!-- Right Resize Handle -->
+  <div id="resize-handle-right" class="resize-handle"></div>
+
+  <!-- Right Sidebar — Upload, Files, Preview -->
+  <aside id="sidebar-right" style="width:240px" data-expanded-width="240" data-collapsed="false">
+    <!-- Upload (top) -->
+    <div class="sidebar-section">
+      <h3>Upload</h3>
+      <div id="upload-zone">
+        <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
+        <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
+        <label for="file-input" class="btn">Choose Files</label>
+      </div>
+    </div>
+    <!-- Files (middle, grows) -->
+    <div class="sidebar-section grow">
       <h3>Files</h3>
       <div id="files-tree">
         <p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>
       </div>
     </div>
+    <!-- File Preview (bottom) -->
     <div class="sidebar-section" style="flex-shrink:0">
       <h3>File Preview</h3>
       <div id="preview-placeholder">
         <p class="placeholder-text">Select a .md file to preview</p>
       </div>
       <div id="file-preview" style="display:none">
-        <div id="file-preview-content"></div>
         <button id="btn-close-preview">✕ Close</button>
-      </div>
-    </div>
-    <div class="sidebar-section" style="flex-shrink:0">
-      <h3>Upload</h3>
-      <div id="upload-zone">
-        <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
-        <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
-        <label for="file-input" class="btn">Choose Files</label>
+        <div id="file-preview-content"></div>
       </div>
     </div>
   </aside>
@@ -487,7 +511,7 @@ async function showFilePreview(path) {
     }
     document.getElementById('preview-placeholder').style.display = 'none';
     const preview = document.getElementById('file-preview');
-    preview.style.display = 'block';
+    preview.style.display = 'flex';
     renderMarkdown(document.getElementById('file-preview-content'), data.content);
   } catch (e) {
     showToast('\u2717 Failed to load preview', 'danger');
@@ -555,6 +579,56 @@ function reloadAll(subject) {
   }
 }
 
+// ── Sidebar Toggles ──
+function toggleSidebar(id) {
+  const s = document.getElementById(id);
+  const collapsed = s.dataset.collapsed === 'true';
+  if (collapsed) {
+    s.style.width = s.dataset.expandedWidth + 'px';
+    s.dataset.collapsed = 'false';
+  } else {
+    s.dataset.expandedWidth = parseInt(s.style.width) || 240;
+    s.style.width = '0px';
+    s.dataset.collapsed = 'true';
+  }
+}
+
+// ── Sidebar Resize ──
+function initResize(handleId, sidebarId, isLeft) {
+  const handle = document.getElementById(handleId);
+  const sidebar = document.getElementById(sidebarId);
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = parseInt(sidebar.style.width) || 240;
+    handle.classList.add('active');
+    sidebar.style.transition = 'none';
+    sidebar.dataset.collapsed = 'false';
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (me) => {
+      const delta = isLeft ? me.clientX - startX : startX - me.clientX;
+      const newWidth = Math.max(120, Math.min(400, startWidth + delta));
+      sidebar.style.width = newWidth + 'px';
+    };
+
+    const onMouseUp = () => {
+      handle.classList.remove('active');
+      sidebar.style.transition = '';
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      sidebar.dataset.expandedWidth = parseInt(sidebar.style.width) || 240;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+}
+
 // ── Event Listeners ──
 
 // Subject selector change
@@ -562,13 +636,13 @@ document.getElementById('subject-select').addEventListener('change', (e) => {
   reloadAll(e.target.value);
 });
 
-// Sidebar toggles
-document.getElementById('btn-toggle-left').addEventListener('click', () => {
-  document.getElementById('sidebar-left').classList.toggle('collapsed');
-});
-document.getElementById('btn-toggle-right').addEventListener('click', () => {
-  document.getElementById('sidebar-right').classList.toggle('collapsed');
-});
+// Sidebar toggle buttons
+document.getElementById('btn-toggle-left').addEventListener('click', () => toggleSidebar('sidebar-left'));
+document.getElementById('btn-toggle-right').addEventListener('click', () => toggleSidebar('sidebar-right'));
+
+// Resize handles
+initResize('resize-handle-left', 'sidebar-left', true);
+initResize('resize-handle-right', 'sidebar-right', false);
 
 // Close file preview
 document.getElementById('btn-close-preview').addEventListener('click', () => {
