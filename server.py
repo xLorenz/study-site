@@ -139,9 +139,11 @@ def _parse_relationships(subject):
             m = node_re.match(stripped)
             if m:
                 node_id = m.group(1).strip()
-                # Count inbound edges for link_count
-                link_count = sum(1 for e in edges if e["target"] == node_id)
-                nodes.append({"id": node_id, "label": node_id, "subject": subject, "link_count": link_count})
+                nodes.append({"id": node_id, "label": node_id, "subject": subject, "link_count": 0})
+
+    # Second pass: compute link_count after all edges are collected
+    for node in nodes:
+        node["link_count"] = sum(1 for e in edges if e["target"] == node["id"] or e["source"] == node["id"])
 
     return nodes, edges
 
