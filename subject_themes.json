@@ -1,8 +1,14 @@
 {
   "_default": {
-    "primary":   "#6366f1",
+    "primary": "#6366f1",
     "secondary": "#a78bfa",
-    "accent":    "#22d3ee",
-    "icon":      "📚"
+    "accent": "#22d3ee",
+    "icon": "\ud83d\udcda"
+  },
+  "test": {
+    "primary": "#22c55e",
+    "secondary": "#16a34a",
+    "accent": "#4ade80",
+    "icon": "\ud83e\uddea"
   }
 }
