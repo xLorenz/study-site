@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>study</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<style>
+/* ── Reset ── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+/* ── Design Tokens ── */
+:root{
+  --bg:#0a0a12;
+  --surface:#0f0f1a;
+  --surface-2:#141420;
+  --border:#1a1a2e;
+  --border-2:#252540;
+  --accent:#6366f1;
+  --accent-dim:#4345b0;
+  --violet:#8b5cf6;
+  --text:#c0c0d0;
+  --text-dim:#505068;
+  --text-bright:#e8e8f0;
+  --success:#22c55e;
+  --warning:#f59e0b;
+  --danger:#ef4444;
+  --font-sans:'Inter','Segoe UI',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+  --font-size-xs:11px;--font-size-sm:12px;
+  --font-size-base:14px;--font-size-md:15px;--font-size-lg:18px;
+  --space-1:4px;--space-2:8px;--space-3:12px;
+  --space-4:16px;--space-5:24px;--space-6:32px;
+  --radius-sm:4px;--radius-md:8px;--radius-lg:12px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg:0 8px 32px rgba(0,0,0,0.6);
+  --sidebar-width:240px;
+  --z-base:1;--z-sidebar:10;--z-overlay:100;--z-toast:1000;
+}
+
+/* ── Base ── */
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:var(--font-sans);font-size:var(--font-size-base);
+  overflow:hidden}
+button{cursor:pointer;border:none;background:var(--surface-2);
+  color:var(--text);font-family:var(--font-sans);
+  border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);
+  font-size:var(--font-size-sm);transition:background .15s,color .15s}
+button:hover{background:var(--border-2);color:var(--text-bright)}
+
+/* ── Header ── */
+#header{
+  display:flex;align-items:center;gap:var(--space-2);
+  height:40px;padding:0 var(--space-3);
+  background:var(--surface);border-bottom:1px solid var(--border);
+  position:relative;z-index:var(--z-sidebar)}
+#header .logo{font-size:var(--font-size-md);font-weight:600;
+  color:var(--text-bright);letter-spacing:-0.3px;
+  background:linear-gradient(135deg,var(--accent),var(--violet));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text}
+#header select{background:var(--surface-2);color:var(--text);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:2px var(--space-2);font-size:var(--font-size-sm);
+  font-family:var(--font-sans);margin-left:auto}
+#btn-toggle-left,#btn-toggle-right{background:transparent;
+  font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1)}
+
+/* ── App Layout ── */
+#app{
+  display:flex;
+  height:calc(100vh - 40px - 36px); /* header - search bar */
+  position:relative}
+
+/* ── Sidebars ── */
+aside{
+  width:var(--sidebar-width);
+  background:var(--surface);
+  border:1px solid var(--border);
+  overflow-y:auto;
+  transition:width .2s ease;
+  flex-shrink:0}
+aside.collapsed{width:0;overflow:hidden;border-color:transparent}
+
+#sidebar-left{border-left:none;border-top:none}
+#sidebar-right{border-right:none;border-top:none}
+
+/* ── Sidebar Placeholders ── */
+.sidebar-section{padding:var(--space-3);border-bottom:1px solid var(--border)}
+.sidebar-section h3{font-size:var(--font-size-xs);color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:1px;margin-bottom:var(--space-2)}
+.placeholder-text{font-size:var(--font-size-sm);color:var(--text-dim);
+  padding:var(--space-4);text-align:center;
+  background:var(--surface-2);border-radius:var(--radius-md);
+  border:1px dashed var(--border-2)}
+
+/* ── Main Area ── */
+#main-area{
+  flex:1;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--surface-2);
+  border-top:none;
+  position:relative}
+#main-area .placeholder{
+  text-align:center;color:var(--text-dim)}
+#main-area .placeholder span{font-size:48px;display:block;margin-bottom:var(--space-3)}
+#main-area .placeholder p{font-size:var(--font-size-sm)}
+#graph-canvas{display:block;width:100%;height:100%}
+#object-frame{display:none;width:100%;height:100%;border:none;background:#fff}
+
+/* ── Search Bar ── */
+#search-bar{
+  display:flex;align-items:center;gap:var(--space-2);
+  height:36px;padding:0 var(--space-3);
+  background:var(--surface);border-top:1px solid var(--border);
+  position:relative;z-index:var(--z-sidebar)}
+#search-input{
+  flex:1;
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);
+  color:var(--text);font-size:var(--font-size-sm);
+  font-family:var(--font-sans);outline:none;
+  transition:border-color .15s}
+#search-input:focus{border-color:var(--accent)}
+#search-subject-filter{
+  background:var(--surface-2);color:var(--text);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:2px var(--space-2);font-size:var(--font-size-sm);
+  font-family:var(--font-sans)}
+#search-results{
+  position:absolute;bottom:100%;left:var(--space-3);right:var(--space-3);
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-md) var(--radius-md) 0 0;
+  max-height:300px;overflow-y:auto;box-shadow:var(--shadow-lg);
+  display:none}
+
+/* ── Toast ── */
+#toast-container{
+  position:fixed;bottom:var(--space-5);right:var(--space-4);
+  z-index:var(--z-toast);display:flex;flex-direction:column;gap:var(--space-2)}
+.toast{
+  padding:var(--space-2) var(--space-4);
+  border-radius:var(--radius-md);
+  font-size:var(--font-size-sm);
+  box-shadow:var(--shadow-md);
+  animation:slideUp .25s ease}
+.toast-success{background:var(--success);color:#000}
+.toast-warning{background:var(--warning);color:#000}
+.toast-danger{background:var(--danger);color:#fff}
+.toast-info{background:var(--border-2);color:var(--text-bright)}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header id="header">
+  <button id="btn-toggle-left">☰</button>
+  <span class="logo">study</span>
+  <select id="subject-select">
+    <option value="">— Select subject —</option>
+  </select>
+  <button id="btn-toggle-right">≡</button>
+</header>
+
+<!-- ── App ── -->
+<div id="app">
+
+  <!-- Left Sidebar — Objects -->
+  <aside id="sidebar-left">
+    <div class="sidebar-section">
+      <h3>Study Objects</h3>
+      <div id="objects-tree">
+        <p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Area — Graph / Object Viewer -->
+  <main id="main-area">
+    <canvas id="graph-canvas"></canvas>
+    <iframe id="object-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+    <div class="placeholder" id="main-placeholder">
+      <span>📚</span>
+      <p>Select a subject to view the concept graph</p>
+      <p style="font-size:var(--font-size-xs);margin-top:var(--space-1);color:var(--text-dim)">or select a study object to view it here</p>
+    </div>
+  </main>
+
+  <!-- Right Sidebar — Files -->
+  <aside id="sidebar-right">
+    <div class="sidebar-section">
+      <h3>Files</h3>
+      <div id="files-tree">
+        <p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <h3>File Preview</h3>
+      <div id="file-preview" class="hidden" style="display:none">
+        <div id="file-preview-content"></div>
+        <button id="btn-close-preview" style="margin-top:var(--space-2)">✕ Close</button>
+      </div>
+      <p class="placeholder-text" id="preview-placeholder">Select a .md file to preview</p>
+    </div>
+    <div class="sidebar-section">
+      <h3>Upload</h3>
+      <div id="upload-zone">
+        <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
+        <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
+        <label for="file-input" class="btn" style="display:inline-block;padding:var(--space-2) var(--space-4);background:var(--accent);color:#fff;border-radius:var(--radius-sm);font-size:var(--font-size-sm);cursor:pointer;transition:opacity .15s">Choose Files</label>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ── Search Bar ── -->
+<div id="search-bar">
+  <input type="text" id="search-input" placeholder="🔎 Search notes...">
+  <select id="search-subject-filter">
+    <option value="">All subjects</option>
+  </select>
+  <div id="search-results"></div>
+</div>
+
+<!-- ── Toast Container ── -->
+<div id="toast-container"></div>
+
+<script>
+// ── Placeholder: no JS logic yet ──
+// Interactive functionality will be added in Phase 3+
+
+// Toggle sidebar placeholders
+document.getElementById('btn-toggle-left').addEventListener('click', () => {
+  document.getElementById('sidebar-left').classList.toggle('collapsed');
+});
+document.getElementById('btn-toggle-right').addEventListener('click', () => {
+  document.getElementById('sidebar-right').classList.toggle('collapsed');
+});
+
+console.log('Study UI skeleton loaded — Phase 1');
+</script>
+</body>
+</html>
