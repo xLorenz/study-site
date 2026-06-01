@@ -125,9 +125,12 @@ aside[data-collapsed="true"]{border-color:transparent}
  border-radius:var(--radius-sm);transition:background .15s}
 .tree-item:hover{background:var(--surface-2)}
 .tree-item-name{cursor:pointer;color:var(--text);
- transition:color .15s;flex:1;min-width:0;overflow:hidden;
- text-overflow:ellipsis;white-space:nowrap}
+ transition:color .15s,background .15s;flex:1;min-width:0;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap;padding:1px 4px;border-radius:3px}
 .tree-item-name:hover{color:var(--text-bright)}
+.tree-item-name.graph-highlighted{
+ background:var(--accent);color:#fff;font-weight:600;
+ box-shadow:0 0 8px var(--accent-dim)}
 .tree-item-action{background:none;border:none;cursor:pointer;
  color:var(--text-dim);font-size:var(--font-size-sm);
  padding:0 2px;transition:color .15s;text-decoration:none}
@@ -1192,6 +1195,44 @@ function findNodeAt(wx, wy) {
  return null;
 }
 
+// ── Graph: Highlight file in tree when node selected ──
+function highlightFileInTree(node) {
+ // Clear previous highlights
+ document.querySelectorAll('.tree-item-name.graph-highlighted').forEach(el => {
+ el.classList.remove('graph-highlighted');
+ });
+ if (!node) return;
+
+ // The node label matches a .md filename in the concepts/ folder
+ // Try: concepts/{label}.md or any .md file matching the label
+ const label = node.label;
+ const treeContainer = document.getElementById('files-tree');
+
+ // Find .tree-item-name elements whose text matches the node label
+ const names = treeContainer.querySelectorAll('.tree-item-name');
+ for (const el of names) {
+ const fileName = el.textContent.replace(/\.md$/, '');
+ if (fileName.toLowerCase() === label.toLowerCase()) {
+ el.classList.add('graph-highlighted');
+ // Expand parent folders so the file is visible
+ let parent = el.closest('.tree-children');
+ while (parent) {
+ parent.style.display = 'block';
+ const toggle = parent.previousElementSibling;
+ if (toggle && toggle.classList.contains('tree-folder-toggle')) {
+ toggle.textContent = toggle.textContent.replace(/^\S+/, '\ud83d\udcc2');
+ }
+ parent = parent.parentElement?.closest('.tree-children');
+ }
+ // Scroll into view
+ el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+ // Also open preview
+ showFilePreview(el.getAttribute('onclick')?.match(/'([^']+)'/)?.[1] || '');
+ return;
+ }
+ }
+}
+
 // ── Graph: Mouse Down ──
 graphCanvas.addEventListener('mousedown', (e) => {
  const rect = graphCanvas.getBoundingClientRect();
@@ -1205,6 +1246,9 @@ graphCanvas.addEventListener('mousedown', (e) => {
  const node = findNodeAt(world.x, world.y);
  if (node) {
  dragNode = node;
+ // Don't auto-pin on mousedown — double-click to pin/unpin
+ // Temporarily pin during drag only
+ dragNode._tempPinned = !node.pinned;
  node.pinned = true;
  graphCanvas.classList.add('dragging');
  } else {
@@ -1256,12 +1300,21 @@ graphCanvas.addEventListener('mousemove', (e) => {
 
 // ── Graph: Mouse Up ──
 graphCanvas.addEventListener('mouseup', (e) => {
- if (dragNode && !hasDragged) {
- // Click (no drag) — select/highlight
+ if (dragNode) {
+ // If this was just a click (no drag), select the node
+ if (!hasDragged) {
  if (selectedNode && selectedNode.id === dragNode.id) {
- selectedNode = null; // toggle off
+ selectedNode = null;
+ highlightFileInTree(null);
  } else {
  selectedNode = dragNode;
+ highlightFileInTree(dragNode);
+ }
+ }
+ // If node was only temporarily pinned for drag, unpin it
+ if (dragNode._tempPinned) {
+ dragNode.pinned = false;
+ delete dragNode._tempPinned;
  }
  }
  dragNode = null;
@@ -1271,7 +1324,7 @@ graphCanvas.addEventListener('mouseup', (e) => {
  lastInteraction = Date.now();
 });
 
-// ── Graph: Click on empty space ──
+// ── Graph: Click on empty space — deselect ──
 graphCanvas.addEventListener('click', (e) => {
  if (hasDragged) return;
  const rect = graphCanvas.getBoundingClientRect();
@@ -1281,19 +1334,21 @@ graphCanvas.addEventListener('click', (e) => {
  const node = findNodeAt(world.x, world.y);
  if (!node) {
  selectedNode = null;
+ highlightFileInTree(null);
  }
 });
 
-// ── Graph: Double-click (unpin) ──
+// ── Graph: Double-click (toggle pin) ──
 graphCanvas.addEventListener('dblclick', (e) => {
  const rect = graphCanvas.getBoundingClientRect();
  const sx = e.clientX - rect.left;
  const sy = e.clientY - rect.top;
  const world = screenToWorld(sx, sy);
  const node = findNodeAt(world.x, world.y);
- if (node && node.pinned) {
- node.pinned = false;
- showToast('📌 Node unpinned', 'info');
+ if (node) {
+ node.pinned = !node.pinned;
+ if (node._tempPinned) delete node._tempPinned;
+ showToast(node.pinned ? '📌 Node pinned' : '📌 Node unpinned', 'info');
  }
  lastInteraction = Date.now();
 });
