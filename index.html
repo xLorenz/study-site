@@ -226,6 +226,23 @@ pre:hover .copy-btn{opacity:1}
   max-height:300px;overflow-y:auto;box-shadow:var(--shadow-lg);
   display:none}
 
+/* ── Search Results ── */
+.search-result-item{
+  padding:var(--space-2) var(--space-3);
+  cursor:pointer;
+  border-bottom:1px solid var(--border);
+  transition:background .15s}
+.search-result-item:last-child{border-bottom:none}
+.search-result-item:hover{background:var(--surface-2)}
+.search-result-snippet{font-size:var(--font-size-sm);line-height:1.4;
+  color:var(--text);margin-bottom:2px}
+.search-result-snippet strong{color:var(--accent)}
+.search-result-meta{display:flex;justify-content:space-between;
+  align-items:center;font-size:var(--font-size-xs);color:var(--text-dim)}
+.search-result-path{overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;flex:1}
+.search-result-count{flex-shrink:0;margin-left:var(--space-2)}
+
 /* ── Toast ── */
 #toast-container{
   position:fixed;bottom:var(--space-5);right:var(--space-4);
@@ -392,8 +409,9 @@ async function loadSubjects() {
       select.value = data.subjects[0].name;
       reloadAll(data.subjects[0].name);
     }
+    populateSearchFilter();
   } catch (e) {
-    showToast('\u2717 Failed to load subjects', 'danger');
+    showToast('✗ Failed to load subjects', 'danger');
   }
 }
 
@@ -631,6 +649,47 @@ function initResize(handleId, sidebarId, isLeft) {
 
 // ── Event Listeners ──
 
+// Upload via file input
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const subject = document.getElementById('subject-select').value;
+  if (!subject) { showToast('Select a subject first', 'warning'); return; }
+  for (const file of e.target.files) await uploadFile(file, subject);
+  e.target.value = ''; // reset so same file can be re-selected
+});
+
+// ── Upload Functions ──
+async function uploadFile(file, subject) {
+  const toastText = `Uploading ${file.name}…`;
+  showToast(toastText, 'info');
+  const fd = new FormData();
+  fd.append('subject', subject);
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`✓ ${file.name} uploaded`, 'success');
+      reloadFileTree(subject);
+    } else {
+      showToast(`✗ ${data.error}: ${data.detail || ''}`, 'danger');
+    }
+  } catch (e) {
+    showToast(`✗ Upload failed: ${e.message}`, 'danger');
+  }
+}
+
+// ── Full-page drag-and-drop upload ──
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const subject = document.getElementById('subject-select').value;
+  if (!subject) { showToast('Select a subject first', 'warning'); return; }
+  for (const file of e.dataTransfer.files) await uploadFile(file, subject);
+});
+
 // Subject selector change
 document.getElementById('subject-select').addEventListener('change', (e) => {
   reloadAll(e.target.value);
@@ -651,10 +710,94 @@ document.getElementById('btn-close-preview').addEventListener('click', () => {
   document.getElementById('preview-placeholder').style.display = 'block';
 });
 
+// ── Search Functions ──
+let searchTimeout = null;
+
+function performSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  const subject = document.getElementById('search-subject-filter').value;
+  const resultsContainer = document.getElementById('search-results');
+
+  if (q.length < 2) {
+    resultsContainer.style.display = 'none';
+    return;
+  }
+
+  fetch('/api/search?q=' + encodeURIComponent(q) + '&subject=' + encodeURIComponent(subject))
+    .then(r => r.json())
+    .then(data => {
+      if (!data.results || data.results.length === 0) {
+        resultsContainer.innerHTML = '<div style="padding:var(--space-3);color:var(--text-dim);font-size:var(--font-size-sm)">No results found</div>';
+        resultsContainer.style.display = 'block';
+        return;
+      }
+      resultsContainer.innerHTML = data.results.map(r =>
+        '<div class="search-result-item" data-path="' + r.path + '" onclick="openSearchResult(this)">' +
+          '<div class="search-result-snippet">' + r.snippet + '</div>' +
+          '<div class="search-result-meta">' +
+            '<span class="search-result-path">' + r.path + '</span>' +
+            '<span class="search-result-count">' + r.match_count + ' match' + (r.match_count > 1 ? 'es' : '') + '</span>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+      resultsContainer.style.display = 'block';
+    })
+    .catch(() => {
+      resultsContainer.innerHTML = '<div style="padding:var(--space-3);color:var(--text-dim)">Search failed</div>';
+      resultsContainer.style.display = 'block';
+    });
+}
+
+function openSearchResult(el) {
+  const path = el.dataset.path;
+  document.getElementById('search-results').style.display = 'none';
+  document.getElementById('search-input').value = '';
+  showFilePreview(path);
+}
+
+// Close search results on click outside
+document.addEventListener('click', (e) => {
+  const results = document.getElementById('search-results');
+  const input = document.getElementById('search-input');
+  const filter = document.getElementById('search-subject-filter');
+  if (!results.contains(e.target) && e.target !== input && e.target !== filter) {
+    results.style.display = 'none';
+  }
+});
+
+// Search input: debounced keyup
+document.getElementById('search-input').addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(performSearch, 300);
+});
+
+// Search filter change triggers immediate re-search
+document.getElementById('search-subject-filter').addEventListener('change', () => {
+  clearTimeout(searchTimeout);
+  performSearch();
+});
+
+// Populate search filter from subjects
+function populateSearchFilter() {
+  const select = document.getElementById('subject-select');
+  const filter = document.getElementById('search-subject-filter');
+  const currentVal = filter.value;
+  filter.innerHTML = '<option value="">All subjects</option>';
+  for (const opt of select.options) {
+    if (opt.value) {
+      const fopt = document.createElement('option');
+      fopt.value = opt.value;
+      fopt.textContent = opt.textContent;
+      filter.appendChild(fopt);
+    }
+  }
+  filter.value = currentVal;
+}
+
 // ── Initialise ──
 loadSubjects();
 
-console.log('Study UI — Phase 3: Sidebars + Navigation');
+console.log('Study UI — Phase 4: Upload + Search');
 </script>
 </body>
 </html>

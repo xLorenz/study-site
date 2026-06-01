@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Study server — zero external dependencies. Port 8081."""
 
+import email.parser
+import email.policy
 import http.server
 import json
 import os
 import re
 import socketserver
+import subprocess
 import urllib.parse
 
 VAULT = os.path.expanduser("~/study-vault")
@@ -27,6 +30,57 @@ def _resolve_vault_path(rel_path):
     if not joined.startswith(VAULT + os.sep) and joined != VAULT:
         return None
     return joined
+
+
+def slugify(text):
+    """Slugify a filename: lowercase, strip special chars, spaces to hyphens."""
+    text = text.lower().strip()
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[\s_]+', '-', text)
+    text = re.sub(r'-+', '-', text)
+    return text
+
+
+def run_markitdown(input_path, output_path):
+    """Convert a file to markdown using MarkItDown. Returns (success, stderr)."""
+    try:
+        result = subprocess.run(
+            ["markitdown", input_path, "-o", output_path],
+            capture_output=True, text=True, timeout=60
+        )
+        return result.returncode == 0, result.stderr
+    except subprocess.TimeoutExpired:
+        return False, "MarkItDown timed out after 60s"
+    except FileNotFoundError:
+        return False, "markitdown command not found"
+    except Exception as e:
+        return False, str(e)
+
+
+def parse_multipart(handler):
+    """Parse multipart/form-data body using stdlib only. Returns dict."""
+    content_type = handler.headers['Content-Type']
+    content_length = int(handler.headers.get('Content-Length', 0))
+    body = handler.rfile.read(content_length)
+    msg = email.parser.BytesParser(policy=email.policy.default).parsebytes(
+        f'Content-Type: {content_type}\r\n\r\n'.encode() + body
+    )
+    result = {}
+    for part in msg.iter_parts():
+        cd = part.get('Content-Disposition', '')
+        name_match = re.search(r'name="([^"]+)"', cd)
+        fname_match = re.search(r'filename="([^"]+)"', cd)
+        if not name_match:
+            continue
+        field = name_match.group(1)
+        if fname_match:
+            result[field] = {
+                'filename': fname_match.group(1),
+                'data': part.get_payload(decode=True)
+            }
+        else:
+            result[field] = part.get_payload(decode=True).decode('utf-8').strip()
+    return result
 
 
 def _subject_exists(subject):
@@ -369,6 +423,196 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         nodes, edges = _parse_relationships(subject)
         self._send_json(200, {"subject_filter": subject, "nodes": nodes, "edges": edges})
 
+    def _api_upload(self):
+        """POST /api/upload — multipart upload with MarkItDown conversion."""
+        # 1. Check Content-Length ≤ 50MB
+        cl_str = self.headers.get("Content-Length", "0")
+        content_length = int(cl_str) if cl_str.isdigit() else 0
+        if content_length > 52428800:
+            self._send_json(413, {"error": "file_too_large",
+                                  "detail": "File exceeds 50 MB limit"})
+            return
+
+        # 2. Check Content-Type is multipart
+        ct = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in ct:
+            self._send_json(400, {"error": "invalid_content_type",
+                                  "detail": "Expected multipart/form-data"})
+            return
+
+        parts = parse_multipart(self)
+
+        # 3. Validate subject
+        subject = parts.get("subject", "")
+        if not subject:
+            self._send_json(400, {"error": "missing_subject",
+                                  "detail": "subject field is required"})
+            return
+
+        # 4. Validate subject exists
+        if not _subject_exists(subject):
+            self._send_json(404, {"error": "subject_not_found",
+                                  "detail": f"Subject '{subject}' does not exist"})
+            return
+
+        # 5. Validate file
+        file_part = parts.get("file")
+        if not file_part:
+            self._send_json(400, {"error": "missing_file",
+                                  "detail": "file field is required"})
+            return
+
+        filename = file_part["filename"]
+        data = file_part["data"]
+
+        # 6. Validate extension
+        _, ext = os.path.splitext(filename)
+        allowed = [".pdf", ".pptx", ".docx", ".xlsx", ".jpg", ".png"]
+        if ext.lower() not in allowed:
+            self._send_json(400, {"error": "unsupported_format",
+                                  "detail": f"Format '{ext}' not supported. Allowed: {', '.join(allowed)}"})
+            return
+
+        # 7. Save original file
+        name_no_ext, _ = os.path.splitext(filename)
+        slug = slugify(name_no_ext)
+        orig_filename = f"{slug}{ext}"
+        orig_dir = os.path.join(VAULT, "originals", subject)
+        os.makedirs(orig_dir, exist_ok=True)
+        orig_path = os.path.join(orig_dir, orig_filename)
+        with open(orig_path, "wb") as f:
+            f.write(data)
+
+        # 8. Convert via MarkItDown
+        raw_dir = os.path.join(VAULT, "subjects", subject, "raw")
+        os.makedirs(raw_dir, exist_ok=True)
+        md_filename = f"{slug}.md"
+        md_path = os.path.join(raw_dir, md_filename)
+
+        success, stderr = run_markitdown(orig_path, md_path)
+        if not success:
+            # Remove original on conversion failure
+            os.remove(orig_path)
+            self._send_json(500, {"error": "conversion_failed",
+                                  "detail": stderr})
+            return
+
+        # 9. Log the upload
+        log_path = os.path.join(VAULT, "log.md")
+        try:
+            from datetime import datetime
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            with open(log_path, "a") as logf:
+                logf.write(f"- {ts} | UPLOAD | {subject} | {filename} → raw/{md_filename}\n")
+        except OSError:
+            pass  # non-critical
+
+        self._send_json(200, {
+            "markdown_path": f"subjects/{subject}/raw/{md_filename}",
+            "original_path": f"originals/{subject}/{orig_filename}",
+            "filename": filename,
+            "conversion": "success",
+        })
+
+    def _api_search(self, params):
+        """GET /api/search?q=X&subject=Y"""
+        q = params.get("q", [""])[0]
+        subject_filter = params.get("subject", [""])[0]
+
+        if len(q) < 2:
+            self._send_json(400, {"error": "query_too_short",
+                                  "detail": "Query must be at least 2 characters"})
+            return
+
+        root = os.path.join(VAULT, "subjects", subject_filter) if subject_filter else os.path.join(VAULT, "subjects")
+        if not os.path.isdir(root):
+            self._send_json(200, {"query": q, "subject_filter": subject_filter, "results": []})
+            return
+
+        results = []
+        q_lower = q.lower()
+        for dirpath, _, filenames in os.walk(root):
+            for fn in filenames:
+                if not fn.endswith(".md") or fn.startswith("."):
+                    continue
+                path = os.path.join(dirpath, fn)
+                try:
+                    with open(path, encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                except OSError:
+                    continue
+
+                count = content.lower().count(q_lower)
+                if count == 0:
+                    continue
+
+                idx = content.lower().find(q_lower)
+                start = max(0, idx - 75)
+                end = min(len(content), idx + 75)
+                snippet = content[start:end]
+
+                # Bold the query term in the snippet
+                # Use the case from content, not q
+                actual_match = content[idx:idx + len(q)]
+                snippet = snippet.replace(actual_match, f"**{actual_match}**", 1)
+
+                rel = os.path.relpath(path, VAULT)
+                subj = rel.split(os.sep)[1] if rel.startswith("subjects") else ""
+
+                results.append({
+                    "path": rel.replace(os.sep, "/"),
+                    "subject": subj,
+                    "snippet": snippet,
+                    "match_count": count,
+                })
+
+        results.sort(key=lambda r: r["match_count"], reverse=True)
+        self._send_json(200, {
+            "query": q,
+            "subject_filter": subject_filter,
+            "results": results[:20],
+        })
+
+    def _api_original(self, params):
+        """GET /api/original?path=X — serve original uploaded file."""
+        rel_path = params.get("path", [None])[0]
+        if not rel_path:
+            self._send_json(400, {"error": "missing_path", "detail": "path parameter is required"})
+            return
+
+        abs_path = _resolve_vault_path(rel_path)
+        if abs_path is None:
+            self._send_json(403, {"error": "path_traversal", "detail": "Path traversal detected"})
+            return
+
+        if not os.path.isfile(abs_path):
+            self._send_json(404, {"error": "file_not_found", "detail": f"File not found: {rel_path}"})
+            return
+
+        _, ext = os.path.splitext(abs_path)
+        mime_map = {
+            ".pdf": "application/pdf",
+            ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+        }
+        content_type = mime_map.get(ext.lower(), "application/octet-stream")
+
+        with open(abs_path, "rb") as f:
+            body = f.read()
+
+        basename = os.path.basename(abs_path)
+        self.send_response(200)
+        self._set_cors()
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{basename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     # ── Routing ──
 
     def do_OPTIONS(self):
@@ -398,6 +642,10 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 self._api_object_content(params)
             elif path == "/api/graph":
                 self._api_graph(params)
+            elif path == "/api/search":
+                self._api_search(params)
+            elif path == "/api/original":
+                self._api_original(params)
             else:
                 self._send_json(404, {"error": "not_found", "detail": f"Route not found: {path}"})
         except Exception as e:
@@ -407,7 +655,11 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         try:
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path.rstrip("/") or "/"
-            self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
+
+            if path == "/api/upload":
+                self._api_upload()
+            else:
+                self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
         except Exception as e:
             self._send_json(500, {"error": "internal", "detail": str(e)})
 
