@@ -48,6 +48,8 @@ button{cursor:pointer;border:none;background:var(--surface-2);
   border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);
   font-size:var(--font-size-sm);transition:background .15s,color .15s}
 button:hover{background:var(--border-2);color:var(--text-bright)}
+a{color:var(--text);text-decoration:none}
+a:hover{color:var(--text-bright)}
 
 /* ── Header ── */
 #header{
@@ -63,7 +65,7 @@ button:hover{background:var(--border-2);color:var(--text-bright)}
 #header select{background:var(--surface-2);color:var(--text);
   border:1px solid var(--border);border-radius:var(--radius-sm);
   padding:2px var(--space-2);font-size:var(--font-size-sm);
-  font-family:var(--font-sans);margin-left:auto}
+  font-family:var(--font-sans);margin-left:auto;max-width:180px}
 #btn-toggle-left,#btn-toggle-right{background:transparent;
   font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1)}
 
@@ -80,20 +82,92 @@ aside{
   border:1px solid var(--border);
   overflow-y:auto;
   transition:width .2s ease;
-  flex-shrink:0}
+  flex-shrink:0;
+  display:flex;flex-direction:column}
 aside.collapsed{width:0;overflow:hidden;border-color:transparent}
 
 #sidebar-left{border-left:none;border-top:none}
 #sidebar-right{border-right:none;border-top:none}
 
-/* ── Sidebar Placeholders ── */
-.sidebar-section{padding:var(--space-3);border-bottom:1px solid var(--border)}
+/* ── Sidebar Sections ── */
+.sidebar-section{padding:var(--space-3);border-bottom:1px solid var(--border);
+  flex-shrink:0}
 .sidebar-section h3{font-size:var(--font-size-xs);color:var(--text-dim);
   text-transform:uppercase;letter-spacing:1px;margin-bottom:var(--space-2)}
 .placeholder-text{font-size:var(--font-size-sm);color:var(--text-dim);
   padding:var(--space-4);text-align:center;
   background:var(--surface-2);border-radius:var(--radius-md);
-  border:1px dashed var(--border-2)}
+  border:1px dashed var(--border-2);margin:var(--space-2) 0}
+
+/* ── Tree Lists ── */
+.tree-list{list-style:none;font-size:var(--font-size-sm)}
+.tree-list li{padding:2px 0}
+.tree-folder-toggle{cursor:pointer;display:block;
+  padding:2px 0;color:var(--text);transition:color .15s}
+.tree-folder-toggle:hover{color:var(--text-bright)}
+.tree-children{padding-left:var(--space-4)}
+.tree-file{display:flex;align-items:center;gap:2px;flex-wrap:wrap;
+  padding:2px 0}
+.tree-item{display:flex;align-items:center;gap:var(--space-2);
+  padding:var(--space-1) var(--space-2);cursor:pointer;
+  border-radius:var(--radius-sm);transition:background .15s}
+.tree-item:hover{background:var(--surface-2)}
+.tree-item-name{cursor:pointer;color:var(--text);
+  transition:color .15s;flex:1;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tree-item-name:hover{color:var(--text-bright)}
+.tree-item-action{background:none;border:none;cursor:pointer;
+  color:var(--text-dim);font-size:var(--font-size-sm);
+  padding:0 2px;transition:color .15s;text-decoration:none}
+.tree-item-action:hover{color:var(--text-bright)}
+
+/* ── Type Badges ── */
+.type-badge{display:inline-block;padding:1px 5px;
+  border-radius:3px;font-size:10px;font-weight:700;
+  color:#fff;letter-spacing:0.5px;flex-shrink:0;
+  line-height:1.4}
+
+/* ── File Preview ── */
+#file-preview{overflow-y:auto;flex:1;padding:var(--space-3)}
+#file-preview-content{font-size:var(--font-size-sm);line-height:1.6}
+#file-preview-content h1{font-size:var(--font-size-md);color:var(--text-bright);
+  margin-bottom:var(--space-2)}
+#file-preview-content h2{font-size:var(--font-size-base);color:var(--text-bright);
+  margin-bottom:var(--space-2);margin-top:var(--space-3)}
+#file-preview-content h3{font-size:var(--font-size-sm);color:var(--text-bright);
+  margin-bottom:var(--space-1);margin-top:var(--space-2)}
+#file-preview-content p{margin-bottom:var(--space-2)}
+#file-preview-content ul,#file-preview-content ol{padding-left:var(--space-5);
+  margin-bottom:var(--space-2)}
+#file-preview-content code{background:var(--surface-2);
+  padding:1px 4px;border-radius:3px;font-family:var(--font-mono);
+  font-size:var(--font-size-xs)}
+#file-preview-content pre{background:var(--surface-2);
+  padding:var(--space-3);border-radius:var(--radius-md);
+  overflow-x:auto;margin-bottom:var(--space-3);
+  border:1px solid var(--border);position:relative}
+#file-preview-content pre code{padding:0;background:none;
+  font-size:var(--font-size-xs);line-height:1.5}
+.copy-btn{position:absolute;top:var(--space-1);right:var(--space-1);
+  background:var(--border-2);border:none;color:var(--text-dim);
+  cursor:pointer;padding:2px 6px;border-radius:3px;
+  font-size:var(--font-size-xs);opacity:0;transition:opacity .15s}
+pre:hover .copy-btn{opacity:1}
+
+#btn-close-preview{width:100%;margin-top:var(--space-2);
+  padding:var(--space-2);background:var(--surface-2);
+  border:1px solid var(--border);color:var(--text-dim);
+  border-radius:var(--radius-sm);cursor:pointer;
+  font-size:var(--font-size-sm);transition:all .15s}
+#btn-close-preview:hover{background:var(--border-2);color:var(--text-bright)}
+
+/* ── Upload Zone ── */
+#upload-zone{padding:var(--space-3)}
+#upload-zone .btn{display:inline-block;padding:var(--space-2) var(--space-4);
+  background:var(--accent);color:#fff;border-radius:var(--radius-sm);
+  font-size:var(--font-size-sm);cursor:pointer;
+  transition:opacity .15s}
+#upload-zone .btn:hover{opacity:0.85}
 
 /* ── Main Area ── */
 #main-area{
@@ -196,26 +270,28 @@ aside.collapsed{width:0;overflow:hidden;border-color:transparent}
 
   <!-- Right Sidebar — Files -->
   <aside id="sidebar-right">
-    <div class="sidebar-section">
+    <div class="sidebar-section" style="flex-shrink:0">
       <h3>Files</h3>
       <div id="files-tree">
         <p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>
       </div>
     </div>
-    <div class="sidebar-section">
+    <div class="sidebar-section" style="flex-shrink:0">
       <h3>File Preview</h3>
-      <div id="file-preview" class="hidden" style="display:none">
-        <div id="file-preview-content"></div>
-        <button id="btn-close-preview" style="margin-top:var(--space-2)">✕ Close</button>
+      <div id="preview-placeholder">
+        <p class="placeholder-text">Select a .md file to preview</p>
       </div>
-      <p class="placeholder-text" id="preview-placeholder">Select a .md file to preview</p>
+      <div id="file-preview" style="display:none">
+        <div id="file-preview-content"></div>
+        <button id="btn-close-preview">✕ Close</button>
+      </div>
     </div>
-    <div class="sidebar-section">
+    <div class="sidebar-section" style="flex-shrink:0">
       <h3>Upload</h3>
       <div id="upload-zone">
         <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
         <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
-        <label for="file-input" class="btn" style="display:inline-block;padding:var(--space-2) var(--space-4);background:var(--accent);color:#fff;border-radius:var(--radius-sm);font-size:var(--font-size-sm);cursor:pointer;transition:opacity .15s">Choose Files</label>
+        <label for="file-input" class="btn">Choose Files</label>
       </div>
     </div>
   </aside>
@@ -234,10 +310,242 @@ aside.collapsed{width:0;overflow:hidden;border-color:transparent}
 <div id="toast-container"></div>
 
 <script>
-// ── Placeholder: no JS logic yet ──
-// Interactive functionality will be added in Phase 3+
+// ── State ──
+let currentSubject = '';
 
-// Toggle sidebar placeholders
+// ── Object Type Badges ──
+const TYPE_BADGES = {
+  mock:    { label: 'MOCK',     color: '#6366f1' },
+  cheat:   { label: 'CHEAT',   color: '#22d3ee' },
+  mindmap: { label: 'MINDMAP', color: '#a78bfa' },
+  formula: { label: 'FORMULA', color: '#f59e0b' },
+  flash:   { label: 'FLASH',   color: '#22c55e' },
+  unknown: { label: '?',       color: '#505068' },
+};
+
+// ── Toast ──
+function showToast(message, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = message;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── Markdown Rendering ──
+function renderMarkdown(container, content) {
+  container.innerHTML = marked.parse(content);
+  container.querySelectorAll('pre code').forEach(block => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = '\u2398';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(block.textContent);
+      btn.textContent = '\u2713';
+      setTimeout(() => btn.textContent = '\u2398', 1200);
+    };
+    block.parentElement.style.position = 'relative';
+    block.parentElement.appendChild(btn);
+  });
+}
+
+// ── Subject Selector ──
+async function loadSubjects() {
+  try {
+    const res = await fetch('/api/subjects');
+    const data = await res.json();
+    const select = document.getElementById('subject-select');
+    select.innerHTML = '<option value="">\u2014 Select subject \u2014</option>';
+    data.subjects.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = (s.theme && s.theme.icon || '\ud83d\udcda') + ' ' + s.name;
+      select.appendChild(opt);
+    });
+    if (data.subjects.length > 0) {
+      select.value = data.subjects[0].name;
+      reloadAll(data.subjects[0].name);
+    }
+  } catch (e) {
+    showToast('\u2717 Failed to load subjects', 'danger');
+  }
+}
+
+// ── Object Tree (Left Sidebar) ──
+async function reloadObjectTree(subject) {
+  const container = document.getElementById('objects-tree');
+  if (!subject) {
+    container.innerHTML = '<p class="placeholder-text">No subject selected</p>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/objects?subject=' + encodeURIComponent(subject));
+    const data = await res.json();
+    if (!data.objects || data.objects.length === 0) {
+      container.innerHTML = '<p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>';
+      return;
+    }
+    container.innerHTML = data.objects.map(obj => {
+      const badge = TYPE_BADGES[obj.type] || TYPE_BADGES.unknown;
+      const path = encodeURIComponent(obj.path);
+      return '<div class="tree-item" onclick="showObject(\'' + obj.path + '\')">' +
+        '<span class="type-badge" style="background:' + badge.color + '">' + badge.label + '</span>' +
+        '<span class="tree-item-name" title="' + obj.title + '">' + obj.title + '</span>' +
+        '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">\u2b07</a>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<p class="placeholder-text">\u2717 Failed to load objects</p>';
+  }
+}
+
+// ── Show Object in Main Area ──
+function showObject(path) {
+  document.getElementById('graph-canvas').style.display = 'none';
+  document.getElementById('main-placeholder').style.display = 'none';
+  const frame = document.getElementById('object-frame');
+  frame.style.display = 'block';
+  frame.src = '/api/object-content?path=' + encodeURIComponent(path);
+}
+
+// ── File Tree (Right Sidebar) ──
+async function reloadFileTree(subject) {
+  const container = document.getElementById('files-tree');
+  if (!subject) {
+    container.innerHTML = '<p class="placeholder-text">No subject selected</p>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/files?subject=' + encodeURIComponent(subject));
+    const data = await res.json();
+    if (!data.entries || data.entries.length === 0) {
+      container.innerHTML = '<p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>';
+      return;
+    }
+    container.innerHTML = renderFileTreeEntries(data.entries, subject);
+  } catch (e) {
+    container.innerHTML = '<p class="placeholder-text">\u2717 Failed to load files</p>';
+  }
+}
+
+function renderFileTreeEntries(entries, subject) {
+  return '<ul class="tree-list">' + entries.map(e => {
+    if (e.type === 'dir') {
+      const childrenHtml = e.children && e.children.length > 0
+        ? renderFileTreeEntries(e.children, subject)
+        : '';
+      return '<li class="tree-folder">' +
+        '<span class="tree-folder-toggle" onclick="toggleFolder(this)">\ud83d\udcc1 ' + e.name + '</span>' +
+        '<div class="tree-children" style="display:none">' + childrenHtml + '</div>' +
+        '</li>';
+    } else if (e.name.endsWith('.md')) {
+      const encPath = encodeURIComponent(e.path);
+      const encSubject = encodeURIComponent(subject);
+      const nameNoExt = e.name.replace(/\.md$/, '');
+      const actions = [
+        '<span class="tree-item-name" onclick="showFilePreview(\'' + e.path + '\')">' + e.name + '</span>'
+      ];
+      if (e.has_original) {
+        const origPath = 'originals/' + subject + '/' + nameNoExt;
+        actions.push(
+          '<a href="/api/original?path=' + encodeURIComponent(origPath) +
+          '" class="tree-item-action" title="View original" target="_blank">\ud83d\udcc4</a>'
+        );
+      }
+      actions.push(
+        '<button class="tree-item-action" onclick="copyFileContent(\'' + e.path + '\')" title="Copy to clipboard">\ud83d\udccb</button>'
+      );
+      actions.push(
+        '<button class="tree-item-action" onclick="downloadFile(\'' + e.path + '\')" title="Download">\u2b07</button>'
+      );
+      return '<li class="tree-file">' + actions.join('') + '</li>';
+    }
+    return '';
+  }).join('') + '</ul>';
+}
+
+function toggleFolder(el) {
+  const children = el.nextElementSibling;
+  if (!children) return;
+  const isHidden = !children.style.display || children.style.display === 'none';
+  children.style.display = isHidden ? 'block' : 'none';
+  const icon = isHidden ? '\ud83d\udcc2' : '\ud83d\udcc1';
+  const name = el.textContent.replace(/^[^\s]+\s/, '');
+  el.textContent = icon + ' ' + name;
+}
+
+// ── File Preview ──
+async function showFilePreview(path) {
+  try {
+    const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    if (!res.ok) {
+      showToast('\u2717 ' + (data.error || 'Failed to load'), 'danger');
+      return;
+    }
+    document.getElementById('preview-placeholder').style.display = 'none';
+    const preview = document.getElementById('file-preview');
+    preview.style.display = 'block';
+    renderMarkdown(document.getElementById('file-preview-content'), data.content);
+  } catch (e) {
+    showToast('\u2717 Failed to load preview', 'danger');
+  }
+}
+
+// ── Copy File Content ──
+async function copyFileContent(path) {
+  try {
+    const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    if (res.ok) {
+      await navigator.clipboard.writeText(data.content);
+      showToast('\u2713 Copied', 'success');
+    } else {
+      showToast('\u2717 ' + (data.error || 'Copy failed'), 'danger');
+    }
+  } catch (e) {
+    showToast('\u2717 Copy failed', 'danger');
+  }
+}
+
+// ── Download File ──
+async function downloadFile(path) {
+  try {
+    const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    if (res.ok) {
+      const blob = new Blob([data.content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = path.split('/').pop();
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('\u2713 Downloaded', 'success');
+    } else {
+      showToast('\u2717 ' + (data.error || 'Download failed'), 'danger');
+    }
+  } catch (e) {
+    showToast('\u2717 Download failed', 'danger');
+  }
+}
+
+// ── reloadAll: Refresh Everything ──
+function reloadAll(subject) {
+  currentSubject = subject;
+  reloadObjectTree(subject);
+  reloadFileTree(subject);
+  // Phase 5 will add: reloadGraph(subject);
+}
+
+// ── Event Listeners ──
+
+// Subject selector change
+document.getElementById('subject-select').addEventListener('change', (e) => {
+  reloadAll(e.target.value);
+});
+
+// Sidebar toggles
 document.getElementById('btn-toggle-left').addEventListener('click', () => {
   document.getElementById('sidebar-left').classList.toggle('collapsed');
 });
@@ -245,7 +553,17 @@ document.getElementById('btn-toggle-right').addEventListener('click', () => {
   document.getElementById('sidebar-right').classList.toggle('collapsed');
 });
 
-console.log('Study UI skeleton loaded — Phase 1');
+// Close file preview
+document.getElementById('btn-close-preview').addEventListener('click', () => {
+  document.getElementById('file-preview').style.display = 'none';
+  document.getElementById('file-preview-content').innerHTML = '';
+  document.getElementById('preview-placeholder').style.display = 'block';
+});
+
+// ── Initialise ──
+loadSubjects();
+
+console.log('Study UI — Phase 3: Sidebars + Navigation');
 </script>
 </body>
 </html>
