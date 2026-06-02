@@ -10,6 +10,7 @@ import re
 import socketserver
 import subprocess
 import threading
+import time
 import urllib.parse
 import yaml
 
@@ -602,14 +603,33 @@ Use the terminal, file, and any other tools needed. Be thorough — the wiki pag
         except (json.JSONDecodeError, ValueError) as e:
             status = "error"
 
-    # If result file missing but agent finished, count by diffing wiki dirs
+    # If result file missing or tokens are zero, try fallback methods
     if status != "complete" or (pages_created == 0 and tokens_used == 0):
-        # Try to extract from agent output as fallback
+        # Fallback 1: parse agent output for token lines
         for line in agent_output.splitlines():
             if "API call #" in line and "total=" in line:
                 m = re.search(r"total=(\d+)", line)
                 if m:
                     tokens_used += int(m.group(1))
+
+        # Fallback 2: read token counts from Hermes sessions DB
+        if tokens_used == 0:
+            try:
+                import sqlite3 as _sq3
+                _db = os.path.expanduser("~/.hermes/sessions.db")
+                if os.path.isfile(_db):
+                    _conn = _sq3.connect(_db)
+                    _cur = _conn.execute(
+                        "SELECT input_tokens + output_tokens + COALESCE(cache_read_tokens,0) + COALESCE(cache_write_tokens,0) + COALESCE(reasoning_tokens,0) "
+                        "FROM sessions WHERE started_at > ? ORDER BY started_at DESC LIMIT 1",
+                        (time.time() - 660,)  # within last 11 min (ingest timeout)
+                    )
+                    _row = _cur.fetchone()
+                    _conn.close()
+                    if _row and _row[0]:
+                        tokens_used = int(_row[0])
+            except Exception:
+                pass  # non-critical, keep tokens_used=0
 
     _ingest_result = {
         "pages_created": pages_created,
