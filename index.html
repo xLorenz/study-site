@@ -96,7 +96,10 @@ aside[data-collapsed="true"]{border-color:transparent}
  flex-shrink:0;
  position:relative;
  z-index:5;
- transition:background .15s}
+ transition:background .15s;
+ touch-action:none}
+.resize-handle::before{
+ content:'';position:absolute;top:0;bottom:0;left:-14px;width:32px}
 .resize-handle:hover,
 .resize-handle.active{background:var(--accent)}
 
@@ -115,6 +118,14 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
 .btn-update{width:100%;padding:var(--space-2) var(--space-3);font-size:var(--font-size-sm);font-weight:600;border:none;border-radius:var(--radius-md);cursor:pointer;background:#eab308;color:#1a1a2e;transition:opacity .2s}
 .btn-update:hover:not(:disabled){opacity:.85}
 .btn-update:disabled{opacity:.4;cursor:not-allowed;background:var(--surface-3);color:var(--text-dim)}
+
+/* ── Ingest Progress Bar ── */
+.ingest-progress-container{width:100%;padding:var(--space-2) var(--space-3)}
+.ingest-progress-track{width:100%;height:6px;background:var(--border-2);border-radius:3px;overflow:hidden;margin-bottom:var(--space-1)}
+.ingest-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--violet));border-radius:3px;transition:width .4s ease}
+.ingest-progress-fill.done{background:linear-gradient(90deg,var(--success),#16a34a)}
+.ingest-progress-fill.error{background:var(--danger)}
+.ingest-progress-text{font-size:var(--font-size-xs);color:var(--text-dim);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ── Green/Red File Markers ── */
 .tree-item-green{position:relative;background:rgba(34,197,94,.12);border-radius:var(--radius-sm)}
@@ -176,7 +187,9 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
 #preview-resize-handle{height:4px;cursor:row-resize;
  background:transparent;flex-shrink:0;
  position:relative;z-index:5;transition:background .15s;
- width:100%}
+ width:100%;touch-action:none}
+#preview-resize-handle::before{
+ content:'';position:absolute;left:0;right:0;top:-14px;height:32px}
 #preview-resize-handle:hover,
 #preview-resize-handle.active{background:var(--accent)}
 #file-preview{flex:1;padding:var(--space-3);
@@ -240,13 +253,16 @@ pre:hover .copy-btn{opacity:1}
  width:100%;height:100%}
 #main-area .placeholder span{font-size:32px;display:block;margin-bottom:var(--space-3)}
 #main-area .placeholder p{font-size:var(--font-size-base)}
-#graph-canvas{display:none;width:100%;height:100%;cursor:grab}
+#graph-canvas{display:none;width:100%;height:100%;cursor:grab;position:absolute;top:0;left:0;z-index:1}
 #graph-canvas.dragging{cursor:grabbing}
-#object-frame{display:none;width:100%;height:100%;border:none;background:#fff}
+#object-frame{display:none;width:100%;height:100%;border:none;background:#fff;z-index:10}
 
-/* ── Ingest Overlay ── */
+/* ── Graph Wrap (canvas + overlay container) ── */
+#graph-wrap{position:relative;width:100%;height:100%;z-index:1}
+
+/* ── Ingest Overlay (only blocks graph canvas, not object frame) ── */
 .ingest-overlay{
- position:absolute;inset:0;z-index:50;
+ position:absolute;inset:0;z-index:5;
  display:flex;flex-direction:column;
  align-items:center;justify-content:center;
  background:rgba(15,15,25,0.65);
@@ -261,6 +277,37 @@ pre:hover .copy-btn{opacity:1}
  margin-bottom:var(--space-3)}
 @keyframes spinner-rotate{to{transform:rotate(360deg)}}
 .ingest-text{color:var(--text-bright);font-size:var(--font-size-base);font-weight:500}
+
+/* ── Sidebar Overlay Mode (Graph View) ── */
+#sidebar-left.sidebar-overlay {
+ position: absolute !important;
+ left: 0 !important;
+ top: 0 !important;
+ bottom: 0 !important;
+ z-index: 20 !important;
+ box-shadow: var(--shadow-lg);
+}
+#sidebar-right.sidebar-overlay {
+ position: absolute !important;
+ right: 0 !important;
+ top: 0 !important;
+ bottom: 0 !important;
+ z-index: 20 !important;
+ box-shadow: var(--shadow-lg);
+}
+#resize-handle-left.sidebar-overlay {
+ position: absolute !important;
+ top: 0 !important;
+ bottom: 0 !important;
+ z-index: 21 !important;
+}
+#resize-handle-right.sidebar-overlay {
+ position: absolute !important;
+ top: 0 !important;
+ bottom: 0 !important;
+ z-index: 21 !important;
+}
+
 /* ── Object Back Button ── */
 #object-back-btn{
  position:absolute;top:var(--space-3);left:var(--space-3);
@@ -385,7 +432,13 @@ pre:hover .copy-btn{opacity:1}
 
  <!-- Main Area — Graph / Object Viewer -->
  <main id="main-area">
- <canvas id="graph-canvas"></canvas>
+ <div id="graph-wrap">
+  <canvas id="graph-canvas"></canvas>
+  <div id="ingest-overlay" class="ingest-overlay hidden">
+   <div class="ingest-spinner"></div>
+   <div class="ingest-text">Ingesting…</div>
+  </div>
+ </div>
  <iframe id="object-frame" sandbox="allow-scripts allow-same-origin"></iframe>
  <div class="placeholder" id="main-placeholder">
  <span>📚</span>
@@ -394,10 +447,6 @@ pre:hover .copy-btn{opacity:1}
  </div>
  <div id="graph-tooltip"></div>
  <button id="object-back-btn">← Back to graph</button>
- <div id="ingest-overlay" class="ingest-overlay hidden">
-  <div class="ingest-spinner"></div>
-  <div class="ingest-text">Ingesting…</div>
- </div>
 </main>
 
  <!-- Right Resize Handle -->
@@ -415,9 +464,13 @@ pre:hover .copy-btn{opacity:1}
   </div>
   </div>
 
-  <!-- Update Wiki Button -->
-  <div class="sidebar-section">
+  <!-- Update Wiki Button / Progress Bar -->
+  <div class="sidebar-section" id="update-wiki-section">
    <button id="update-wiki-btn" class="btn btn-update" onclick="updateWiki()" disabled title="No pending changes">&#9889; Update Wiki</button>
+   <div id="ingest-progress" class="ingest-progress-container" style="display:none">
+    <div class="ingest-progress-track"><div id="ingest-progress-fill" class="ingest-progress-fill"></div></div>
+    <div id="ingest-progress-text" class="ingest-progress-text">Preparing…</div>
+   </div>
    <div id="update-wiki-summary" style="display:none"></div>
   </div>
 
@@ -520,9 +573,9 @@ async function loadSubjects() {
  select.appendChild(opt);
  });
  if (data.subjects.length > 0) {
- select.value = data.subjects[0].name;
- reloadAll(data.subjects[0].name);
- }
+     select.value = data.subjects[0].name;
+     await reloadAll(data.subjects[0].name);
+   }
  populateSearchFilter();
  } catch (e) {
  showToast('\u2717 Failed to load subjects', 'danger');
@@ -562,6 +615,16 @@ function showObject(path) {
  stopGraphLoop();
  document.getElementById('graph-canvas').style.display = 'none';
  document.getElementById('main-placeholder').style.display = 'none';
+ 
+ const sidebarLeft = document.getElementById('sidebar-left');
+ const sidebarRight = document.getElementById('sidebar-right');
+ const handleLeft = document.getElementById('resize-handle-left');
+ const handleRight = document.getElementById('resize-handle-right');
+ sidebarLeft.classList.remove('sidebar-overlay');
+ sidebarRight.classList.remove('sidebar-overlay');
+ handleLeft.classList.remove('sidebar-overlay');
+ handleRight.classList.remove('sidebar-overlay');
+
  const frame = document.getElementById('object-frame');
  frame.style.display = 'block';
  frame.src = '/api/object-content?path=' + encodeURIComponent(path);
@@ -572,11 +635,29 @@ function hideObject() {
  document.getElementById('object-frame').style.display = 'none';
  document.getElementById('object-frame').src = '';
  document.getElementById('object-back-btn').style.display = 'none';
+ 
+ const sidebarLeft = document.getElementById('sidebar-left');
+ const sidebarRight = document.getElementById('sidebar-right');
+ const handleLeft = document.getElementById('resize-handle-left');
+ const handleRight = document.getElementById('resize-handle-right');
+ 
  if (currentSubject) {
+  sidebarLeft.classList.add('sidebar-overlay');
+  sidebarRight.classList.add('sidebar-overlay');
+  handleLeft.classList.add('sidebar-overlay');
+  handleRight.classList.add('sidebar-overlay');
+  
+  syncOverlayHandles();
+  
   const canvas = document.getElementById('graph-canvas');
   canvas.style.display = 'block';
   resizeGraphCanvas();
  } else {
+  sidebarLeft.classList.remove('sidebar-overlay');
+  sidebarRight.classList.remove('sidebar-overlay');
+  handleLeft.classList.remove('sidebar-overlay');
+  handleRight.classList.remove('sidebar-overlay');
+  
   document.getElementById('main-placeholder').style.display = 'flex';
  }
  resumeGraphLoop();
@@ -819,76 +900,193 @@ function refreshUpdateWikiButton(state) {
  btn.title = hasPending ? 'Update wiki with pending changes' : 'No pending changes';
 }
 
+// ── Ingest Progress Bar ──
+const INGEST_PHASES = [
+  { pct: 5,  text: 'Deleting files…' },
+  { pct: 15, text: 'LLM extracting sections…' },
+  { pct: 50, text: 'Building wiki pages…' },
+  { pct: 85, text: 'Finalizing…' },
+];
+
+let _progressInterval = null;
+let _pendingTotal = 0;  // total files queued for ingest (set at start)
+
+function showIngestProgress() {
+  const btn = document.getElementById('update-wiki-btn');
+  const bar = document.getElementById('ingest-progress');
+  if (btn) btn.style.display = 'none';
+  if (bar) bar.style.display = 'block';
+  setIngestProgress(0, 'Preparing…');
+}
+
+function setIngestProgress(pct, text) {
+  const fill = document.getElementById('ingest-progress-fill');
+  const label = document.getElementById('ingest-progress-text');
+  if (fill) {
+    fill.style.width = Math.min(pct, 100) + '%';
+    fill.classList.remove('done', 'error');
+  }
+  if (label) label.textContent = text;
+}
+
+function finishIngestProgress(success) {
+  const fill = document.getElementById('ingest-progress-fill');
+  const label = document.getElementById('ingest-progress-text');
+  if (fill) {
+    fill.style.width = '100%';
+    fill.classList.add(success ? 'done' : 'error');
+  }
+  if (label) label.textContent = success ? 'Done ✓' : 'Failed ✗';
+  clearInterval(_progressInterval);
+  _progressInterval = null;
+  setTimeout(() => {
+    const btn = document.getElementById('update-wiki-btn');
+    const bar = document.getElementById('ingest-progress');
+    if (btn) { btn.style.display = ''; btn.textContent = '⚡ Update Wiki'; }
+    if (bar) bar.style.display = 'none';
+    if (fill) { fill.style.width = '0%'; fill.classList.remove('done', 'error'); }
+    if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+  }, 1200);
+}
+
+/**
+ * Compute ingest progress from real backend state.
+ * Uses live remaining count from /api/status to drive the progress bar
+ * — not time elapsed and not end-state pages_created.
+ * @param {object} status - response from GET /api/status
+ * @returns {{pct: number, text: string}}
+ */
+function _computeRealProgress(status) {
+  // _pendingTotal is the initial count of files to ingest (set from update-wiki response).
+  // status.pending_total is the live remaining count (re-counted by the server on each poll).
+  const initialTotal = _pendingTotal;
+  const remaining = status.pending_total || 0;
+  const done = Math.max(0, initialTotal - remaining);  // files ingested so far
+
+  if (initialTotal === 0) {
+    // Edge case: no files to ingest — stay at 15%
+    return { pct: 15, text: 'Starting…' };
+  }
+
+  const fraction = Math.min(done / initialTotal, 1);
+  if (done === 0) {
+    return { pct: 15, text: 'LLM extracting sections…' };
+  }
+  if (fraction < 0.5) {
+    const pct = 15 + (50 - 15) * (fraction / 0.5);
+    return { pct: pct, text: 'Building wiki pages…' };
+  }
+  const pct = 50 + (85 - 50) * ((fraction - 0.5) / 0.5);
+  return { pct: pct, text: 'Finalizing…' };
+}
+
+/**
+ * Start real-data-driven progress animation.
+ * Runs on every poll tick; computes target from backend state and eases toward it.
+ * @param {object} status - latest /api/status response
+ */
+function updateIngestProgressFromStatus(status) {
+  const { pct, text } = _computeRealProgress(status);
+  const fill = document.getElementById('ingest-progress-fill');
+  if (!fill) return;
+  // Write target atomically so the animation interval reads consistent data
+  fill.dataset.targetPct = pct;
+  fill.dataset.targetText = text;
+  const current = parseFloat(fill.style.width) || 0;
+  // Smooth interpolation: 15% per tick (100ms interval ≈ 6.7s full animation)
+  if (Math.abs(current - pct) > 0.3) {
+    const next = current + (pct - current) * 0.15;
+    setIngestProgress(next, text);
+  } else {
+    setIngestProgress(pct, text);
+  }
+}
+
 async function updateWiki() {
- const subject = currentSubject;
- const btn = document.getElementById('update-wiki-btn');
- btn.disabled = true;
- btn.textContent = '⏳ Updating…';
- showIngestOverlay();
-
- let initialData = null;
- try {
-  const res = await fetch('/api/update-wiki', {
-   method: 'POST',
-   headers: {'Content-Type': 'application/json'},
-   body: JSON.stringify({subject})
-  });
-  initialData = await res.json();
-  if (!res.ok) {
-   hideIngestOverlay();
-   showToast('✗ ' + (initialData.detail || initialData.error || 'Update failed'), 'danger');
-   btn.textContent = '⚡ Update Wiki';
-   if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
-   return;
-  }
-  showToast(initialData.message || 'Delete complete — LLM ingest started', 'info');
- } catch (e) {
-  hideIngestOverlay();
-  showToast('✗ Update failed: ' + e.message, 'danger');
-  btn.textContent = '⚡ Update Wiki';
-  if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
-  return;
- }
-
- // Poll /api/status for LLM ingest result
- const start = Date.now();
- const maxWaitMs = 600000; // 10 min
- const poll = setInterval(async () => {
+  const subject = currentSubject;
+  showIngestProgress();
+  let initialData = null;
   try {
-   const r = await fetch('/api/status');
-   const s = await r.json();
-   if (s.ingest_running) {
-    const elapsed = Math.round((Date.now() - start) / 1000);
-    const ov = document.getElementById('ingest-overlay');
-    if (ov) ov.querySelector('.ingest-text').textContent = `LLM ingest running… (${elapsed}s)`;
-    if (Date.now() - start > maxWaitMs) {
-     clearInterval(poll);
-     hideIngestOverlay();
-     showToast('✗ LLM ingest timed out', 'danger');
-     btn.textContent = '⚡ Update Wiki';
-     if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+    const res = await fetch('/api/update-wiki', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({subject})
+    });
+    initialData = await res.json();
+    if (!res.ok) {
+      finishIngestProgress(false);
+      showToast('✗ ' + (initialData.detail || initialData.error || 'Update failed'), 'danger');
+      return;
     }
-    return;
-   }
-   clearInterval(poll);
-   hideIngestOverlay();
-   btn.textContent = '⚡ Update Wiki';
-   if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+    showToast(initialData.message || 'Delete complete — LLM ingest started', 'info');
 
-   // Merge initial delete info with final result
-   const finalData = Object.assign({}, initialData || {}, s.result || {});
-   if (s.result && s.result.status === 'error') {
-    showToast('✗ LLM ingest error: ' + (s.result.message || 'unknown'), 'danger');
-   } else {
-    showWikiResults(finalData);
-   }
-   reloadAll(subject);
+    // Store total files pending ingest so progress bar can compute real fraction.
+    // Immediately advance bar past "Deleting files…" state — server delete was
+    // synchronous and already complete before we got here. The bar jumps to 15%
+    // (matching _computeRealProgress contract) and the poll loop takes over from there.
+    _pendingTotal = initialData.pending_total || 0;
+    setIngestProgress(15, 'Starting…');
   } catch (e) {
-   clearInterval(poll);
-   hideIngestOverlay();
-   showToast('✗ Status poll failed: ' + e.message, 'danger');
+    finishIngestProgress(false);
+    showToast('✗ Update failed: ' + e.message, 'danger');
+    return;
   }
- }, 2000);
+
+  // Start smooth animation interval — drives progress bar toward real target
+  // from backend on every poll tick. Target is updated by the poll loop below.
+  _progressInterval = setInterval(() => {
+    // Target is written by the poll loop; read current state and ease toward it
+    const fill = document.getElementById('ingest-progress-fill');
+    if (!fill) return;
+    const current = parseFloat(fill.style.width) || 0;
+    const target = parseFloat(fill.dataset.targetPct) || current;
+    if (Math.abs(current - target) > 0.3) {
+      setIngestProgress(current + (target - current) * 0.15, fill.dataset.targetText || '');
+    } else {
+      setIngestProgress(target, fill.dataset.targetText || '');
+    }
+  }, 100);
+
+  // Poll /api/status for LLM ingest result
+  const pollStart = Date.now();
+  const maxWaitMs = 600000; // 10 min
+  poll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status');
+      const s = await r.json();
+      if (s.ingest_running) {
+        // Update bar target from real backend data
+        updateIngestProgressFromStatus(s);
+        if (Date.now() - pollStart > maxWaitMs) {
+          clearInterval(poll);
+          clearInterval(_progressInterval);
+          _progressInterval = null;
+          finishIngestProgress(false);
+          showToast('✗ LLM ingest timed out', 'danger');
+        }
+        return;
+      }
+      clearInterval(poll);
+      clearInterval(_progressInterval);
+      _progressInterval = null;
+
+      // Merge initial delete info with final result
+      const finalData = Object.assign({}, initialData || {}, s.result || {});
+      const ok = !(s.result && s.result.status === 'error');
+      finishIngestProgress(ok);
+
+      if (!ok) {
+        showToast('✗ LLM ingest error: ' + (s.result.message || 'unknown'), 'danger');
+      } else {
+        showWikiResults(finalData);
+      }
+      await reloadAll(subject);
+    } catch (e) {
+      clearInterval(poll);
+      finishIngestProgress(false);
+      showToast('✗ Status poll failed: ' + e.message, 'danger');
+    }
+  }, 2000);
 }
 
 function showWikiResults(data) {
@@ -913,28 +1111,19 @@ function closeWikiResults() {
  if (el) { el.remove(); }
 }
 
-function showIngestOverlay() {
- const overlay = document.getElementById('ingest-overlay');
- if (overlay) {
-  overlay.querySelector('.ingest-text').textContent = 'Updating wiki…';
-  overlay.classList.remove('hidden');
- }
-}
-
-function hideIngestOverlay() {
- const overlay = document.getElementById('ingest-overlay');
- if (overlay) overlay.classList.add('hidden');
-}
-
 // ── reloadAll: Refresh Everything ──
-function reloadAll(subject) {
- currentSubject = subject;
- reloadObjectTree(subject);
- reloadFileTree(subject);
+async function reloadAll(subject) {
+  currentSubject = subject;
+  await reloadObjectTree(subject);
+  await reloadFileTree(subject);
 
  const placeholder = document.getElementById('main-placeholder');
  const frame = document.getElementById('object-frame');
  const canvas = document.getElementById('graph-canvas');
+ const sidebarLeft = document.getElementById('sidebar-left');
+ const sidebarRight = document.getElementById('sidebar-right');
+ const handleLeft = document.getElementById('resize-handle-left');
+ const handleRight = document.getElementById('resize-handle-right');
 
  frame.style.display = 'none';
  frame.src = '';
@@ -942,13 +1131,43 @@ function reloadAll(subject) {
  document.getElementById('object-back-btn').style.display = 'none';
 
  if (subject) {
- placeholder.style.display = 'none';
- canvas.style.display = 'block';
- reloadGraph(subject);
+  placeholder.style.display = 'none';
+  canvas.style.display = 'block';
+  
+  sidebarLeft.classList.add('sidebar-overlay');
+  sidebarRight.classList.add('sidebar-overlay');
+  handleLeft.classList.add('sidebar-overlay');
+  handleRight.classList.add('sidebar-overlay');
+  
+  syncOverlayHandles();
+  
+  reloadGraph(subject);
  } else {
- placeholder.style.display = 'flex';
- canvas.style.display = 'none';
- stopGraphLoop();
+  placeholder.style.display = 'flex';
+  canvas.style.display = 'none';
+  
+  sidebarLeft.classList.remove('sidebar-overlay');
+  sidebarRight.classList.remove('sidebar-overlay');
+  handleLeft.classList.remove('sidebar-overlay');
+  handleRight.classList.remove('sidebar-overlay');
+  
+  stopGraphLoop();
+ }
+}
+
+// ── Sync Overlay Handle Positions ──
+function syncOverlayHandles() {
+ const sl = document.getElementById('sidebar-left');
+ const sr = document.getElementById('sidebar-right');
+ const hl = document.getElementById('resize-handle-left');
+ const hr = document.getElementById('resize-handle-right');
+ if (sl.classList.contains('sidebar-overlay')) {
+  const w = sl.dataset.collapsed === 'true' ? 0 : (parseInt(sl.style.width) || 240);
+  hl.style.left = w + 'px';
+ }
+ if (sr.classList.contains('sidebar-overlay')) {
+  const w = sr.dataset.collapsed === 'true' ? 0 : (parseInt(sr.style.width) || 240);
+  hr.style.right = w + 'px';
  }
 }
 
@@ -957,13 +1176,14 @@ function toggleSidebar(id) {
  const s = document.getElementById(id);
  const collapsed = s.dataset.collapsed === 'true';
  if (collapsed) {
- s.style.width = s.dataset.expandedWidth + 'px';
- s.dataset.collapsed = 'false';
+  s.style.width = s.dataset.expandedWidth + 'px';
+  s.dataset.collapsed = 'false';
  } else {
- s.dataset.expandedWidth = parseInt(s.style.width) || 240;
- s.style.width = '0px';
- s.dataset.collapsed = 'true';
+  s.dataset.expandedWidth = parseInt(s.style.width) || 240;
+  s.style.width = '0px';
+  s.dataset.collapsed = 'true';
  }
+ syncOverlayHandles();
 }
 
 // ── Sidebar Resize ──
@@ -990,6 +1210,7 @@ function initResize(handleId, sidebarId, isLeft) {
    const maxW = window.innerWidth * 0.5;
    const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
    sidebar.style.width = newWidth + 'px';
+   syncOverlayHandles();
   };
 
   const onPointerUp = () => {
@@ -1732,13 +1953,21 @@ function startIngestPoll() {
    const uploadInput = document.getElementById('file-input');
    const uploadZone = document.getElementById('upload-zone');
    if (data.ingest_running) {
-    overlay.classList.remove('hidden');
+    const frame = document.getElementById('object-frame');
+    if (frame && frame.style.display === 'block') {
+     overlay.classList.add('hidden');
+     overlay.style.pointerEvents = 'none';
+    } else {
+     overlay.classList.remove('hidden');
+     overlay.style.pointerEvents = '';
+    }
     if (uploadInput) uploadInput.disabled = true;
     if (uploadZone) uploadZone.style.pointerEvents = 'none';
     // Disable all delete buttons
     document.querySelectorAll('.delete-btn').forEach(b => b.disabled = true);
    } else {
     overlay.classList.add('hidden');
+    overlay.style.pointerEvents = '';
     if (uploadInput) uploadInput.disabled = false;
     if (uploadZone) uploadZone.style.pointerEvents = '';
     document.querySelectorAll('.delete-btn').forEach(b => b.disabled = false);

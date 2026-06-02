@@ -22,6 +22,8 @@ PORT = 8081
 _ingest_running = False
 _ingest_queue = []  # list of tasks waiting for ingest
 _ingest_result = None  # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
+_ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
+_ingest_current_subject = None  # subject currently being ingested (used for live progress)
 
 with open(os.path.join(STUDY_DIR, "subject_themes.json")) as f:
     SUBJECT_THEMES = json.load(f)
@@ -459,6 +461,18 @@ def _read_ingested(subject):
     except (json.JSONDecodeError, OSError):
         return set()
 
+
+def _get_remaining_ingest(subject):
+    """Return list of raw .md files NOT yet ingested (excluding .ingested.json itself)."""
+    raw_dir = os.path.join(VAULT, "subjects", subject, "raw")
+    if not os.path.isdir(raw_dir):
+        return []
+    ingested = _read_ingested(subject)
+    return [
+        f for f in sorted(os.listdir(raw_dir))
+        if f.endswith(".md") and f != ".ingested.json" and f not in ingested
+    ]
+
 def _write_ingested(subject, ingested):
     """Write .ingested.json for a subject."""
     from datetime import datetime
@@ -505,7 +519,7 @@ def _run_llm_ingest_thread(subject):
     writes a result file. This thread waits for the agent to finish, then loads
     the result into `_ingest_result` and clears `_ingest_running`.
     """
-    global _ingest_running, _ingest_result
+    global _ingest_running, _ingest_result, _ingest_current_subject
     result_path = "/tmp/study_ingest_result.json"
     # Clean any prior result
     try:
@@ -534,6 +548,7 @@ def _run_llm_ingest_thread(subject):
             "status": "complete",
         }
         _ingest_running = False
+        _ingest_current_subject = None
         _log_action(subject, "UPDATE_WIKI_INGEST", "no files to ingest")
         return
 
@@ -642,6 +657,7 @@ Use the terminal, file, and any other tools needed. Be thorough — the wiki pag
         "status": status,
     }
     _ingest_running = False
+    _ingest_current_subject = None
     _log_action(subject, "UPDATE_WIKI_INGEST",
                 f"{pages_created} pages, {tokens_used} tokens, model={model}")
 
@@ -1268,9 +1284,15 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
     def _api_status(self):
         """GET /api/status — current server state (ingest lock, queue, last result)."""
-        global _ingest_running, _ingest_result
+        global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_total_pending
+        # If ingest is running, re-count remaining files live from .ingested.json
+        # so the progress bar gets real mid-run feedback (not just initial count).
+        if _ingest_running and _ingest_current_subject:
+            remaining = len(_get_remaining_ingest(_ingest_current_subject))
+            _ingest_total_pending = remaining
         self._send_json(200, {
             "ingest_running": _ingest_running,
+            "pending_total": _ingest_total_pending,
             "queue_length": len(_ingest_queue),
             "result": _ingest_result,
         })
@@ -1364,7 +1386,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
     def _api_update_wiki(self):
         """POST /api/update-wiki — cascade delete sync, LLM ingest async."""
-        global _ingest_running, _ingest_result
+        global _ingest_running, _ingest_result, _ingest_current_subject
         if _ingest_running:
             self._send_json(503, {"error": "ingest_in_progress", "detail": "Wait for current operation to finish"})
             return
@@ -1478,7 +1500,15 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             _log_action(subject, "UPDATE_WIKI_DELETE",
                         f"{results['files_deleted']} deleted, starting LLM ingest")
 
-            # Step 3: Spawn LLM ingest thread (async)
+            # Step 3: Count files pending ingest and spawn LLM thread (async)
+            if os.path.isdir(raw_dir):
+                uningested = [f for f in os.listdir(raw_dir)
+                              if f.endswith(".md") and f != ".ingested.json" and f not in ingested]
+            else:
+                uningested = []
+            global _ingest_total_pending, _ingest_current_subject
+            _ingest_total_pending = len(uningested)
+            _ingest_current_subject = subject
             _ingest_running = True
             _ingest_result = None
             t = threading.Thread(target=_run_llm_ingest_thread,
@@ -1488,6 +1518,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(202, {
                 **results,
                 "ingest_started": True,
+                "pending_total": len(uningested),
                 "message": (f"Deleted {results['files_deleted']} files. LLM ingest running in background...")
             })
         except Exception as e:
