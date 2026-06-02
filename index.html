@@ -107,9 +107,35 @@ aside[data-collapsed="true"]{border-color:transparent}
  text-transform:uppercase;letter-spacing:1px;margin-bottom:var(--space-2)}
 .sidebar-section.grow{flex:1;overflow-y:auto;flex-shrink:1;min-height:0}
 .placeholder-text{font-size:var(--font-size-sm);color:var(--text-dim);
- padding:var(--space-4);text-align:center;
- background:var(--surface-2);border-radius:var(--radius-md);
- border:1px dashed var(--border-2);margin:var(--space-2) 0}
+padding:var(--space-4);text-align:center;
+background:var(--surface-2);border-radius:var(--radius-md);
+border:1px dashed var(--border-2);margin:var(--space-2) 0}
+
+/* ── Update Wiki Button ── */
+.btn-update{width:100%;padding:var(--space-2) var(--space-3);font-size:var(--font-size-sm);font-weight:600;border:none;border-radius:var(--radius-md);cursor:pointer;background:#eab308;color:#1a1a2e;transition:opacity .2s}
+.btn-update:hover:not(:disabled){opacity:.85}
+.btn-update:disabled{opacity:.4;cursor:not-allowed;background:var(--surface-3);color:var(--text-dim)}
+
+/* ── Green/Red File Markers ── */
+.tree-item-green{position:relative;background:rgba(34,197,94,.12);border-radius:var(--radius-sm)}
+.tree-item-green::after{content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:6px;height:6px;border-radius:50%;background:#22c55e}
+.tree-item-red{background:rgba(239,68,68,.12);border-radius:var(--radius-sm)}
+.tree-folder-green>.tree-folder-toggle::before{content:'🟢 '}
+.tree-folder-red>.tree-folder-toggle::before{content:'🔴 '}
+.tree-folder-both>.tree-folder-toggle::before{content:'🟢🔴 '}
+.delete-btn.undo-btn{color:#22c55e}
+.delete-btn.undo-btn:hover{color:#4ade80}
+
+/* ── Wiki Update Results Popup ── */
+.wiki-results-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6)}
+.wiki-results-card{background:var(--surface-1);border:1px solid var(--border-2);border-radius:var(--radius-lg);padding:24px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.wiki-results-card h3{margin:0 0 16px 0;font-size:var(--font-size-lg)}
+.wiki-results-row{display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-sm);border-bottom:1px solid var(--border-1)}
+.wiki-results-row:last-child{border-bottom:none}
+.wiki-results-row .label{color:var(--text-dim)}
+.wiki-results-row .value{font-weight:600;color:var(--text-bright)}
+.wiki-results-card .btn-close{margin-top:16px;width:100%;padding:var(--space-2);border:1px solid var(--border-2);border-radius:var(--radius-md);background:transparent;color:var(--text-bright);cursor:pointer;font-size:var(--font-size-sm)}
+.wiki-results-card .btn-close:hover{background:var(--surface-2)}
 
 /* ── Tree Lists ── */
 .tree-list{list-style:none;font-size:var(--font-size-sm)}
@@ -135,6 +161,7 @@ aside[data-collapsed="true"]{border-color:transparent}
  color:var(--text-dim);font-size:var(--font-size-sm);
  padding:0 2px;transition:color .15s;text-decoration:none}
 .tree-item-action:hover{color:var(--text-bright)}
+.tree-item-action.delete-btn:hover{color:#f87171}
 
 /* ── Type Badges ── */
 .type-badge{display:inline-block;padding:1px 5px;
@@ -217,14 +244,50 @@ pre:hover .copy-btn{opacity:1}
 #graph-canvas.dragging{cursor:grabbing}
 #object-frame{display:none;width:100%;height:100%;border:none;background:#fff}
 
+/* ── Ingest Overlay ── */
+.ingest-overlay{
+ position:absolute;inset:0;z-index:50;
+ display:flex;flex-direction:column;
+ align-items:center;justify-content:center;
+ background:rgba(15,15,25,0.65);
+ backdrop-filter:blur(6px);
+ -webkit-backdrop-filter:blur(6px);
+ transition:opacity .3s}
+.ingest-overlay.hidden{display:none}
+.ingest-spinner{
+ width:36px;height:36px;border:3px solid var(--border-2);
+ border-top-color:var(--accent);
+ border-radius:50%;animation:spinner-rotate .8s linear infinite;
+ margin-bottom:var(--space-3)}
+@keyframes spinner-rotate{to{transform:rotate(360deg)}}
+.ingest-text{color:var(--text-bright);font-size:var(--font-size-base);font-weight:500}
+/* ── Object Back Button ── */
+#object-back-btn{
+ position:absolute;top:var(--space-3);left:var(--space-3);
+ z-index:calc(var(--z-sidebar) + 1);
+ background:var(--surface);border:1px solid var(--border-2);
+ border-radius:var(--radius-md);padding:var(--space-1) var(--space-3);
+ color:var(--text);font-size:var(--font-size-sm);
+ cursor:pointer;transition:background .15s,color .15s;
+ display:none;align-items:center;gap:var(--space-1)}
+#object-back-btn:hover{background:var(--border-2);color:var(--text-bright)}
+
 /* ── Graph Tooltip ── */
 #graph-tooltip{
  position:absolute;pointer-events:none;
  background:var(--surface);border:1px solid var(--border-2);
- border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);
+ border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);
  font-size:var(--font-size-xs);color:var(--text-bright);
  box-shadow:var(--shadow-md);display:none;z-index:var(--z-overlay);
- white-space:nowrap}
+ white-space:nowrap;line-height:1.6}
+#graph-tooltip .node-type-badge{
+ display:inline-block;padding:0 5px;border-radius:4px;
+ font-size:10px;font-weight:600;text-transform:uppercase;
+ background:var(--accent);color:var(--surface)}
+#graph-tooltip .node-links-badge{
+ display:inline-block;padding:0 5px;border-radius:4px;
+ font-size:10px;font-weight:600;
+ background:var(--primary);color:var(--surface)}
 
 /* ── Search Bar ── */
 #search-bar{
@@ -330,7 +393,12 @@ pre:hover .copy-btn{opacity:1}
  <p style="font-size:var(--font-size-xs);margin-top:var(--space-1);color:var(--text-dim)">or select a study object to view it here</p>
  </div>
  <div id="graph-tooltip"></div>
- </main>
+ <button id="object-back-btn">← Back to graph</button>
+ <div id="ingest-overlay" class="ingest-overlay hidden">
+  <div class="ingest-spinner"></div>
+  <div class="ingest-text">Ingesting…</div>
+ </div>
+</main>
 
  <!-- Right Resize Handle -->
  <div id="resize-handle-right" class="resize-handle"></div>
@@ -344,11 +412,18 @@ pre:hover .copy-btn{opacity:1}
  <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
  <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
  <label for="file-input" class="btn">Choose Files</label>
- </div>
- </div>
- <!-- Files (middle, grows) -->
- <div class="sidebar-section grow">
- <h3>Files</h3>
+  </div>
+  </div>
+
+  <!-- Update Wiki Button -->
+  <div class="sidebar-section">
+   <button id="update-wiki-btn" class="btn btn-update" onclick="updateWiki()" disabled title="No pending changes">&#9889; Update Wiki</button>
+   <div id="update-wiki-summary" style="display:none"></div>
+  </div>
+
+  <!-- Files (middle, grows) -->
+  <div class="sidebar-section grow">
+   <h3>Files</h3>
  <div id="files-tree">
  <p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>
  </div>
@@ -490,61 +565,110 @@ function showObject(path) {
  const frame = document.getElementById('object-frame');
  frame.style.display = 'block';
  frame.src = '/api/object-content?path=' + encodeURIComponent(path);
+ document.getElementById('object-back-btn').style.display = 'flex';
 }
+
+function hideObject() {
+ document.getElementById('object-frame').style.display = 'none';
+ document.getElementById('object-frame').src = '';
+ document.getElementById('object-back-btn').style.display = 'none';
+ if (currentSubject) {
+  const canvas = document.getElementById('graph-canvas');
+  canvas.style.display = 'block';
+  resizeGraphCanvas();
+ } else {
+  document.getElementById('main-placeholder').style.display = 'flex';
+ }
+ resumeGraphLoop();
+}
+
+document.getElementById('object-back-btn').addEventListener('click', hideObject);
 
 // ── File Tree (Right Sidebar) ──
 async function reloadFileTree(subject) {
  const container = document.getElementById('files-tree');
- if (!subject) {
- container.innerHTML = '<p class="placeholder-text">No subject selected</p>';
- return;
- }
+ if (!subject) { container.innerHTML = '<p class="placeholder-text">No subject selected</p>'; return; }
  try {
- const res = await fetch('/api/files?subject=' + encodeURIComponent(subject));
- const data = await res.json();
- if (!data.entries || data.entries.length === 0) {
- container.innerHTML = '<p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>';
- return;
- }
- container.innerHTML = renderFileTreeEntries(data.entries, subject);
+  const [filesRes, stateRes] = await Promise.all([
+   fetch('/api/files?subject=' + encodeURIComponent(subject)),
+   fetch('/api/pending-state?subject=' + encodeURIComponent(subject))
+  ]);
+  const files = await filesRes.json();
+  const state = await stateRes.json();
+  window._wikiState = state;
+  if (!files.entries || files.entries.length === 0) {
+   container.innerHTML = '<p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>';
+   return;
+  }
+  container.innerHTML = renderFileTreeEntries(files.entries, subject, state);
+  refreshUpdateWikiButton(state);
  } catch (e) {
- container.innerHTML = '<p class="placeholder-text">\u2717 Failed to load files</p>';
+  container.innerHTML = '<p class="placeholder-text">✗ Failed to load files</p>';
  }
 }
 
-function renderFileTreeEntries(entries, subject) {
+function renderFileTreeEntries(entries, subject, state) {
+ const ingested = state && state.ingested ? state.ingested : [];
+ const pending = state && state.pending_deletes ? state.pending_deletes : [];
+ const rawFiles = state && state.raw_files ? state.raw_files : [];
+
+ // Count green/red files for raw/ from state (not from per-call vars)
+ const rawGreenCount = rawFiles.filter(f => f.endsWith('.md') && !ingested.includes(f)).length;
+ const rawRedCount = pending.length;
+
  return '<ul class="tree-list">' + entries.map(e => {
- if (e.type === 'dir') {
- const childrenHtml = e.children && e.children.length > 0
- ? renderFileTreeEntries(e.children, subject)
- : '';
- return '<li class="tree-folder">' +
- '<span class="tree-folder-toggle" onclick="toggleFolder(this)">\ud83d\udcc1 ' + e.name + '</span>' +
- '<div class="tree-children" style="display:none">' + childrenHtml + '</div>' +
- '</li>';
- } else if (e.name.endsWith('.md')) {
- const encPath = encodeURIComponent(e.path);
- const encSubject = encodeURIComponent(subject);
- const nameNoExt = e.name.replace(/\.md$/, '');
- const actions = [
- '<span class="tree-item-name" onclick="showFilePreview(\'' + e.path + '\')">' + e.name + '</span>'
- ];
- if (e.has_original) {
- const origPath = 'originals/' + subject + '/' + nameNoExt;
- actions.push(
- '<a href="/api/original?path=' + encodeURIComponent(origPath) +
- '" class="tree-item-action" title="View original" target="_blank">\ud83d\udcc4</a>'
- );
- }
- actions.push(
- '<button class="tree-item-action" onclick="copyFileContent(\'' + e.path + '\')" title="Copy to clipboard">\ud83d\udccb</button>'
- );
- actions.push(
- '<button class="tree-item-action" onclick="downloadFile(\'' + e.path + '\')" title="Download">\u2b07</button>'
- );
- return '<li class="tree-file">' + actions.join('') + '</li>';
- }
- return '';
+  if (e.type === 'dir') {
+   const childrenHtml = e.children && e.children.length > 0
+    ? renderFileTreeEntries(e.children, subject, state)
+    : '';
+   // Color the raw folder based on state
+   const isRawFolder = e.name === 'raw';
+   let folderClass = 'tree-folder';
+   const reduced = rawGreenCount > 0 && rawRedCount > 0;
+   if (isRawFolder && reduced) folderClass += ' tree-folder-both';
+   else if (isRawFolder && rawGreenCount > 0) folderClass += ' tree-folder-green';
+   else if (isRawFolder && rawRedCount > 0) folderClass += ' tree-folder-red';
+   return '<li class="' + folderClass + '">' +
+    '<span class="tree-folder-toggle" onclick="toggleFolder(this)">📁 ' + e.name + '</span>' +
+    '<div class="tree-children" style="display:none">' + childrenHtml + '</div>' +
+    '</li>';
+  } else if (e.name.endsWith('.md')) {
+   const nameNoExt = e.name.replace(/\.md$/, '');
+   const isRawFile = e.path.startsWith('subjects/' + subject + '/raw/');
+   const isGreen = isRawFile && !ingested.includes(e.name);
+   const isRed = pending.includes(nameNoExt);
+
+   let liClass = 'tree-file';
+   if (isGreen) liClass += ' tree-item-green';
+   if (isRed) liClass += ' tree-item-red';
+
+   const actions = [
+    '<span class="tree-item-name" onclick="showFilePreview(\'' + e.path + '\')">' + e.name + '</span>'
+   ];
+   if (e.has_original && e.original_path) {
+    actions.push(
+     '<a href="/api/original?path=' + encodeURIComponent(e.original_path) +
+     '" class="tree-item-action" title="View original" target="_blank">📄</a>'
+    );
+   }
+   actions.push(
+    '<button class="tree-item-action" onclick="copyFileContent(\'' + e.path + '\')" title="Copy to clipboard">📋</button>'
+   );
+   actions.push(
+    '<button class="tree-item-action" onclick="downloadFile(\'' + e.path + '\')" title="Download">⬇</button>'
+   );
+   if (isRawFile && !isRed) {
+    actions.push(
+     '<button class="tree-item-action delete-btn" onclick="markForDelete(\'' + e.path + '\',\'' + subject + '\')" title="Mark for deletion">🗑</button>'
+    );
+   } else if (isRawFile && isRed) {
+    actions.push(
+     '<button class="tree-item-action delete-btn undo-btn" onclick="undoDelete(\'' + e.path + '\',\'' + subject + '\')" title="Undo deletion">↩</button>'
+    );
+   }
+   return '<li class="' + liClass + '">' + actions.join('') + '</li>';
+  }
+  return '';
  }).join('') + '</ul>';
 }
 
@@ -611,8 +735,195 @@ async function downloadFile(path) {
  showToast('\u2717 ' + (data.error || 'Download failed'), 'danger');
  }
  } catch (e) {
- showToast('\u2717 Download failed', 'danger');
+ showToast('✗ Download failed', 'danger');
  }
+}
+
+// ── Mark/Undo Deletion + Update Wiki ──
+
+function saveFolderState() {
+ const open = [];
+ document.querySelectorAll('.tree-children').forEach(el => {
+  if (el.style.display !== 'none' && el.parentElement) {
+   const toggle = el.parentElement.querySelector('.tree-folder-toggle');
+   if (toggle) open.push(toggle.textContent.replace(/^[^\s]+\s/, ''));
+  }
+ });
+ return open;
+}
+
+function restoreFolderState(openNames) {
+ if (!openNames || openNames.length === 0) return;
+ // Use requestAnimationFrame so DOM is definitely updated
+ requestAnimationFrame(() => {
+  document.querySelectorAll('.tree-folder-toggle').forEach(el => {
+   const name = el.textContent.replace(/^[^\s]+\s/, '');
+   if (openNames.includes(name)) {
+    const children = el.nextElementSibling;
+    if (children && (children.style.display === 'none' || !children.style.display)) {
+     children.style.display = 'block';
+     el.textContent = '📂 ' + name;
+    }
+   }
+  });
+ });
+}
+
+async function markForDelete(path, subject) {
+ const openState = saveFolderState();
+ try {
+  const res = await fetch('/api/mark-file', {
+   method: 'POST',
+   headers: {'Content-Type': 'application/json'},
+   body: JSON.stringify({path, subject, action: 'delete'})
+  });
+  const data = await res.json();
+  if (res.ok) {
+   showToast('✎ Marked for deletion — run ⚡ Update Wiki to commit', 'info');
+   await reloadFileTree(subject);
+   restoreFolderState(openState);
+  } else {
+   showToast('✗ ' + (data.detail || data.error || 'Failed'), 'danger');
+  }
+ } catch (e) {
+  showToast('✗ Failed to mark file', 'danger');
+ }
+}
+
+async function undoDelete(path, subject) {
+ const openState = saveFolderState();
+ try {
+  const res = await fetch('/api/mark-file', {
+   method: 'POST',
+   headers: {'Content-Type': 'application/json'},
+   body: JSON.stringify({path, subject, action: 'undo'})
+  });
+  if (res.ok) {
+   showToast('↩ Deletion undone', 'success');
+   await reloadFileTree(subject);
+   restoreFolderState(openState);
+  } else {
+   const data = await res.json();
+   showToast('✗ ' + (data.detail || 'Failed'), 'danger');
+  }
+ } catch (e) {
+  showToast('✗ Failed to undo', 'danger');
+ }
+}
+
+function refreshUpdateWikiButton(state) {
+ const btn = document.getElementById('update-wiki-btn');
+ if (!btn) return;
+ const hasPending = state && (state.pending_deletes.length > 0 || state.raw_files.some(f => !state.ingested.includes(f)));
+ btn.disabled = !hasPending;
+ btn.title = hasPending ? 'Update wiki with pending changes' : 'No pending changes';
+}
+
+async function updateWiki() {
+ const subject = currentSubject;
+ const btn = document.getElementById('update-wiki-btn');
+ btn.disabled = true;
+ btn.textContent = '⏳ Updating…';
+ showIngestOverlay();
+
+ let initialData = null;
+ try {
+  const res = await fetch('/api/update-wiki', {
+   method: 'POST',
+   headers: {'Content-Type': 'application/json'},
+   body: JSON.stringify({subject})
+  });
+  initialData = await res.json();
+  if (!res.ok) {
+   hideIngestOverlay();
+   showToast('✗ ' + (initialData.detail || initialData.error || 'Update failed'), 'danger');
+   btn.textContent = '⚡ Update Wiki';
+   if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+   return;
+  }
+  showToast(initialData.message || 'Delete complete — LLM ingest started', 'info');
+ } catch (e) {
+  hideIngestOverlay();
+  showToast('✗ Update failed: ' + e.message, 'danger');
+  btn.textContent = '⚡ Update Wiki';
+  if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+  return;
+ }
+
+ // Poll /api/status for LLM ingest result
+ const start = Date.now();
+ const maxWaitMs = 600000; // 10 min
+ const poll = setInterval(async () => {
+  try {
+   const r = await fetch('/api/status');
+   const s = await r.json();
+   if (s.ingest_running) {
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    const ov = document.getElementById('ingest-overlay');
+    if (ov) ov.querySelector('.ingest-text').textContent = `LLM ingest running… (${elapsed}s)`;
+    if (Date.now() - start > maxWaitMs) {
+     clearInterval(poll);
+     hideIngestOverlay();
+     showToast('✗ LLM ingest timed out', 'danger');
+     btn.textContent = '⚡ Update Wiki';
+     if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+    }
+    return;
+   }
+   clearInterval(poll);
+   hideIngestOverlay();
+   btn.textContent = '⚡ Update Wiki';
+   if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
+
+   // Merge initial delete info with final result
+   const finalData = Object.assign({}, initialData || {}, s.result || {});
+   if (s.result && s.result.status === 'error') {
+    showToast('✗ LLM ingest error: ' + (s.result.message || 'unknown'), 'danger');
+   } else {
+    showWikiResults(finalData);
+   }
+   reloadAll(subject);
+  } catch (e) {
+   clearInterval(poll);
+   hideIngestOverlay();
+   showToast('✗ Status poll failed: ' + e.message, 'danger');
+  }
+ }, 2000);
+}
+
+function showWikiResults(data) {
+ const overlay = document.createElement('div');
+ overlay.className = 'wiki-results-overlay';
+ overlay.id = 'wiki-results-overlay';
+ overlay.onclick = function(e) { if (e.target === this) closeWikiResults(); };
+ overlay.innerHTML =
+  '<div class="wiki-results-card">' +
+  '<h3>⚡ Wiki Updated</h3>' +
+  '<div class="wiki-results-row"><span class="label">Pages created</span><span class="value">' + (data.pages_created ?? '—') + '</span></div>' +
+  '<div class="wiki-results-row"><span class="label">Files deleted</span><span class="value">' + (data.files_deleted ?? 0) + '</span></div>' +
+  '<div class="wiki-results-row"><span class="label">Tokens used</span><span class="value">' + (data.tokens_used ?? 0) + '</span></div>' +
+  '<div class="wiki-results-row"><span class="label">Model</span><span class="value">' + (data.model || 'deterministic') + '</span></div>' +
+  '<button class="btn-close" onclick="closeWikiResults()">Close</button>' +
+  '</div>';
+ document.body.appendChild(overlay);
+}
+
+function closeWikiResults() {
+ const el = document.getElementById('wiki-results-overlay');
+ if (el) { el.remove(); }
+}
+
+function showIngestOverlay() {
+ const overlay = document.getElementById('ingest-overlay');
+ if (overlay) {
+  overlay.querySelector('.ingest-text').textContent = 'Updating wiki…';
+  overlay.classList.remove('hidden');
+ }
+}
+
+function hideIngestOverlay() {
+ const overlay = document.getElementById('ingest-overlay');
+ if (overlay) overlay.classList.add('hidden');
 }
 
 // ── reloadAll: Refresh Everything ──
@@ -627,6 +938,8 @@ function reloadAll(subject) {
 
  frame.style.display = 'none';
  frame.src = '';
+ frame.style.pointerEvents = '';
+ document.getElementById('object-back-btn').style.display = 'none';
 
  if (subject) {
  placeholder.style.display = 'none';
@@ -658,35 +971,41 @@ function initResize(handleId, sidebarId, isLeft) {
  const handle = document.getElementById(handleId);
  const sidebar = document.getElementById(sidebarId);
 
- handle.addEventListener('mousedown', (e) => {
- e.preventDefault();
- const startX = e.clientX;
- const startWidth = parseInt(sidebar.style.width) || 240;
- handle.classList.add('active');
- sidebar.style.transition = 'none';
- sidebar.dataset.collapsed = 'false';
- document.body.style.cursor = 'col-resize';
- document.body.style.userSelect = 'none';
+ handle.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  handle.setPointerCapture(e.pointerId);
+  const startX = e.clientX;
+  const startWidth = parseInt(sidebar.style.width) || 240;
+  handle.classList.add('active');
+  sidebar.style.transition = 'none';
+  sidebar.dataset.collapsed = 'false';
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  // Hide iframe during drag to prevent event capture
+  const frame = document.getElementById('object-frame');
+  if (frame.style.display !== 'none') frame.style.pointerEvents = 'none';
 
- const onMouseMove = (me) => {
- const delta = isLeft ? me.clientX - startX : startX - me.clientX;
- const maxW = window.innerWidth * 0.5;
- const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
- sidebar.style.width = newWidth + 'px';
- };
+  const onPointerMove = (me) => {
+   const delta = isLeft ? me.clientX - startX : startX - me.clientX;
+   const maxW = window.innerWidth * 0.5;
+   const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
+   sidebar.style.width = newWidth + 'px';
+  };
 
- const onMouseUp = () => {
- handle.classList.remove('active');
- sidebar.style.transition = '';
- document.body.style.cursor = '';
- document.body.style.userSelect = '';
- sidebar.dataset.expandedWidth = parseInt(sidebar.style.width) || 240;
- document.removeEventListener('mousemove', onMouseMove);
- document.removeEventListener('mouseup', onMouseUp);
- };
+  const onPointerUp = () => {
+   handle.removeEventListener('pointermove', onPointerMove);
+   handle.removeEventListener('pointerup', onPointerUp);
+   handle.classList.remove('active');
+   sidebar.style.transition = '';
+   document.body.style.cursor = '';
+   document.body.style.userSelect = '';
+   sidebar.dataset.expandedWidth = parseInt(sidebar.style.width) || 240;
+   const frame = document.getElementById('object-frame');
+   frame.style.pointerEvents = '';
+  };
 
- document.addEventListener('mousemove', onMouseMove);
- document.addEventListener('mouseup', onMouseUp);
+  handle.addEventListener('pointermove', onPointerMove);
+  handle.addEventListener('pointerup', onPointerUp);
  });
 }
 
@@ -711,8 +1030,13 @@ async function uploadFile(file, subject) {
  const res = await fetch('/api/upload', { method: 'POST', body: fd });
  const data = await res.json();
  if (res.ok) {
- showToast(`\u2713 ${file.name} uploaded`, 'success');
+ const msg = data.auto_ingested > 0
+  ? `\u2713 ${file.name} \u2014 ${data.auto_ingested} wiki pages created`
+  : `\u2713 ${file.name} uploaded`;
+ showToast(msg, 'success');
  reloadFileTree(subject);
+ reloadGraph(subject);
+ loadObjects(subject);
  } else {
  showToast(`\u2717 ${data.error}: ${data.detail || ''}`, 'danger');
  }
@@ -985,8 +1309,16 @@ function initGraph(data) {
 // ── Graph: Stop Loop ──
 function stopGraphLoop() {
  if (animFrameId) {
- cancelAnimationFrame(animFrameId);
- animFrameId = null;
+  cancelAnimationFrame(animFrameId);
+  animFrameId = null;
+ }
+}
+
+function resumeGraphLoop() {
+ if (!animFrameId && graphNodes.length > 0) {
+  lastInteraction = Date.now();
+  useThrottle = false;
+  simulationStep();
  }
 }
 
@@ -1199,38 +1531,37 @@ function findNodeAt(wx, wy) {
 function highlightFileInTree(node) {
  // Clear previous highlights
  document.querySelectorAll('.tree-item-name.graph-highlighted').forEach(el => {
- el.classList.remove('graph-highlighted');
+  el.classList.remove('graph-highlighted');
  });
  if (!node) return;
 
- // The node label matches a .md filename in the concepts/ folder
- // Try: concepts/{label}.md or any .md file matching the label
  const label = node.label;
  const treeContainer = document.getElementById('files-tree');
 
- // Find .tree-item-name elements whose text matches the node label
  const names = treeContainer.querySelectorAll('.tree-item-name');
  for (const el of names) {
- const fileName = el.textContent.replace(/\.md$/, '');
- if (fileName.toLowerCase() === label.toLowerCase()) {
- el.classList.add('graph-highlighted');
- // Expand parent folders so the file is visible
- let parent = el.closest('.tree-children');
- while (parent) {
- parent.style.display = 'block';
- const toggle = parent.previousElementSibling;
- if (toggle && toggle.classList.contains('tree-folder-toggle')) {
- toggle.textContent = toggle.textContent.replace(/^\S+/, '\ud83d\udcc2');
+  const fileName = el.textContent.replace(/\.md$/, '');
+  if (fileName.toLowerCase() === label.toLowerCase()) {
+   el.classList.add('graph-highlighted');
+   // Expand parent folders so the file is visible
+   let parent = el.closest('.tree-children');
+   while (parent) {
+    parent.style.display = 'block';
+    const toggle = parent.previousElementSibling;
+    if (toggle && toggle.classList.contains('tree-folder-toggle')) {
+     toggle.textContent = toggle.textContent.replace(/^\S+/, '\ud83d\udcc2');
+    }
+    parent = parent.parentElement?.closest('.tree-children');
+   }
+   // Scroll into view
+   el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+   // Also open preview
+   showFilePreview(el.getAttribute('onclick')?.match(/'([^']+)'/)?.[1] || '');
+   return;
+  }
  }
- parent = parent.parentElement?.closest('.tree-children');
- }
- // Scroll into view
- el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
- // Also open preview
- showFilePreview(el.getAttribute('onclick')?.match(/'([^']+)'/)?.[1] || '');
- return;
- }
- }
+ // No matching file found
+ showToast('No material file for "' + label + '"', 'info');
 }
 
 // ── Graph: Mouse Down ──
@@ -1291,7 +1622,14 @@ graphCanvas.addEventListener('mousemove', (e) => {
  graphTooltip.style.display = 'block';
  graphTooltip.style.left = (sx + 14) + 'px';
  graphTooltip.style.top = (sy - 10) + 'px';
- graphTooltip.textContent = node.label + (node.pinned ? ' 📌' : '');
+ let tipHtml = `<strong>${node.label}</strong>`;
+ if (node.type && node.type !== 'note') tipHtml += ` <span class="node-type-badge">${node.type}</span>`;
+ tipHtml += ` <span class="node-links-badge">${node.link_count}</span>`;
+ if (node.file_count && node.file_count > 1) tipHtml += ` · ${node.file_count} files`;
+ if (node.created) tipHtml += `<br><small>created ${node.created}</small>`;
+ if (node.tags && node.tags.length) tipHtml += `<br><small>${node.tags.slice(0, 3).join(' · ')}</small>`;
+ if (node.pinned) tipHtml += ` 📌`;
+ graphTooltip.innerHTML = tipHtml;
  } else {
  graphTooltip.style.display = 'none';
  }
@@ -1381,7 +1719,47 @@ window.addEventListener('resize', () => {
 // ── Initialise ──
 loadSubjects();
 
-console.log('Study UI \u2014 Phase 5: Force-Directed Graph');
+// ── Ingest Status Polling ──
+let ingestPollTimer = null;
+function startIngestPoll() {
+ stopIngestPoll();
+ ingestPollTimer = setInterval(async () => {
+  try {
+   const res = await fetch('/api/status');
+   if (!res.ok) return;
+   const data = await res.json();
+   const overlay = document.getElementById('ingest-overlay');
+   const uploadInput = document.getElementById('file-input');
+   const uploadZone = document.getElementById('upload-zone');
+   if (data.ingest_running) {
+    overlay.classList.remove('hidden');
+    if (uploadInput) uploadInput.disabled = true;
+    if (uploadZone) uploadZone.style.pointerEvents = 'none';
+    // Disable all delete buttons
+    document.querySelectorAll('.delete-btn').forEach(b => b.disabled = true);
+   } else {
+    overlay.classList.add('hidden');
+    if (uploadInput) uploadInput.disabled = false;
+    if (uploadZone) uploadZone.style.pointerEvents = '';
+    document.querySelectorAll('.delete-btn').forEach(b => b.disabled = false);
+   }
+  } catch(e) { /* server may be busy */ }
+ }, 1500);
+}
+function stopIngestPoll() {
+ if (ingestPollTimer) { clearInterval(ingestPollTimer); ingestPollTimer = null; }
+}
+// Start polling immediately
+startIngestPoll();
+
+// Also restart polling whenever a subject loads (upload may finish)
+const origReloadGraph = reloadGraph;
+reloadGraph = function(subject) {
+ startIngestPoll();
+ return origReloadGraph.call(this, subject);
+};
+
+console.log('Study UI — Phase 5: Force-Directed Graph');
 </script>
 </body>
 </html>

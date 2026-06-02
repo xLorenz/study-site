@@ -3,12 +3,12 @@
     "primary": "#6366f1",
     "secondary": "#a78bfa",
     "accent": "#22d3ee",
-    "icon": "\ud83d\udcda"
+    "icon": "📚"
   },
-  "test": {
-    "primary": "#22c55e",
-    "secondary": "#16a34a",
-    "accent": "#4ade80",
-    "icon": "\ud83e\uddea"
+  "poo": {
+    "primary": "#21bfc5",
+    "secondary": "#2088c5",
+    "accent": "#20a3c5",
+    "icon": "📦"
   }
 }
