@@ -270,7 +270,7 @@ pre:hover .copy-btn{opacity:1}
  width:100%;height:100%}
 #main-area .placeholder span{font-size:32px;display:block;margin-bottom:var(--space-3)}
 #main-area .placeholder p{font-size:var(--font-size-base)}
-#graph-canvas{display:none;width:100%;height:100%;cursor:grab;position:absolute;top:0;left:0;z-index:1}
+#graph-canvas{display:none;width:100%;height:100%;cursor:grab;position:absolute;top:0;left:0;z-index:1;touch-action:none}
 #graph-canvas.dragging{cursor:grabbing}
 #object-frame{display:none;width:100%;height:100%;border:none;background:#fff;z-index:10}
 
@@ -421,11 +421,15 @@ pre:hover .copy-btn{opacity:1}
 /* ── Mobile: Responsive Design ── */
 @media (max-width: 768px) {
  /* Sidebars closed by default */
- #sidebar-left{width:0!important;border-left:none!important}
- #sidebar-right{width:0!important;border-right:none!important}
- #sidebar-left[data-collapsed="true"]{width:0!important}
- #sidebar-right[data-collapsed="true"]{width:0!important}
+ #sidebar-left{width:0;border-left:none}
+ #sidebar-right{width:0;border-right:none}
+ #sidebar-left[data-collapsed="true"]{width:0}
+ #sidebar-right[data-collapsed="true"]{width:0}
  #resize-handle-left,#resize-handle-right{display:none!important}
+
+ /* Sidebar overlay: absolute + high z-index when visible, wider for touch targets */
+ #sidebar-left.sidebar-overlay{width:280px!important;position:absolute!important;z-index:20!important;left:0!important;top:0!important;bottom:0!important;box-shadow:var(--shadow-lg)}
+ #sidebar-right.sidebar-overlay{width:280px!important;position:absolute!important;z-index:20!important;right:0!important;top:0!important;bottom:0!important;box-shadow:var(--shadow-lg)}
 
  /* Back button bigger on mobile */
  #object-back-btn{
@@ -447,10 +451,6 @@ pre:hover .copy-btn{opacity:1}
   left:var(--space-2);gap:var(--space-1)
  }
  .toast{font-size:var(--font-size-xs);padding:var(--space-1) var(--space-3)}
-
- /* Sidebar overlay: absolute + high z-index when visible */
- #sidebar-left.sidebar-overlay{position:absolute!important;z-index:20!important;left:0!important;top:0!important;bottom:0!important;box-shadow:var(--shadow-lg);width:280px!important}
- #sidebar-right.sidebar-overlay{position:absolute!important;z-index:20!important;right:0!important;top:0!important;bottom:0!important;box-shadow:var(--shadow-lg);width:280px!important}
 
  /* Toggle buttons always clickable */
  #btn-toggle-left,#btn-toggle-right{z-index:30;font-size:20px;padding:0 var(--space-2)}
@@ -475,7 +475,7 @@ pre:hover .copy-btn{opacity:1}
 <div id="app">
 
  <!-- Left Sidebar — Objects -->
- <aside id="sidebar-left" style="width:240px" data-expanded-width="240" data-collapsed="false">
+ <aside id="sidebar-left" data-expanded-width="240" data-collapsed="false" style="width:240px">
  <div class="sidebar-section">
  <h3>Study Objects</h3>
  <div id="objects-tree">
@@ -1239,13 +1239,19 @@ function syncOverlayHandles() {
 function toggleSidebar(id) {
  const s = document.getElementById(id);
  const collapsed = s.dataset.collapsed === 'true';
+ const isMobile = window.innerWidth <= 768;
  if (collapsed) {
-  s.style.width = s.dataset.expandedWidth + 'px';
+  const w = isMobile ? 280 : (parseInt(s.dataset.expandedWidth) || 240);
+  s.style.width = w + 'px';
   s.dataset.collapsed = 'false';
+  s.dataset.expandedWidth = w;
+  // On mobile, sidebars open as overlays
+  if (isMobile) s.classList.add('sidebar-overlay');
  } else {
   s.dataset.expandedWidth = parseInt(s.style.width) || 240;
   s.style.width = '0px';
   s.dataset.collapsed = 'true';
+  if (isMobile) s.classList.remove('sidebar-overlay');
  }
  syncOverlayHandles();
 }
@@ -2131,6 +2137,18 @@ graphCanvas.addEventListener('mouseup', (e) => {
 // ── Graph: Touch Events (Mobile) ──
 graphCanvas.addEventListener('touchstart', (e) => {
  e.preventDefault();
+ if (e.touches.length === 2) {
+  // Pinch-to-zoom start
+  const t = e.touches;
+  graphCanvas._pinchDist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  graphCanvas._pinchZoom = graphZoom;
+  graphCanvas._pinchPanX = graphPanX;
+  graphCanvas._pinchPanY = graphPanY;
+  const midX = (t[0].clientX + t[1].clientX) / 2;
+  const midY = (t[0].clientY + t[1].clientY) / 2;
+  graphCanvas._pinchMid = { x: midX, y: midY };
+  return;
+ }
  const rect = graphCanvas.getBoundingClientRect();
  const touch = e.touches[0];
  const sx = touch.clientX - rect.left;
@@ -2158,6 +2176,25 @@ graphCanvas.addEventListener('touchstart', (e) => {
 graphCanvas.addEventListener('touchmove', (e) => {
  e.preventDefault();
  const rect = graphCanvas.getBoundingClientRect();
+
+ // Pinch-to-zoom (two fingers)
+ if (e.touches.length === 2) {
+  const t = e.touches;
+  const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  if (graphCanvas._pinchDist) {
+   const ratio = dist / graphCanvas._pinchDist;
+   const newZoom = Math.max(0.08, Math.min(3.0, graphCanvas._pinchZoom * ratio));
+   const midX = (t[0].clientX + t[1].clientX) / 2;
+   const midY = (t[0].clientY + t[1].clientY) / 2;
+   // Zoom towards mid-point
+   graphPanX = midX - (midX - graphCanvas._pinchPanX) * (newZoom / graphCanvas._pinchZoom);
+   graphPanY = midY - (midY - graphCanvas._pinchPanY) * (newZoom / graphCanvas._pinchZoom);
+   graphZoom = newZoom;
+  }
+  graphCanvas._pinchDist = dist;
+  lastInteraction = Date.now();
+  return;
+ }
  const touch = e.touches[0];
  const sx = touch.clientX - rect.left;
  const sy = touch.clientY - rect.top;
@@ -2183,6 +2220,8 @@ graphCanvas.addEventListener('touchmove', (e) => {
 
 graphCanvas.addEventListener('touchend', (e) => {
  e.preventDefault();
+ // Handle pinch-zoom end — reset touch tracking
+ graphCanvas._pinchDist = null;
  if (dragNode) {
   if (!hasDragged) {
    if (selectedNode && selectedNode.id === dragNode.id) {
@@ -2260,6 +2299,19 @@ window.addEventListener('resize', () => {
 
 // ── Initialise ──
 loadSubjects();
+
+// On mobile, collapse sidebars initially (overrides inline style.width)
+if (window.innerWidth <= 768) {
+  ['sidebar-left', 'sidebar-right'].forEach(id => {
+    const s = document.getElementById(id);
+    if (s) {
+      s.dataset.expandedWidth = parseInt(s.style.width) || 240;
+      s.style.width = '0px';
+      s.dataset.collapsed = 'true';
+      s.classList.remove('sidebar-overlay');
+    }
+  });
+}
 
 // ── Ingest Status Polling ──
 let ingestPollTimer = null;
