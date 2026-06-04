@@ -677,10 +677,13 @@ function showObject(path) {
  const sidebarRight = document.getElementById('sidebar-right');
  const handleLeft = document.getElementById('resize-handle-left');
  const handleRight = document.getElementById('resize-handle-right');
- sidebarLeft.classList.remove('sidebar-overlay');
- sidebarRight.classList.remove('sidebar-overlay');
- handleLeft.classList.remove('sidebar-overlay');
- handleRight.classList.remove('sidebar-overlay');
+ // On mobile, sidebars are always overlays — don't remove class
+ if (window.innerWidth > 768) {
+  sidebarLeft.classList.remove('sidebar-overlay');
+  sidebarRight.classList.remove('sidebar-overlay');
+  handleLeft.classList.remove('sidebar-overlay');
+  handleRight.classList.remove('sidebar-overlay');
+ }
 
  const frame = document.getElementById('object-frame');
  frame.style.display = 'block';
@@ -700,10 +703,13 @@ function hideObject() {
  const handleRight = document.getElementById('resize-handle-right');
  
  if (currentSubject) {
-  sidebarLeft.classList.add('sidebar-overlay');
-  sidebarRight.classList.add('sidebar-overlay');
-  handleLeft.classList.add('sidebar-overlay');
-  handleRight.classList.add('sidebar-overlay');
+  // On mobile, sidebars are always overlays — only add class on desktop
+  if (window.innerWidth > 768) {
+   sidebarLeft.classList.add('sidebar-overlay');
+   sidebarRight.classList.add('sidebar-overlay');
+   handleLeft.classList.add('sidebar-overlay');
+   handleRight.classList.add('sidebar-overlay');
+  }
   
   syncOverlayHandles();
   
@@ -1198,10 +1204,13 @@ async function reloadAll(subject) {
   placeholder.style.display = 'none';
   canvas.style.display = 'block';
   
-  sidebarLeft.classList.add('sidebar-overlay');
-  sidebarRight.classList.add('sidebar-overlay');
-  handleLeft.classList.add('sidebar-overlay');
-  handleRight.classList.add('sidebar-overlay');
+  // On mobile, sidebars are already overlays from init — only add on desktop
+  if (window.innerWidth > 768) {
+   sidebarLeft.classList.add('sidebar-overlay');
+   sidebarRight.classList.add('sidebar-overlay');
+   handleLeft.classList.add('sidebar-overlay');
+   handleRight.classList.add('sidebar-overlay');
+  }
   
   syncOverlayHandles();
   
@@ -1245,13 +1254,13 @@ function toggleSidebar(id) {
   s.style.width = w + 'px';
   s.dataset.collapsed = 'false';
   s.dataset.expandedWidth = w;
-  // On mobile, sidebars open as overlays
   if (isMobile) s.classList.add('sidebar-overlay');
  } else {
   s.dataset.expandedWidth = parseInt(s.style.width) || 240;
-  s.style.width = '0px';
+  s.style.width = isMobile ? '0px' : '0px';
   s.dataset.collapsed = 'true';
-  if (isMobile) s.classList.remove('sidebar-overlay');
+  // On mobile, always keep overlay class — sidebar is never in flex flow
+  if (!isMobile) s.classList.remove('sidebar-overlay');
  }
  syncOverlayHandles();
 }
@@ -1640,7 +1649,11 @@ function initGraph(data) {
   graphEdges = data.edges || [];
   selectedNode = null;
   hoveredNode = null;
-  graphZoom = 1.0;
+
+  // Initial zoom proportional to node count: more nodes = zoomed out
+  const nodeCount = graphNodes.length;
+  const idealZoom = nodeCount <= 5 ? 1.2 : nodeCount <= 15 ? 1.0 : nodeCount <= 30 ? 0.75 : 0.5;
+  graphZoom = Math.min(idealZoom, 1.5);
   graphPanX = 0;
   graphPanY = 0;
   lastInteraction = Date.now();
@@ -2308,7 +2321,7 @@ window.addEventListener('resize', () => {
 // ── Initialise ──
 loadSubjects();
 
-// On mobile, collapse sidebars initially (overrides inline style.width)
+// On mobile, collapse sidebars initially as overlays (never in flex flow)
 if (window.innerWidth <= 768) {
   ['sidebar-left', 'sidebar-right'].forEach(id => {
     const s = document.getElementById(id);
@@ -2316,7 +2329,8 @@ if (window.innerWidth <= 768) {
       s.dataset.expandedWidth = parseInt(s.style.width) || 240;
       s.style.width = '0px';
       s.dataset.collapsed = 'true';
-      s.classList.remove('sidebar-overlay');
+      // Always keep overlay on mobile — sidebar is absolute, never resizes graph
+      s.classList.add('sidebar-overlay');
     }
   });
 }
