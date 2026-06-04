@@ -2176,17 +2176,25 @@ graphCanvas.addEventListener('touchmove', (e) => {
   const rect = graphCanvas.getBoundingClientRect();
   const t = e.touches;
   const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const midX = (t[0].clientX + t[1].clientX) / 2 - rect.left;
+  const midY = (t[0].clientY + t[1].clientY) / 2 - rect.top;
+
+  // Pan by midpoint movement (move while pinching)
+  if (graphCanvas._pinchPrevMid) {
+    graphPanX += midX - graphCanvas._pinchPrevMid.x;
+    graphPanY += midY - graphCanvas._pinchPrevMid.y;
+  }
+
   if (graphCanvas._pinchDist) {
    const ratio = dist / graphCanvas._pinchDist;
    const newZoom = Math.max(0.08, Math.min(3.0, graphZoom * ratio));
    // Zoom towards midpoint — delta-based like the wheel handler
-   const midX = (t[0].clientX + t[1].clientX) / 2 - rect.left;
-   const midY = (t[0].clientY + t[1].clientY) / 2 - rect.top;
    graphPanX = midX - (midX - graphPanX) * (newZoom / graphZoom);
    graphPanY = midY - (midY - graphPanY) * (newZoom / graphZoom);
    graphZoom = newZoom;
   }
   graphCanvas._pinchDist = dist;
+  graphCanvas._pinchPrevMid = { x: midX, y: midY };
   lastInteraction = Date.now();
   return;
  }
@@ -2217,6 +2225,7 @@ graphCanvas.addEventListener('touchend', (e) => {
  e.preventDefault();
  // Handle pinch-zoom end — reset touch tracking
  graphCanvas._pinchDist = null;
+ graphCanvas._pinchPrevMid = null;
  if (dragNode) {
   if (!hasDragged) {
    if (selectedNode && selectedNode.id === dragNode.id) {
