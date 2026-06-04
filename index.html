@@ -2138,15 +2138,9 @@ graphCanvas.addEventListener('mouseup', (e) => {
 graphCanvas.addEventListener('touchstart', (e) => {
  e.preventDefault();
  if (e.touches.length === 2) {
-  // Pinch-to-zoom start
+  // Pinch-to-zoom start — store initial distance only
   const t = e.touches;
   graphCanvas._pinchDist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-  graphCanvas._pinchZoom = graphZoom;
-  graphCanvas._pinchPanX = graphPanX;
-  graphCanvas._pinchPanY = graphPanY;
-  const midX = (t[0].clientX + t[1].clientX) / 2;
-  const midY = (t[0].clientY + t[1].clientY) / 2;
-  graphCanvas._pinchMid = { x: midX, y: midY };
   return;
  }
  const rect = graphCanvas.getBoundingClientRect();
@@ -2179,16 +2173,17 @@ graphCanvas.addEventListener('touchmove', (e) => {
 
  // Pinch-to-zoom (two fingers)
  if (e.touches.length === 2) {
+  const rect = graphCanvas.getBoundingClientRect();
   const t = e.touches;
   const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   if (graphCanvas._pinchDist) {
    const ratio = dist / graphCanvas._pinchDist;
-   const newZoom = Math.max(0.08, Math.min(3.0, graphCanvas._pinchZoom * ratio));
-   const midX = (t[0].clientX + t[1].clientX) / 2;
-   const midY = (t[0].clientY + t[1].clientY) / 2;
-   // Zoom towards mid-point
-   graphPanX = midX - (midX - graphCanvas._pinchPanX) * (newZoom / graphCanvas._pinchZoom);
-   graphPanY = midY - (midY - graphCanvas._pinchPanY) * (newZoom / graphCanvas._pinchZoom);
+   const newZoom = Math.max(0.08, Math.min(3.0, graphZoom * ratio));
+   // Zoom towards midpoint — delta-based like the wheel handler
+   const midX = (t[0].clientX + t[1].clientX) / 2 - rect.left;
+   const midY = (t[0].clientY + t[1].clientY) / 2 - rect.top;
+   graphPanX = midX - (midX - graphPanX) * (newZoom / graphZoom);
+   graphPanY = midY - (midY - graphPanY) * (newZoom / graphZoom);
    graphZoom = newZoom;
   }
   graphCanvas._pinchDist = dist;
@@ -2236,6 +2231,10 @@ graphCanvas.addEventListener('touchend', (e) => {
    dragNode.pinned = false;
    delete dragNode._tempPinned;
   }
+ } else if (!hasDragged && e.changedTouches.length === 1) {
+  // Tap on empty space → deselect
+  selectedNode = null;
+  highlightFileInTree(null);
  }
  dragNode = null;
  isPanning = false;
