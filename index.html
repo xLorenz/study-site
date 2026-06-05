@@ -381,7 +381,7 @@ pre:hover .copy-btn{opacity:1}
  background:var(--surface);border:1px solid var(--border);
  border-radius:var(--radius-md) var(--radius-md) 0 0;
  max-height:300px;overflow-y:auto;box-shadow:var(--shadow-lg);
- display:none}
+ display:none;z-index:var(--z-overlay)}
 
 /* ── Search Results ── */
 .search-result-item{
@@ -394,6 +394,7 @@ pre:hover .copy-btn{opacity:1}
 .search-result-snippet{font-size:var(--font-size-sm);line-height:1.4;
  color:var(--text);margin-bottom:2px}
 .search-result-snippet strong{color:var(--accent)}
+.search-result-snippet .wiki-link-inline{color:#8b5cf6;font-weight:500}
 .search-result-meta{display:flex;justify-content:space-between;
  align-items:center;font-size:var(--font-size-xs);color:var(--text-dim)}
 .search-result-path{overflow:hidden;text-overflow:ellipsis;
@@ -1574,6 +1575,14 @@ document.getElementById('btn-copy-preview').addEventListener('click', async () =
 let searchTimeout = null;
 let lastSearchQuery = '';
 
+function formatSnippet(s) {
+ // Convert **bold** to <strong>
+ s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+ // Convert [[wikilinks]] to styled spans
+ s = s.replace(/\[\[([^\]]+)\]\]/g, '<span class="wiki-link-inline">$1</span>');
+ return s;
+}
+
 function performSearch() {
  const q = document.getElementById('search-input').value.trim();
  const subject = document.getElementById('search-subject-filter').value;
@@ -1599,7 +1608,7 @@ function performSearch() {
  }
  resultsContainer.innerHTML = data.results.map(r =>
  '<div class="search-result-item" data-path="' + r.path + '" data-query="' + q.replace(/"/g, '&quot;') + '" onclick="openSearchResult(this)">' +
- '<div class="search-result-snippet">' + r.snippet + '</div>' +
+ '<div class="search-result-snippet">' + formatSnippet(r.snippet) + '</div>' +
  '<div class="search-result-meta">' +
  '<span class="search-result-path">' + r.path + '</span>' +
  '<span class="search-result-count">' + r.match_count + ' match' + (r.match_count > 1 ? 'es' : '') + '</span>' +
