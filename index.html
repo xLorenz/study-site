@@ -97,7 +97,7 @@ aside{
  background:var(--surface);
  border:1px solid var(--border);
  overflow:hidden;
- transition:width .2s ease;
+ transition:width .12s ease;
  flex-shrink:0;
  display:flex;flex-direction:column}
 aside[data-collapsed="true"]{border-color:transparent}
@@ -272,7 +272,7 @@ pre:hover .copy-btn{opacity:1}
 #main-area .placeholder p{font-size:var(--font-size-base)}
 #graph-canvas{display:none;width:100%;height:100%;cursor:grab;position:absolute;top:0;left:0;z-index:1;touch-action:none}
 #graph-canvas.dragging{cursor:grabbing}
-#object-frame{display:none;width:100%;height:100%;border:none;background:#fff;z-index:10}
+#object-frame{display:none;width:100%;height:100%;border:none;background:#fff;z-index:10;position:absolute;top:0;left:0}
 
 /* ── Graph Wrap (canvas + overlay container) ── */
 #graph-wrap{position:relative;width:100%;height:100%;z-index:1}
@@ -420,16 +420,28 @@ pre:hover .copy-btn{opacity:1}
 
 /* ── Mobile: Responsive Design ── */
 @media (max-width: 768px) {
- /* Sidebars closed by default */
- #sidebar-left{width:0;border-left:none}
- #sidebar-right{width:0;border-right:none}
- #sidebar-left[data-collapsed="true"]{width:0}
- #sidebar-right[data-collapsed="true"]{width:0}
- #resize-handle-left,#resize-handle-right{display:none!important}
+ /* Sidebars are absolute overlays on mobile, never in flex flow */
+ #sidebar-left, #sidebar-right {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  z-index: 20 !important;
+  transition: width .2s ease;
+ }
+ #sidebar-left { left: 0 !important; border-left: none; }
+ #sidebar-right { right: 0 !important; border-right: none; }
 
- /* Sidebar overlay: absolute + high z-index when visible, wider for touch targets */
- #sidebar-left.sidebar-overlay{width:280px!important;position:absolute!important;z-index:20!important;left:0!important;top:0!important;bottom:0!important;box-shadow:var(--shadow-lg)}
- #sidebar-right.sidebar-overlay{width:280px!important;position:absolute!important;z-index:20!important;right:0!important;top:0!important;bottom:0!important;box-shadow:var(--shadow-lg)}
+ /* Sidebars closed by default (no !important — JS inline style on desktop may set width) */
+ #sidebar-left, #sidebar-right { width: 0; }
+
+ /* Remove resize handles on mobile */
+ #resize-handle-left, #resize-handle-right { display: none !important; }
+
+ /* Sidebar overlay: visible + shadow on mobile */
+ #sidebar-left.sidebar-overlay, #sidebar-right.sidebar-overlay {
+  width: 280px;
+  box-shadow: var(--shadow-lg);
+ }
 
  /* Back button bigger on mobile */
  #object-back-btn{
@@ -475,7 +487,7 @@ pre:hover .copy-btn{opacity:1}
 <div id="app">
 
  <!-- Left Sidebar — Objects -->
- <aside id="sidebar-left" data-expanded-width="240" data-collapsed="false" style="width:240px">
+ <aside id="sidebar-left" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
  <div class="sidebar-section">
  <h3>Study Objects</h3>
  <div id="objects-tree">
@@ -485,7 +497,7 @@ pre:hover .copy-btn{opacity:1}
  </aside>
 
  <!-- Left Resize Handle -->
- <div id="resize-handle-left" class="resize-handle"></div>
+ <div id="resize-handle-left" class="resize-handle" style="display:none"></div>
 
  <!-- Main Area — Graph / Object Viewer -->
  <main id="main-area">
@@ -507,11 +519,11 @@ pre:hover .copy-btn{opacity:1}
 </main>
 
  <!-- Right Resize Handle -->
- <div id="resize-handle-right" class="resize-handle"></div>
+ <div id="resize-handle-right" class="resize-handle" style="display:none"></div>
 
  <!-- Right Sidebar — Upload, Files, Preview -->
- <aside id="sidebar-right" style="width:240px" data-expanded-width="240" data-collapsed="false">
- <!-- Upload (top) -->
+  <aside id="sidebar-right" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
+  <!-- Upload (top) -->
  <div class="sidebar-section">
  <h3>Upload</h3>
  <div id="upload-zone">
@@ -671,31 +683,49 @@ async function reloadObjectTree(subject) {
 function showObject(path) {
  stopGraphLoop();
  document.getElementById('graph-canvas').style.display = 'none';
+ document.getElementById('graph-wrap').style.display = 'none';
  document.getElementById('main-placeholder').style.display = 'none';
  
- const sidebarLeft = document.getElementById('sidebar-left');
- const sidebarRight = document.getElementById('sidebar-right');
  const handleLeft = document.getElementById('resize-handle-left');
  const handleRight = document.getElementById('resize-handle-right');
- // On mobile, sidebars are always overlays — don't remove class
+ // On mobile, sidebars are always absolute — don't touch overlay state
  if (window.innerWidth > 768) {
-  sidebarLeft.classList.remove('sidebar-overlay');
-  sidebarRight.classList.remove('sidebar-overlay');
-  handleLeft.classList.remove('sidebar-overlay');
-  handleRight.classList.remove('sidebar-overlay');
+  // Don't remove overlay — keep sidebars position:absolute so graph never resizes
+  // Hide handles in object view
+  handleLeft.style.display = 'none';
+  handleRight.style.display = 'none';
  }
 
  const frame = document.getElementById('object-frame');
  frame.style.display = 'block';
  frame.src = '/api/object-content?path=' + encodeURIComponent(path);
- document.getElementById('object-back-btn').style.display = 'flex';
+ 
+ // Position iframe to account for sidebar overlays
+ const sl = document.getElementById('sidebar-left');
+ const sr = document.getElementById('sidebar-right');
+ const slW = (sl.dataset.collapsed === 'true') ? 0 : (parseInt(sl.style.width) || 240);
+ const srW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || 240);
+ frame.style.left = slW + 'px';
+ frame.style.width = 'calc(100% - ' + (slW + srW) + 'px)';
+ 
+ // Offset back button by left sidebar width
+ const backBtn = document.getElementById('object-back-btn');
+ backBtn.style.display = 'flex';
+ backBtn.style.left = (slW + 12) + 'px';
  document.getElementById('labels-toggle').style.display = 'none';
- }
+}
 
 function hideObject() {
  document.getElementById('object-frame').style.display = 'none';
  document.getElementById('object-frame').src = '';
- document.getElementById('object-back-btn').style.display = 'none';
+ document.getElementById('object-frame').style.left = '';
+ document.getElementById('object-frame').style.width = '';
+ const backBtn = document.getElementById('object-back-btn');
+ backBtn.style.display = 'none';
+ backBtn.style.left = ''; // reset to CSS default
+ 
+ // Restore graph-wrap
+ document.getElementById('graph-wrap').style.display = '';
  
  const sidebarLeft = document.getElementById('sidebar-left');
  const sidebarRight = document.getElementById('sidebar-right');
@@ -703,26 +733,25 @@ function hideObject() {
  const handleRight = document.getElementById('resize-handle-right');
  
  if (currentSubject) {
-  // On mobile, sidebars are always overlays — only add class on desktop
-  if (window.innerWidth > 768) {
-   sidebarLeft.classList.add('sidebar-overlay');
-   sidebarRight.classList.add('sidebar-overlay');
-   handleLeft.classList.add('sidebar-overlay');
-   handleRight.classList.add('sidebar-overlay');
-  }
-  
-  syncOverlayHandles();
-  
-  const canvas = document.getElementById('graph-canvas');
-  canvas.style.display = 'block';
-  resizeGraphCanvas();
-  } else {
-  sidebarLeft.classList.remove('sidebar-overlay');
-  sidebarRight.classList.remove('sidebar-overlay');
-  handleLeft.classList.remove('sidebar-overlay');
-  handleRight.classList.remove('sidebar-overlay');
-  
-  document.getElementById('main-placeholder').style.display = 'flex';
+ // On mobile, sidebars are always absolute — only manage overlay on desktop
+ if (window.innerWidth > 768) {
+ sidebarLeft.classList.add('sidebar-overlay');
+ sidebarRight.classList.add('sidebar-overlay');
+ handleLeft.classList.add('sidebar-overlay');
+ handleRight.classList.add('sidebar-overlay');
+ }
+ 
+ syncOverlayHandles();
+ 
+ const canvas = document.getElementById('graph-canvas');
+ canvas.style.display = 'block';
+ resizeGraphCanvas();
+ } else {
+ // Keep overlay — sidebars stay position:absolute
+ handleLeft.style.display = 'none';
+ handleRight.style.display = 'none';
+ 
+ document.getElementById('main-placeholder').style.display = 'flex';
  }
  resumeGraphLoop();
 }
@@ -1204,27 +1233,34 @@ async function reloadAll(subject) {
   placeholder.style.display = 'none';
   canvas.style.display = 'block';
   
-  // On mobile, sidebars are already overlays from init — only add on desktop
+  // On mobile, sidebars are always absolute (CSS media query) — only manage overlay on desktop
   if (window.innerWidth > 768) {
-   sidebarLeft.classList.add('sidebar-overlay');
-   sidebarRight.classList.add('sidebar-overlay');
-   handleLeft.classList.add('sidebar-overlay');
-   handleRight.classList.add('sidebar-overlay');
+  sidebarLeft.classList.add('sidebar-overlay');
+  sidebarRight.classList.add('sidebar-overlay');
+  handleLeft.classList.add('sidebar-overlay');
+  handleRight.classList.add('sidebar-overlay');
+  // Restore sidebar widths on desktop
+  sidebarLeft.style.width = (parseInt(sidebarLeft.dataset.expandedWidth) || 240) + 'px';
+  sidebarLeft.dataset.collapsed = 'false';
+  sidebarRight.style.width = (parseInt(sidebarRight.dataset.expandedWidth) || 240) + 'px';
+  sidebarRight.dataset.collapsed = 'false';
+  // Show resize handles (sidebars are open on desktop)
+  handleLeft.style.display = '';
+  handleRight.style.display = '';
   }
   
   syncOverlayHandles();
   
   reloadGraph(subject);
  } else {
-  placeholder.style.display = 'flex';
-  canvas.style.display = 'none';
-  
-  sidebarLeft.classList.remove('sidebar-overlay');
-  sidebarRight.classList.remove('sidebar-overlay');
-  handleLeft.classList.remove('sidebar-overlay');
-  handleRight.classList.remove('sidebar-overlay');
-  
-  stopGraphLoop();
+ placeholder.style.display = 'flex';
+ canvas.style.display = 'none';
+ 
+ // Keep overlay — sidebars stay position:absolute
+ handleLeft.style.display = 'none';
+ handleRight.style.display = 'none';
+ 
+ stopGraphLoop();
  }
 }
 
@@ -1234,13 +1270,19 @@ function syncOverlayHandles() {
  const sr = document.getElementById('sidebar-right');
  const hl = document.getElementById('resize-handle-left');
  const hr = document.getElementById('resize-handle-right');
+ // Left handle
  if (sl.classList.contains('sidebar-overlay')) {
-  const w = sl.dataset.collapsed === 'true' ? 0 : (parseInt(sl.style.width) || 240);
-  hl.style.left = w + 'px';
+ const w = sl.dataset.collapsed === 'true' ? 0 : (parseInt(sl.style.width) || 240);
+ hl.style.left = w + 'px';
+ // Hide handle when sidebar collapsed, show when open
+ hl.style.display = sl.dataset.collapsed === 'true' ? 'none' : '';
  }
+ // Right handle
  if (sr.classList.contains('sidebar-overlay')) {
-  const w = sr.dataset.collapsed === 'true' ? 0 : (parseInt(sr.style.width) || 240);
-  hr.style.right = w + 'px';
+ const w = sr.dataset.collapsed === 'true' ? 0 : (parseInt(sr.style.width) || 240);
+ hr.style.right = w + 'px';
+ // Hide handle when sidebar collapsed, show when open
+ hr.style.display = sr.dataset.collapsed === 'true' ? 'none' : '';
  }
 }
 
@@ -1249,20 +1291,61 @@ function toggleSidebar(id) {
  const s = document.getElementById(id);
  const collapsed = s.dataset.collapsed === 'true';
  const isMobile = window.innerWidth <= 768;
+ 
+ // Get handle ID
+ const isLeft = id === 'sidebar-left';
+ const handle = document.getElementById(isLeft ? 'resize-handle-left' : 'resize-handle-right');
+ 
  if (collapsed) {
-  const w = isMobile ? 280 : (parseInt(s.dataset.expandedWidth) || 240);
-  s.style.width = w + 'px';
-  s.dataset.collapsed = 'false';
-  s.dataset.expandedWidth = w;
-  if (isMobile) s.classList.add('sidebar-overlay');
+ // Open
+ s.dataset.collapsed = 'false';
+ handle.style.display = ''; // restore resize handle
+ if (isMobile) {
+ // Mobile: CSS controls width via .sidebar-overlay class.
+ // Remove any inline width so the CSS class selector takes effect.
+ s.style.width = '';
+ s.classList.add('sidebar-overlay');
  } else {
-  s.dataset.expandedWidth = parseInt(s.style.width) || 240;
-  s.style.width = isMobile ? '0px' : '0px';
-  s.dataset.collapsed = 'true';
-  // On mobile, always keep overlay class — sidebar is never in flex flow
-  if (!isMobile) s.classList.remove('sidebar-overlay');
+ // Desktop: add overlay FIRST (position:absolute, out of flex flow),
+ // THEN set width — avoids squishing the graph during transition
+ const w = parseInt(s.dataset.expandedWidth) || 240;
+ s.classList.add('sidebar-overlay');
+ handle.classList.add('sidebar-overlay');
+ s.style.width = w + 'px';
+ s.dataset.expandedWidth = w;
+ }
+ } else {
+ // Close
+ s.dataset.collapsed = 'true';
+ handle.style.display = 'none'; // hide resize handle when sidebar closed
+ if (isMobile) {
+ // Mobile: CSS handles width. Remove overlay class → CSS `width: 0` applies.
+ s.classList.remove('sidebar-overlay');
+ } else {
+ // Desktop: set width to 0 but KEEP overlay (position:absolute) to avoid squishing graph.
+ s.dataset.expandedWidth = parseInt(s.style.width) || 240;
+ s.style.width = '0px';
+ // Keep overlay on desktop always — sidebars stay position:absolute so graph never resizes
+ }
  }
  syncOverlayHandles();
+ syncObjectFrame();
+}
+
+// ── Sync Object Frame position with sidebar widths ──
+function syncObjectFrame() {
+ const frame = document.getElementById('object-frame');
+ if (frame.style.display === 'none') return;
+ const sl = document.getElementById('sidebar-left');
+ const sr = document.getElementById('sidebar-right');
+ const slW = (sl.dataset.collapsed === 'true') ? 0 : (parseInt(sl.style.width) || 240);
+ const srW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || 240);
+ frame.style.left = slW + 'px';
+ frame.style.width = 'calc(100% - ' + (slW + srW) + 'px)';
+ const backBtn = document.getElementById('object-back-btn');
+ if (backBtn.style.display !== 'none') {
+  backBtn.style.left = (slW + 12) + 'px';
+ }
 }
 
 // ── Sidebar Resize ──
@@ -1285,11 +1368,12 @@ function initResize(handleId, sidebarId, isLeft) {
   if (frame.style.display !== 'none') frame.style.pointerEvents = 'none';
 
   const onPointerMove = (me) => {
-   const delta = isLeft ? me.clientX - startX : startX - me.clientX;
-   const maxW = window.innerWidth * 0.5;
-   const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
-   sidebar.style.width = newWidth + 'px';
-   syncOverlayHandles();
+  const delta = isLeft ? me.clientX - startX : startX - me.clientX;
+  const maxW = window.innerWidth * 0.5;
+  const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
+  sidebar.style.width = newWidth + 'px';
+  syncOverlayHandles();
+  syncObjectFrame();
   };
 
   const onPointerUp = () => {
@@ -1777,10 +1861,10 @@ function simulationStep() {
 
   // ── Throttle check ──
   const elapsed = Date.now() - lastInteraction;
-  if (elapsed > 3000 && !useThrottle) {
+  if (elapsed > 60000 && !useThrottle) {
     useThrottle = true;
   }
-  if (elapsed < 3000 && useThrottle) {
+  if (elapsed < 60000 && useThrottle) {
     useThrottle = false;
   }
 
@@ -2311,6 +2395,22 @@ graphCanvas.addEventListener('wheel', (e) => {
  lastInteraction = Date.now();
 }, { passive: false });
 
+// ── Mobile: Click outside sidebar to close ──
+if (window.innerWidth <= 768) {
+  document.addEventListener('click', (e) => {
+    const left = document.getElementById('sidebar-left');
+    const right = document.getElementById('sidebar-right');
+    const btnLeft = document.getElementById('btn-toggle-left');
+    const btnRight = document.getElementById('btn-toggle-right');
+    // If click is inside a sidebar or on a toggle button, do nothing
+    if (left.contains(e.target) || right.contains(e.target)) return;
+    if (e.target === btnLeft || e.target === btnRight) return;
+    // Close any open sidebars
+    if (left.dataset.collapsed === 'false') toggleSidebar('sidebar-left');
+    if (right.dataset.collapsed === 'false') toggleSidebar('sidebar-right');
+  });
+}
+
 // ── Graph: Window resize ──
 window.addEventListener('resize', () => {
  if (graphCanvas.style.display !== 'none') {
@@ -2321,16 +2421,17 @@ window.addEventListener('resize', () => {
 // ── Initialise ──
 loadSubjects();
 
-// On mobile, collapse sidebars initially as overlays (never in flex flow)
+// On mobile, collapse sidebars initially
 if (window.innerWidth <= 768) {
   ['sidebar-left', 'sidebar-right'].forEach(id => {
     const s = document.getElementById(id);
     if (s) {
-      s.dataset.expandedWidth = parseInt(s.style.width) || 240;
-      s.style.width = '0px';
+      s.dataset.expandedWidth = 240;
       s.dataset.collapsed = 'true';
-      // Always keep overlay on mobile — sidebar is absolute, never resizes graph
-      s.classList.add('sidebar-overlay');
+      // On mobile, CSS controls width (0 for closed, 280px when .sidebar-overlay).
+      // Don't set inline style.width — it would conflict with the CSS class selector.
+      // Just ensure overlay class is removed so they start hidden.
+      s.classList.remove('sidebar-overlay');
     }
   });
 }

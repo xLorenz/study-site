@@ -3,12 +3,18 @@
     "primary": "#6366f1",
     "secondary": "#a78bfa",
     "accent": "#22d3ee",
-    "icon": "📚"
+    "icon": "\ud83d\udcda"
   },
-  "poo": {
-    "primary": "#21bfc5",
-    "secondary": "#2088c5",
-    "accent": "#20a3c5",
-    "icon": "📦"
+  "test-subject": {
+    "primary": "#f161c4",
+    "secondary": "#f16194",
+    "accent": "#f161ac",
+    "icon": "\ud83d\udcda"
+  },
+  "comunicacion-de-datos": {
+    "primary": "#f16164",
+    "secondary": "#f18d61",
+    "accent": "#f17661",
+    "icon": "\ud83d\udcda"
   }
 }

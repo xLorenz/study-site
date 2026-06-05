@@ -23,7 +23,10 @@ _ingest_running = False
 _ingest_queue = []  # list of tasks waiting for ingest
 _ingest_result = None  # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
 _ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
-_ingest_current_subject = None  # subject currently being ingested (used for live progress)
+_ingest_current_subject = None # subject currently being ingested (used for live progress)
+_ingest_initial_wiki_count = 0 # wiki/ .md file count BEFORE ingest started (for progress tracking)
+_ingest_initial_total = 0 # initial count of files to ingest (saved so frontend can compute fraction)
+_upload_in_progress = False # separate lock for upload (sync, fast — not LLM ingest)
 
 with open(os.path.join(STUDY_DIR, "subject_themes.json")) as f:
     SUBJECT_THEMES = json.load(f)
@@ -34,26 +37,11 @@ def _vault_rel(abs_path):
     return os.path.relpath(abs_path, VAULT)
 
 
-def _last_fallback_model():
-    """Return (provider, model) from the last entry in hermes fallback_providers."""
-    try:
-        cfg_path = os.path.expanduser("~/.hermes/config.yaml")
-        with open(cfg_path) as f:
-            cfg = yaml.safe_load(f)
-        fb = cfg.get("fallback_providers", [])
-        if fb:
-            last = fb[-1]
-            return last.get("provider", ""), last.get("model", "")
-    except Exception:
-        pass
-    # Hardcoded fallback if config unreadable
-    return "opencode-zen", "minimax-m3-free"
-
-
 def _resolve_vault_path(rel_path):
     """Resolve a vault-relative path, checking for traversal."""
-    joined = os.path.normpath(os.path.join(VAULT, rel_path))
-    if not joined.startswith(VAULT + os.sep) and joined != VAULT:
+    joined = os.path.realpath(os.path.join(VAULT, rel_path))
+    vault_real = os.path.realpath(VAULT)
+    if not joined.startswith(vault_real + os.sep) and joined != vault_real:
         return None
     return joined
 
@@ -69,9 +57,11 @@ def slugify(text):
 
 def run_markitdown(input_path, output_path):
     """Convert a file to markdown using MarkItDown. Returns (success, stderr)."""
+    # markitdown lives in the Hermes venv
+    md_bin = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/markitdown")
     try:
         result = subprocess.run(
-            ["markitdown", input_path, "-o", output_path],
+            [md_bin, input_path, "-o", output_path],
             capture_output=True, text=True, timeout=60
         )
         return result.returncode == 0, result.stderr
@@ -136,16 +126,17 @@ def _has_original(subject, basename):
 
 
 def _read_node_meta(subject, node_id):
-    """Read YAML frontmatter metadata for a node from its first matching file."""
-    wiki_dirs = [("concepts", "concept"), ("definitions", "definition"),
-                 ("formulas", "formula"), ("exercises", "exercise")]
-    for d, default_type in wiki_dirs:
+    """Read YAML frontmatter metadata for a node from its first matching file.
+    Checks wiki/ first (new SCHEMA structure), then legacy dirs as fallback."""
+    # Search order: wiki/ first, then legacy concept/definition/formula/exercise dirs
+    search_dirs = [("wiki", "wiki_page")]
+    for d, default_type in search_dirs:
         fpath = os.path.join(VAULT, "subjects", subject, d, f"{node_id}.md")
         if not os.path.isfile(fpath):
             continue
         with open(fpath, encoding="utf-8") as f:
             content = f.read()
-        meta = {"type": default_type, "created": None, "tags": []}
+        meta = {"type": default_type, "created": None, "tags": [], "source_url": None, "title": None}
         if not content.startswith("---\n"):
             return meta
         end = content.find("\n---\n", 4)
@@ -162,18 +153,56 @@ def _read_node_meta(subject, node_id):
                     meta["tags"] = [t.strip(" \"'") for t in raw[1:-1].split(",") if t.strip()]
                 elif raw:
                     meta["tags"] = [raw]
+            elif line.startswith("title:"):
+                meta["title"] = line.split(":", 1)[1].strip().strip("\"'")
+            elif line.startswith("source_url:"):
+                meta["source_url"] = line.split(":", 1)[1].strip().strip("\"'")
         return meta
-    return {"type": "note", "created": None, "tags": []}
+    # Fallback to legacy dirs
+    legacy_dirs = [("concepts", "concept"), ("definitions", "definition"),
+                   ("formulas", "formula"), ("exercises", "exercise")]
+    for d, default_type in legacy_dirs:
+        dpath = os.path.join(VAULT, "subjects", subject, d, f"{node_id}.md")
+        if not os.path.isfile(dpath):
+            continue
+        with open(dpath, encoding="utf-8") as f:
+            content = f.read()
+        meta = {"type": default_type, "created": None, "tags": [], "source_url": None, "title": None}
+        if not content.startswith("---\n"):
+            return meta
+        end = content.find("\n---\n", 4)
+        if end == -1:
+            return meta
+        for line in content[4:end].splitlines():
+            if line.startswith("type:"):
+                meta["type"] = line.split(":", 1)[1].strip()
+            elif line.startswith("created:"):
+                meta["created"] = line.split(":", 1)[1].strip()
+            elif line.startswith("tags:"):
+                raw = line.split(":", 1)[1].strip()
+                if raw.startswith("[") and raw.endswith("]"):
+                    meta["tags"] = [t.strip(" \"'") for t in raw[1:-1].split(",") if t.strip()]
+                elif raw:
+                    meta["tags"] = [raw]
+            elif line.startswith("title:"):
+                meta["title"] = line.split(":", 1)[1].strip().strip("\"'")
+            elif line.startswith("source_url:"):
+                meta["source_url"] = line.split(":", 1)[1].strip().strip("\"'")
+        return meta
+    return {"type": "note", "created": None, "tags": [], "source_url": None, "title": None}
 
 
 def _parse_relationships(subject):
-    """Build graph nodes from vault files + edges from relationships.md."""
+    """Build graph nodes + edges from vault files.
+
+    Auto-derives edges from [[wikilinks]] in wiki/ files (port of vaultParser.js
+    two-pass architecture). Edges come exclusively from wikilinks in page bodies.
+    """
     subj_dir = os.path.join(VAULT, "subjects", subject)
 
     # ── 1. Auto-derive nodes from vault wiki directories ──
-    wiki_dirs = ["concepts", "definitions", "formulas", "exercises"]
+    wiki_dirs = ["wiki", "concepts", "definitions", "formulas", "exercises"]
     name_counts = {}
-    node_dirs = {}
     for d in wiki_dirs:
         dpath = os.path.join(subj_dir, d)
         if not os.path.isdir(dpath):
@@ -181,61 +210,188 @@ def _parse_relationships(subject):
         for fname in sorted(os.listdir(dpath)):
             if not fname.endswith(".md") or fname.startswith("."):
                 continue
+            if d == "wiki" and fname in ("index.md", "log.md"):
+                continue
             node_id = fname[:-3]
             name_counts[node_id] = name_counts.get(node_id, 0) + 1
-            if node_id not in node_dirs and d in ("concepts", "definitions"):
-                node_dirs[node_id] = d
 
     nodes = []
+    node_map = {}  # id → node dict for quick lookup
+
+    # ── 1b. Exclude raw-only files (exist in raw/ but NOT as wiki pages) ──
+    raw_dir = os.path.join(subj_dir, "raw")
+    wiki_dir = os.path.join(subj_dir, "wiki")
+    # Collect wiki page names so we don't exclude pages that share a name with a raw file
+    wiki_names = set()
+    if os.path.isdir(wiki_dir):
+        for f in os.listdir(wiki_dir):
+            if f.endswith(".md") and f not in ("index.md", "log.md"):
+                wiki_names.add(f[:-3])
+    if os.path.isdir(raw_dir):
+        raw_basenames = set()
+        for f in os.listdir(raw_dir):
+            if f.endswith(".md") and f not in (".ingested.json",):
+                raw_basenames.add(f[:-3])
+        # Keep wiki nodes even if they share a name with a raw file
+        name_counts = {k: v for k, v in name_counts.items() if k not in raw_basenames or k in wiki_names}
+
     for node_id in sorted(name_counts):
         meta = _read_node_meta(subject, node_id)
-        nodes.append({
+        obj = {
             "id": node_id,
             "label": node_id,
+            "title": meta.get("title") or node_id,
             "subject": subject,
             "link_count": 0,
             "type": meta["type"],
             "created": meta["created"],
             "tags": meta["tags"],
+            "source_url": meta.get("source_url"),
             "file_count": name_counts[node_id],
-        })
+        }
+        nodes.append(obj)
+        node_map[node_id] = obj
 
-    # ── 2. Parse edges from relationships.md ──
-    rel_path = os.path.join(subj_dir, "relationships.md")
+    # ── 2. Build alias map from frontmatter (port of vaultParser.js) ──
+    alias_map = {}  # lowercase alias → node id
+    for node_id in sorted(name_counts):
+        meta = node_map[node_id]
+        if meta.get("aliases"):
+            for alias in meta["aliases"]:
+                alias_map[alias.lower()] = node_id
+            continue
+        # Read frontmatter from wiki/ files for aliases
+        for d in wiki_dirs:
+            dpath = os.path.join(subj_dir, d)
+            fpath = os.path.join(dpath, f"{node_id}.md")
+            if not os.path.isfile(fpath):
+                continue
+            try:
+                text = open(fpath, encoding="utf-8").read()
+            except OSError:
+                continue
+            if not text.startswith("---\n"):
+                continue
+            end = text.find("\n---\n", 4)
+            if end == -1:
+                continue
+            for line in text[4:end].splitlines():
+                if line.strip().lower().startswith("aliases:"):
+                    raw = line.split(":", 1)[1].strip()
+                    if raw.startswith("[") and raw.endswith("]"):
+                        for a in raw[1:-1].split(","):
+                            alias_map[a.strip().strip("\"'").lower()] = node_id
+                    elif raw:
+                        alias_map[raw.strip().strip("\"'").lower()] = node_id
+                elif line.strip().startswith("- "):
+                    pass  # block-format aliases handled below
+            # Block-format aliases
+            lines = text[4:end].splitlines()
+            for i, l in enumerate(lines):
+                if l.strip().lower().startswith("aliases:"):
+                    j = i + 1
+                    while j < len(lines) and lines[j].strip().startswith("- "):
+                        alias_map[lines[j].strip()[2:].strip().strip("\"'").lower()] = node_id
+                        j += 1
+            break
+
+    # ── 3. Auto-derive edges from [[wikilinks]] (port of vaultParser.js) ──
+    WIKILINK_RE = re.compile(r'\[\[([^\]]+)\]\]')
+    FENCED_RE = re.compile(r'```[\s\S]*?```')
+    INLINE_RE = re.compile(r'`[^`\n]+`')
+    COMMENT_RE = re.compile(r'%%[\s\S]*?%%')
+    FRONTMATTER_RE = re.compile(r'^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)')
+
     edges = []
-    if os.path.isfile(rel_path):
-        edge_re = re.compile(r'^\s*-\s*(.+?)\s*[→➡]\s*(.+?)\s*$')
+    edge_set = set()
+    backlink_map = {}
 
-        def strip_note(s):
-            return re.sub(r'\s*\([^)]*\)\s*$', '', s).strip()
+    def _add_edge(src, tgt):
+        key = f"{src}→{tgt}"
+        if src == tgt or key in edge_set:
+            return
+        edge_set.add(key)
+        edges.append({"source": src, "target": tgt})
+        backlink_map.setdefault(tgt, set()).add(src)
 
-        with open(rel_path, encoding="utf-8") as f:
-            rel_text = f.read()
+    def _resolve(target, source_id):
+        """Resolve a [[link]] to a node id (port of vaultParser.js §8.3)."""
+        t = target.strip()
+        if t in node_map:
+            return t
+        lower = t.lower().replace(' ', '-')
+        for nid in node_map:
+            if nid.lower() == lower:
+                return nid
+        target_base = t.split("/")[-1].lower()
+        candidates = [nid for nid in node_map if nid.split("/")[-1].lower() == target_base]
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            source_dir = source_id.rsplit("/", 1)[0] if "/" in source_id else ""
+            for c in candidates:
+                if source_dir and c.startswith(source_dir + "/"):
+                    return c
+            return sorted(candidates)[0]
+        if lower in alias_map:
+            return alias_map[lower]
+        return None  # unresolved → ghost node
 
-        in_edges = False
-        for line in rel_text.splitlines():
-            stripped = line.strip()
-            if stripped.lower().startswith("## edges"):
-                in_edges = True
+    # Scan wiki/ files for [[wikilinks]]
+    for d in ["wiki"]:
+        dpath = os.path.join(subj_dir, d)
+        if not os.path.isdir(dpath):
+            continue
+        for fname in sorted(os.listdir(dpath)):
+            if not fname.endswith(".md") or fname.startswith("."):
                 continue
-            elif stripped.startswith("## ") and not stripped.lower().startswith("## edges"):
-                in_edges = False
+            if fname in ("index.md", "log.md"):
                 continue
-            if in_edges:
-                m = edge_re.match(stripped)
-                if m:
-                    src = strip_note(m.group(1))
-                    tgt = strip_note(m.group(2))
-                    # Only add edge if both nodes exist in the vault
-                    if src in name_counts and tgt in name_counts:
-                        edges.append({"source": src, "target": tgt})
+            source_id = fname[:-3]
+            if source_id not in node_map:
+                continue
+            fpath = os.path.join(dpath, fname)
+            try:
+                raw = open(fpath, encoding="utf-8").read()
+            except OSError:
+                continue
+            # Strip frontmatter, fenced code, inline code, comments
+            body = FRONTMATTER_RE.sub("", raw)
+            body = FENCED_RE.sub("", body)
+            body = INLINE_RE.sub("", body)
+            body = COMMENT_RE.sub("", body)
+            for m in WIKILINK_RE.finditer(body):
+                link_part = m.group(1).split("|")[0]  # discard display alias
+                target = link_part.split("#")[0].strip()  # discard heading
+                resolved = _resolve(target, source_id)
+                if resolved:
+                    _add_edge(source_id, resolved)
+                else:
+                    ghost_id = "__ghost__/" + re.sub(r"\s+", "-", target.lower().strip())
+                    if ghost_id not in node_map:
+                        ghost = {
+                            "id": ghost_id,
+                            "label": target.strip(),
+                            "subject": subject,
+                            "link_count": 0,
+                            "type": "ghost",
+                            "created": None,
+                            "tags": [],
+                            "file_count": 1,
+                            "exists": False,
+                        }
+                        node_map[ghost_id] = ghost
+                        nodes.append(ghost)
+                    _add_edge(source_id, ghost_id)
 
-    # ── 3. Compute link_count ──
+    # ── 4. Compute link_count + backlinks ──
     for node in nodes:
         node["link_count"] = sum(
             1 for e in edges
             if e["target"] == node["id"] or e["source"] == node["id"]
         )
+        if node["id"] in backlink_map:
+            node["backlinks"] = sorted(backlink_map[node["id"]])
 
     return nodes, edges
 
@@ -372,9 +528,89 @@ def _extract_code_blocks(content):
     return blocks
 
 
+def _extract_wikilinks_from_body(body):
+    """Extract unique [[wikilinked]] concept names from a body of text, ordered by first appearance."""
+    seen = set()
+    result = []
+    for m in re.finditer(r'\[\[([^\]]+)\]\]', body):
+        name = m.group(1)
+        if name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+def _enrich_wikilinks(subject, body):
+    """Automatically wrap mentions of other wiki page names in [[wikilinks]].
+
+    Scans existing wiki/ files for node names (excluding index.md, log.md),
+    then finds case-insensitive matches in the body and wraps them.
+    Skips text inside code blocks, inline code, existing wikilinks, and headings.
+    """
+    wiki_dir = os.path.join(VAULT, "subjects", subject, "wiki")
+    if not os.path.isdir(wiki_dir):
+        return body
+
+    # Collect node names from existing wiki files (excluding structural ones)
+    node_names = set()
+    for fname in os.listdir(wiki_dir):
+        if not fname.endswith(".md") or fname in ("index.md", "log.md", ".ingested.json"):
+            continue
+        # Use the file's title (without .md) as the canonical name
+        node_names.add(fname[:-3])
+
+    if not node_names:
+        return body
+
+    # Sort by length (longest first) to avoid partial matches
+    # e.g. "Encapsulación" before "Clase" to not match inside unrelated words
+    sorted_names = sorted(node_names, key=lambda n: (-len(n), n))
+
+    # Split body into zones: code / existing wikilink / heading / plain text
+    WIKILINK_RE = re.compile(r'\[\[([^\]]+)\]\]')
+    FENCED_RE = re.compile(r'```[\s\S]*?```')
+    INLINE_RE = re.compile(r'`[^`\n]+`')
+    HEADING_RE = re.compile(r'^#{1,6}\s.*$', re.MULTILINE)
+
+    # Mask protected zones with placeholders
+    masked = body
+    placeholders = []
+
+    def _mask(zone, rep):
+        ph = f"\x00MASK_{len(placeholders)}\x00"
+        placeholders.append((ph, zone.group(0)))
+        return ph
+
+    masked = FENCED_RE.sub(lambda m: _mask(m, 'fenced'), masked)
+    masked = INLINE_RE.sub(lambda m: _mask(m, 'inline'), masked)
+    masked = WIKILINK_RE.sub(lambda m: _mask(m, 'wikilink'), masked)
+    masked = HEADING_RE.sub(lambda m: _mask(m, 'heading'), masked)
+
+    # In plain text zones, replace mentions with [[wikilinks]]
+    # Only match whole-word boundaries (not inside other words)
+    for name in sorted_names:
+        # Skip if name is too generic (single word < 3 chars could cause noise)
+        if len(name) < 3:
+            continue
+        # Build a pattern that matches the name as a standalone word
+        escaped = re.escape(name)
+        # Case-insensitive, word-boundary match, not inside existing wikilink brackets
+        pattern = re.compile(
+            r'(?<![\[/\w])' + escaped + r'(?![\]/\w])',
+            re.IGNORECASE
+        )
+        masked = pattern.sub(lambda m: f"[[{name}]]", masked)
+
+    # Restore placeholders
+    for ph, original in placeholders:
+        masked = masked.replace(ph, original)
+
+    return masked
+
+
 def _auto_create_pages(subject, base_name):
-    """Deterministically create wiki pages from a raw markdown file.
-    Skips pages that already exist (preserves LLM-polished content).
+    """Deterministically create a single wiki page from a raw markdown file.
+    Writes to wiki/ (new SCHEMA structure). Skips pages that already exist.
     Returns dict with counts of pages created.
     """
     raw_path = os.path.join(VAULT, "subjects", subject, "raw", f"{base_name}.md")
@@ -389,57 +625,77 @@ def _auto_create_pages(subject, base_name):
     today = datetime.now().strftime("%Y-%m-%d")
     created = 0
 
-    # 1. Concept page — intro paragraph + Concept/Concepto sections
-    concept_parts = []
-    if sections.get("__intro__"):
-        non_heading = [l for l in sections["__intro__"].splitlines()
-                       if not l.startswith("# ")]
-        if non_heading:
-            concept_parts.append("\n".join(non_heading))
-    for sn in ("Concepto", "Concept", "Definición", "Definicion"):
-        if sn in sections:
-            concept_parts.append(f"## {sn}\n\n{sections[sn]}")
-    if concept_parts:
-        text = f"---\ntitle: {base_name}\ntype: concept\ntags: []\ncreated: {today}\n---\n\n" + "\n\n".join(concept_parts)
-        if _write_page_if_missing(subject, "concepts", base_name, text):
-            created += 1
+    # Build a single wiki page combining all relevant content
+    parts = []
 
-    # 2. Definitions page — all bold-term definitions from every section
+    # 1. Intro paragraph
+    intro = sections.get("__intro__", "")
+    if intro:
+        non_heading = [l for l in intro.splitlines() if not l.startswith("# ")]
+        if non_heading:
+            parts.append("\n".join(non_heading))
+
+    # 2. Concept/Definition sections
+    for sn in ("Concepto", "Concept", "Definición", "Definicion", "Definition"):
+        if sn in sections:
+            parts.append(f"## {sn}\n\n{sections[sn]}")
+
+    # 3. Definitions (bold-term lines from all sections)
     all_defs = []
     for sectext in sections.values():
         all_defs.extend(_extract_definitions_from_text(sectext))
     if all_defs:
-        text = f"---\ntitle: {base_name}\ntype: definition\ntags: []\ncreated: {today}\n---\n\n" + "\n".join(all_defs)
-        if _write_page_if_missing(subject, "definitions", base_name, text):
-            created += 1
+        parts.append("## Key Terms\n\n" + "\n".join(all_defs))
 
-    # 3. Formulas page — code blocks
+    # 4. Formulas / Code blocks
     blocks = _extract_code_blocks(content)
     if blocks:
-        parts = []
+        code_parts = []
         for lang, code in blocks:
             label = f"Ejemplo en {lang}" if lang else "Ejemplo"
-            parts.append(f"**{label}:**\n\n```{lang}\n{code}\n```")
-        text = f"---\ntitle: {base_name}\ntype: formula\ntags: []\ncreated: {today}\n---\n\n" + "\n\n".join(parts)
-        if _write_page_if_missing(subject, "formulas", base_name, text):
-            created += 1
+            code_parts.append(f"**{label}:**\n\n```{lang}\n{code}\n```")
+        parts.append("## Examples / Formulas\n\n" + "\n\n".join(code_parts))
 
-    # 4. Exercises page — first matching exercise/problema section
+    # 5. Exercises
     for sn in ("Ejercicios", "Exercises", "Practice", "Problemas", "Problema"):
         if sn in sections:
-            text = f"---\ntitle: {base_name}\ntype: exercise\ntags: []\ncreated: {today}\n---\n\n## {sn}\n\n{sections[sn]}"
-            if _write_page_if_missing(subject, "exercises", base_name, text):
-                created += 1
+            parts.append(f"## {sn}\n\n{sections[sn]}")
             break
+
+    if parts:
+        body = "\n\n---\n\n".join(parts)
+        # Enrich body with [[wikilinks]]: find mentions of other wiki pages in the text
+        body = _enrich_wikilinks(subject, body)
+        # Append Related concepts section with wikilinked concepts found in body
+        related = _extract_wikilinks_from_body(body)
+        if related:
+            body += "\n\n## Related concepts\n" + "".join(f"- [[{c}]]\n" for c in related)
+        # Use more descriptive frontmatter matching SCHEMA style
+        text = (
+            f"---\n"
+            f"title: {base_name.replace('-', ' ').title()}\n"
+            f"type: concept\n"
+            f"tags: []\n"
+            f"created: {today}\n"
+            f"source_url: raw/{base_name}.md\n"
+            f"---\n\n"
+            f"**Summary**: Notes from {base_name}.\n"
+            f"**Sources**: raw/{base_name}.md\n"
+            f"**Last updated**: {today}\n\n"
+            f"---\n\n"
+            f"{body}"
+        )
+        if _write_wiki_page_if_missing(subject, base_name, text):
+            created += 1
 
     return {"created": created}
 
 
-def _write_page_if_missing(subject, wiki_type, base_name, content):
+def _write_wiki_page_if_missing(subject, base_name, content):
     """Write a wiki page only if it doesn't already exist."""
-    dpath = os.path.join(VAULT, "subjects", subject, wiki_type)
-    os.makedirs(dpath, exist_ok=True)
-    fpath = os.path.join(dpath, f"{base_name}.md")
+    wiki_dir = os.path.join(VAULT, "subjects", subject, "wiki")
+    os.makedirs(wiki_dir, exist_ok=True)
+    fpath = os.path.join(wiki_dir, f"{base_name}.md")
     if os.path.isfile(fpath):
         return False
     with open(fpath, "w", encoding="utf-8") as f:
@@ -512,10 +768,11 @@ def _log_action(subject, action, detail):
 
 
 def _run_llm_ingest_thread(subject):
-    """Background thread: spawns `hermes chat -q` to run LLM-powered ingest via study-professor skill.
+    """Background thread: spawns `hermes chat -q` to run LLM-powered wiki ingest.
 
-    The agent reads un-ingested raw files for `subject`, runs the LLM Wiki ingest
-    (creates wiki pages, updates .ingested.json, updates relationships.md), then
+    The agent reads un-ingested raw files for `subject`, reads SCHEMA.md to
+    determine page format and conventions, runs the ingest
+    (creates wiki pages, updates .ingested.json, writes wikilinks for edges), then
     writes a result file. This thread waits for the agent to finish, then loads
     the result into `_ingest_result` and clears `_ingest_running`.
     """
@@ -549,24 +806,43 @@ def _run_llm_ingest_thread(subject):
         }
         _ingest_running = False
         _ingest_current_subject = None
+        _ingest_total_pending = 0
         _log_action(subject, "UPDATE_WIKI_INGEST", "no files to ingest")
         return
 
     file_list = "\n".join(f"- {f}" for f in uningested)
-    prompt = f"""You are the study-professor agent. Run the LLM Wiki ingest for subject '{subject}'.
+    prompt = f"""This is a NON-INTERACTIVE automated wiki ingest for subject '{subject}'. Do NOT ask the user questions or wait for discussion — just do the work.
 
 Un-ingested raw files in ~/study-vault/subjects/{subject}/raw/:
 {file_list}
 
-For EACH file above:
-1. Read the raw markdown content
-2. Extract concepts, definitions, formulas, exercises into SEPARATE wiki pages
-3. Write pages to: concepts/, definitions/, formulas/, exercises/ (under ~/study-vault/subjects/{subject}/)
-4. Add proper frontmatter to each wiki page: `title`, `type`, `tags`, `created`, `source_url`, `ingested`
-5. Update relationships.md with new edges between nodes (use `→` arrow syntax, one edge per line, keep existing edges)
-6. After processing each file, add its filename to the `ingested` array in raw/.ingested.json
+STEP 1 — Read SCHEMA.md at ~/study-vault/subjects/{subject}/SCHEMA.md if it exists.
+Follow its page format, frontmatter, and interlinking rules. If SCHEMA.md says to "discuss" or "ask the user", SKIP that step — this is automated.
 
-Follow the conventions in the study-professor and llm-wiki skills you have loaded. Preserve any existing wiki pages — never overwrite or delete files you did not create.
+If SCHEMA.md does NOT exist, use these defaults:
+- Page format: markdown with YAML frontmatter (title, created, type, tags, source_url)
+- Frontmatter type: one of source_summary, concept, formula, definition, exercise
+- `tags`: exactly ONE topic tag per page (e.g., `tags: [arrays]`). Pick the single most specific topic.
+- `source_url`: path to the raw file this page derives from (e.g., `source_url: raw/2026-cd-tp6.md`)
+- Source summaries: name them `src-{{base-name}}` (e.g., `src-2026-cd-tp6.md`) — never reuse raw/ filenames
+- Create BOTH a source summary page per raw file AND concept pages for each distinct concept
+- Use [[wikilinks]] with exact lowercase-hyphen filenames (e.g., `[[cable-coaxial]]`, not `[[Cable Coaxial]]`)
+- Every concept wikilinked MUST have its own page — no orphan wikilinks
+- End each concept page with a "## Related concepts" section
+- Page names: lowercase-with-hyphens.md
+
+STEP 2 — Follow the Ingest Workflow defined in SCHEMA.md:
+- For each un-ingested raw .md file, do exactly what SCHEMA.md says (source pages + concept pages)
+- After processing each file, **immediately** add its filename to the `ingested` array in raw/.ingested.json
+
+STEP 3 — After all files are processed:
+1. Update wiki/index.md with new pages and one-line descriptions
+2. Append an entry to wiki/log.md with the date, source name, and what changed
+
+RULES:
+- Preserve any existing wiki pages — never overwrite or delete files you did not create
+- Never modify anything in raw/
+- This is non-interactive — never ask the user questions or wait for input
 
 WHEN COMPLETE, write the result file at {result_path} with EXACTLY this JSON (no other text in the file):
 {{"pages_created": N, "tokens_used": N, "model": "<provider>/<model>", "status": "complete"}}
@@ -576,29 +852,24 @@ WHEN COMPLETE, write the result file at {result_path} with EXACTLY this JSON (no
 - model: the model identifier (e.g., opencode-zen/minimax-m3-free)
 - status: "complete" on success, "error" on failure
 
-Use the terminal, file, and any other tools needed. Be thorough — the wiki pages should be high quality with proper structure, examples, and cross-links."""
+Use the terminal and file tools to read/write files. Be thorough — the wiki pages should be high quality with proper structure, examples, and cross-links."""
 
-    # Resolve the last fallback model for ingestion (cheapest/last resort)
-    ingest_provider, ingest_model = _last_fallback_model()
-
-    # Spawn hermes subprocess (one-shot, quiet, yolo for non-interactive tool use)
+    # Spawn hermes subprocess (one-shot, quiet, yolo for non-interactive tool use).
+    # No skills loaded — the agent follows SCHEMA.md for page format and conventions.
+    # No --provider/-m flags → Hermes uses the default model and falls through
+    # fallback_providers automatically if the default is unavailable.
+    # NOTE: No timeout — process only stops when the LLM completes or errors.
     try:
         proc = subprocess.run(
             ["hermes", "chat", "-q", prompt,
-             "-s", "study-professor,llm-wiki",
              "-Q", # quiet mode (no banner)
              "--yolo", # auto-approve tool use
-             "--provider", ingest_provider,
-             "-m", ingest_model,
              "--accept-hooks"],
             cwd=os.path.expanduser("~"),
             capture_output=True,
             text=True,
-            timeout=600,  # 10 min max
         )
         agent_output = proc.stdout + "\n" + proc.stderr
-    except subprocess.TimeoutExpired:
-        agent_output = "[timeout] hermes subprocess exceeded 600s"
     except Exception as e:
         agent_output = f"[error] {e}"
 
@@ -637,7 +908,7 @@ Use the terminal, file, and any other tools needed. Be thorough — the wiki pag
                     _cur = _conn.execute(
                         "SELECT input_tokens + output_tokens + COALESCE(cache_read_tokens,0) + COALESCE(cache_write_tokens,0) + COALESCE(reasoning_tokens,0) "
                         "FROM sessions WHERE started_at > ? ORDER BY started_at DESC LIMIT 1",
-                        (time.time() - 660,)  # within last 11 min (ingest timeout)
+                        (time.time() - 14400,)  # within last 4 hours (ingest can run long)
                     )
                     _row = _cur.fetchone()
                     _conn.close()
@@ -658,6 +929,7 @@ Use the terminal, file, and any other tools needed. Be thorough — the wiki pag
     }
     _ingest_running = False
     _ingest_current_subject = None
+    _ingest_total_pending = 0
     _log_action(subject, "UPDATE_WIKI_INGEST",
                 f"{pages_created} pages, {tokens_used} tokens, model={model}")
 
@@ -668,6 +940,98 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _cascade_delete(subject, base_name, delete_raw=True):
+    """Delete a raw file + all derived wiki pages + originals + objects.
+    
+    Returns dict with:
+      - deleted_files: list of relative paths deleted
+      - deleted_ids: set of node ids
+      - ingested_updated: bool — whether .ingested.json was modified
+    """
+    result = {
+        "deleted_files": [],
+        "deleted_ids": set(),
+        "ingested_updated": False,
+    }
+    subj_dir = os.path.join(VAULT, "subjects", subject)
+    source_tag = f"raw/{base_name}.md"
+    ingested = _read_ingested(subject)
+
+    # — 1. Delete raw file —
+    raw_path = os.path.join(subj_dir, "raw", f"{base_name}.md")
+    if delete_raw and os.path.isfile(raw_path):
+        os.remove(raw_path)
+        result["deleted_files"].append(f"subjects/{subject}/raw/{base_name}.md")
+
+    # — 2. Delete wiki pages (exact match + derived via frontmatter) —
+    for wtype in ("concepts", "definitions", "formulas", "exercises", "wiki"):
+        wdir = os.path.join(subj_dir, wtype)
+        if not os.path.isdir(wdir):
+            continue
+        for wf in list(os.listdir(wdir)):
+            if not wf.endswith(".md"):
+                continue
+            # Skip structural wiki files
+            if wtype == "wiki" and wf in ("index.md", "log.md"):
+                continue
+            wf_path = os.path.join(wdir, wf)
+
+            # Delete exact match
+            if wf == f"{base_name}.md":
+                os.remove(wf_path)
+                result["deleted_files"].append(f"{wtype}/{wf}")
+                result["deleted_ids"].add(base_name)
+                continue
+
+            # Delete derived pages via frontmatter source_url
+            try:
+                with open(wf_path, encoding="utf-8") as fh:
+                    head = fh.read()
+                if head.startswith("---"):
+                    end = head.find("\n---", 3)
+                    if end > 0:
+                        fm = head[3:end]
+                        for fmline in fm.splitlines():
+                            k, _, v = fmline.partition(":")
+                            if k.strip() == "source_url" and v.strip() == source_tag:
+                                os.remove(wf_path)
+                                derived_id = wf[:-3]  # strip .md
+                                result["deleted_files"].append(f"{wtype}/{wf}")
+                                result["deleted_ids"].add(derived_id)
+                                break
+            except Exception:
+                pass
+
+    # — 3. Delete original file —
+    orig_dir = os.path.join(VAULT, "originals", subject)
+    if os.path.isdir(orig_dir):
+        for f in os.listdir(orig_dir):
+            if f.startswith(base_name + ".") or f == base_name:
+                os.remove(os.path.join(orig_dir, f))
+                result["deleted_files"].append(f"originals/{subject}/{f}")
+
+    # — 4. Delete objects (prefix match, not substring) —
+    obj_dir = os.path.join(VAULT, "objects", subject)
+    if os.path.isdir(obj_dir):
+        for f in os.listdir(obj_dir):
+            if f == f"{base_name}.html" or f.startswith(f"{base_name}-"):
+                fp = os.path.join(obj_dir, f)
+                if os.path.isfile(fp):
+                    os.remove(fp)
+                    result["deleted_files"].append(f"objects/{subject}/{f}")
+
+    # — 5. Remove from ingested set —
+    fname = f"{base_name}.md"
+    if fname in ingested:
+        ingested.discard(fname)
+        _write_ingested(subject, ingested)
+        result["ingested_updated"] = True
+
+    # — 6. Remove edges from relationships.md — REMOVED — edges come exclusively from [[wikilinks]] in wiki/ pages
+    
+    return result
+
+
 class StudyHandler(http.server.BaseHTTPRequestHandler):
     """HTTP request handler for the study server."""
 
@@ -675,7 +1039,16 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         pass  # suppress default access logs
 
     def _set_cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        allowed = [
+            "https://study.example.com",
+            "http://localhost:8081",
+            "http://localhost:8080",
+            "http://127.0.0.1:8081",
+            "http://127.0.0.1:8080",
+        ]
+        if origin in allowed:
+            self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
@@ -861,6 +1234,12 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
     def _api_graph(self, params):
         """GET /api/graph?subject=X"""
         subject = params.get("subject", [None])[0]
+        if not subject:
+            self._send_json(400, {"error": "missing_subject", "detail": "subject parameter is required"})
+            return
+        if not _subject_exists(subject):
+            self._send_json(404, {"error": "subject_not_found", "detail": f"Subject '{subject}' not found"})
+            return
         nodes, edges = _parse_relationships(subject)
         self._send_json(200, {"subject_filter": subject, "nodes": nodes, "edges": edges})
 
@@ -888,12 +1267,22 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 })
 
         # ── Missing frontmatter ──
+        scan_dirs = []
+        # New SCHEMA structure: wiki/
+        wiki_dir = os.path.join(VAULT, "subjects", subject, "wiki")
+        if os.path.isdir(wiki_dir):
+            scan_dirs.append(("wiki", wiki_dir))
+        # Legacy dirs
         for d in ["concepts", "definitions", "formulas", "exercises"]:
             dpath = os.path.join(VAULT, "subjects", subject, d)
-            if not os.path.isdir(dpath):
-                continue
+            if os.path.isdir(dpath):
+                scan_dirs.append((d, dpath))
+        for dir_label, dpath in scan_dirs:
             for fname in sorted(os.listdir(dpath)):
                 if not fname.endswith(".md") or fname.startswith("."):
+                    continue
+                # Skip structural wiki files
+                if dir_label == "wiki" and fname in ("index.md", "log.md"):
                     continue
                 fpath = os.path.join(dpath, fname)
                 with open(fpath, encoding="utf-8") as f:
@@ -903,7 +1292,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                         "type": "missing_frontmatter",
                         "severity": "warning",
                         "node": fname[:-3],
-                        "detail": f"{d}/{fname} has no YAML frontmatter"
+                        "detail": f"{dir_label}/{fname} has no YAML frontmatter"
                     })
 
         # ── Stale files (created > 90 days ago) ──
@@ -937,17 +1326,44 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         """Rewrite index.md for a subject from the actual filesystem."""
         subj_dir = os.path.join(VAULT, "subjects", subject)
         lines = [f"# {subject.title()} — Index", ""]
-        for section, dir_name in [("Raw Materials", "raw"), ("Concepts", "concepts"),
-                                    ("Definitions", "definitions"), ("Formulas", "formulas"),
-                                    ("Exercises", "exercises")]:
-            lines.append(f"## {section}")
+
+        # Raw materials section
+        lines.append("## Raw Materials")
+        raw_dir = os.path.join(subj_dir, "raw")
+        if os.path.isdir(raw_dir):
+            for fname in sorted(os.listdir(raw_dir)):
+                if not fname.endswith(".md") or fname.startswith("."):
+                    continue
+                lines.append(f"- {fname}")
+        lines.append("")
+
+        # Wiki pages section (new SCHEMA structure)
+        wiki_dir = os.path.join(subj_dir, "wiki")
+        if os.path.isdir(wiki_dir):
+            wiki_pages = [f for f in sorted(os.listdir(wiki_dir))
+                          if f.endswith(".md") and not f.startswith(".")
+                          and f not in ("index.md", "log.md")]
+            if wiki_pages:
+                lines.append("## Wiki Pages")
+                for fname in wiki_pages:
+                    lines.append(f"- [[{fname[:-3]}]]")
+                lines.append("")
+
+        # Legacy sections (fallback for subjects created before SCHEMA migration)
+        for section, dir_name in [("Concepts", "concepts"), ("Definitions", "definitions"),
+                                    ("Formulas", "formulas"), ("Exercises", "exercises")]:
             dpath = os.path.join(subj_dir, dir_name)
             if os.path.isdir(dpath):
-                for fname in sorted(os.listdir(dpath)):
-                    if not fname.endswith(".md") or fname.startswith("."):
-                        continue
-                    lines.append(f"- {fname}" if dir_name == "raw" else f"- [[{fname[:-3]}]]")
-            lines.append("")
+                has_files = any(f.endswith(".md") and not f.startswith(".")
+                                for f in os.listdir(dpath))
+                if has_files:
+                    lines.append(f"## {section}")
+                    for fname in sorted(os.listdir(dpath)):
+                        if not fname.endswith(".md") or fname.startswith("."):
+                            continue
+                        lines.append(f"- [[{fname[:-3]}]]")
+                    lines.append("")
+
         lines.append("## Relationships\nSee [[relationships]]\n")
         lines.append("<!-- auto-generated by /api/regenerate-index -->\n")
         index_path = os.path.join(subj_dir, "index.md")
@@ -960,6 +1376,10 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         if not subject:
             try:
                 cl = int(self.headers.get("Content-Length", 0))
+                if cl > 1_000_000:
+                    self._send_json(413, {"error": "body_too_large",
+                                          "detail": "JSON body exceeds 1 MB limit"})
+                    return
                 if cl > 0:
                     body = json.loads(self.rfile.read(cl).decode("utf-8"))
                     subject = body.get("subject", "")
@@ -976,17 +1396,17 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
     def _api_upload(self):
         """POST /api/upload — multipart upload with MarkItDown conversion + auto-ingest."""
-        global _ingest_running
-        if _ingest_running:
-            self._send_json(503, {"error": "ingest_in_progress",
-                                  "detail": "Ingest in progress, try again shortly"})
+        global _upload_in_progress
+        if _upload_in_progress or _ingest_running:
+            self._send_json(503, {"error": "busy",
+                                  "detail": "Another operation in progress, try again shortly"})
             return
-        _ingest_running = True
+        _upload_in_progress = True
 
         try:
             self._do_upload()
         finally:
-            _ingest_running = False
+            _upload_in_progress = False
 
     def _do_upload(self):
         """POST /api/upload — multipart upload with MarkItDown conversion."""
@@ -1067,18 +1487,14 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         try:
             from datetime import datetime
             ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            safe_name = filename.replace('\n', ' ').replace('\r', ' ').replace('|', ' ')
             with open(log_path, "a") as logf:
-                logf.write(f"- {ts} | UPLOAD | {subject} | {filename} → raw/{md_filename}\n")
+                logf.write(f"- {ts} | UPLOAD | {subject} | {safe_name} → raw/{md_filename}\n")
         except OSError:
             pass  # non-critical
 
-        # 10. Auto-ingest: create wiki pages from the new raw file (skip if exist)
-        auto_ingested = 0
-        try:
-            result = _auto_create_pages(subject, slug)
-            auto_ingested = result.get("created", 0)
-        except OSError:
-            pass  # non-critical
+        # 10. Skip auto-ingest: raw files in raw/ only. Wiki pages are created
+        # by the "Update Wiki" button instead, using SCHEMA.md naming conventions.
 
         # 11. Auto-regenerate index to reflect the new file
         try:
@@ -1091,7 +1507,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             "original_path": f"originals/{subject}/{orig_filename}",
             "filename": filename,
             "conversion": "success",
-            "auto_ingested": auto_ingested,
         })
 
     def _api_delete_file(self):
@@ -1101,9 +1516,20 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(503, {"error": "ingest_in_progress",
                                   "detail": "Ingest in progress, try again shortly"})
             return
+        _ingest_running = True
+        try:
+            self._do_delete_file()
+        finally:
+            _ingest_running = False
 
+    def _do_delete_file(self):
+        """Internal delete — called with _ingest_running lock held."""
         try:
             cl = int(self.headers.get("Content-Length", 0))
+            if cl > 1_000_000:
+                self._send_json(413, {"error": "body_too_large",
+                                      "detail": "JSON body exceeds 1 MB limit"})
+                return
             body = json.loads(self.rfile.read(cl).decode("utf-8"))
         except (ValueError, json.JSONDecodeError):
             self._send_json(400, {"error": "invalid_body", "detail": "Expected JSON body"})
@@ -1136,70 +1562,12 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, {"error": "not_a_file", "detail": "Path is not a file"})
             return
 
-        # — 1. Delete raw file —
-        os.remove(abs_path)
-        removed = [rel_path]
+        # Cascade delete via shared function (raw, wiki, derived, originals, objects, edges, ingested)
+        cascade_result = _cascade_delete(subject, base_name, delete_raw=True)
+        removed = [rel_path] + cascade_result["deleted_files"]
+        removed_edges = len(cascade_result["deleted_ids"])
 
-        # — 2. Delete wiki pages with same base name —
-        subj_dir = os.path.join(VAULT, "subjects", subject)
-        for wiki_dir in ("concepts", "definitions", "formulas", "exercises"):
-            fpath = os.path.join(subj_dir, wiki_dir, f"{base_name}.md")
-            if os.path.isfile(fpath):
-                os.remove(fpath)
-                removed.append(f"subjects/{subject}/{wiki_dir}/{base_name}.md")
-
-        # — 3. Delete original file —
-        orig_dir = os.path.join(VAULT, "originals", subject)
-        for ext in ("pdf", "pptx", "docx", "xlsx", "jpg", "png"):
-            opath = os.path.join(orig_dir, f"{base_name}.{ext}")
-            if os.path.isfile(opath):
-                os.remove(opath)
-                removed.append(f"originals/{subject}/{base_name}.{ext}")
-                break
-
-        # — 4. Delete any generated objects referencing this name —
-        obj_dir = os.path.join(subj_dir, "objects")
-        if os.path.isdir(obj_dir):
-            for fname in os.listdir(obj_dir):
-                if base_name in fname:
-                    opath = os.path.join(obj_dir, fname)
-                    if os.path.isfile(opath):
-                        os.remove(opath)
-                        removed.append(f"subjects/{subject}/objects/{fname}")
-
-        # — 5. Remove edges referencing this node from relationships.md —
-        rel_path_file = os.path.join(subj_dir, "relationships.md")
-        if os.path.isfile(rel_path_file):
-            with open(rel_path_file, encoding="utf-8") as f:
-                content = f.read()
-            lines = content.splitlines()
-            kept = []
-            removed_edges = 0
-            for line in lines:
-                stripped = line.strip()
-                # Keep section headers and blank lines
-                if stripped.startswith("#") or stripped == "":
-                    kept.append(line)
-                    continue
-                # Only remove edges where source OR target exactly match base_name
-                edge_parts = stripped.lstrip("- ").split("→")
-                if len(edge_parts) == 2:
-                    src = edge_parts[0].strip()
-                    tgt = edge_parts[1].strip().split(" ")[0]  # drop parentheticals
-                    if src == base_name or tgt == base_name:
-                        removed_edges += 1
-                        continue
-                # Fallback for malformed lines — only remove exact match
-                if stripped == base_name or stripped == f"- {base_name}":
-                    removed_edges += 1
-                    continue
-                kept.append(line)
-            if removed_edges > 0:
-                new_content = "\n".join(kept) + "\n"
-                with open(rel_path_file, "w", encoding="utf-8") as f:
-                    f.write(new_content)
-
-        # — 6. Log —
+        # — Log —
         log_path = os.path.join(VAULT, "log.md")
         try:
             from datetime import datetime
@@ -1209,7 +1577,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         except OSError:
             pass
 
-        # — 7. Regenerate index —
+        # — Regenerate index —
         try:
             self._regenerate_index(subject)
         except OSError:
@@ -1285,18 +1653,28 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
     def _api_status(self):
         """GET /api/status — current server state (ingest lock, queue, last result)."""
         global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_total_pending
-        # If ingest is running, re-count remaining files live from .ingested.json
-        # so the progress bar gets real mid-run feedback (not just initial count).
+        global _ingest_initial_wiki_count, _ingest_initial_total
+        # If ingest is running, compute live progress from filesystem
+        wiki_pages_created = 0
         if _ingest_running and _ingest_current_subject:
             remaining = len(_get_remaining_ingest(_ingest_current_subject))
             _ingest_total_pending = remaining
+            # Count current wiki/ .md files — gives progress even if .ingested.json is not updated per-file
+            wiki_dir = os.path.join(VAULT, "subjects", _ingest_current_subject, "wiki")
+            if os.path.isdir(wiki_dir):
+                current_wiki_count = sum(
+                    1 for f in os.listdir(wiki_dir)
+                    if f.endswith(".md") and f not in ("index.md", "log.md")
+                )
+                wiki_pages_created = max(0, current_wiki_count - _ingest_initial_wiki_count)
         self._send_json(200, {
             "ingest_running": _ingest_running,
             "pending_total": _ingest_total_pending,
+            "initial_total": _ingest_initial_total,
+            "wiki_pages_created": wiki_pages_created,
             "queue_length": len(_ingest_queue),
             "result": _ingest_result,
         })
-
     def _api_original(self, params):
         """GET /api/original?path=X — serve original uploaded file."""
         rel_path = params.get("path", [None])[0]
@@ -1314,6 +1692,11 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             return
 
         _, ext = os.path.splitext(abs_path)
+        allowed_exts = {".pdf", ".pptx", ".docx", ".xlsx", ".jpg", ".jpeg", ".png"}
+        if ext.lower() not in allowed_exts:
+            self._send_json(403, {"error": "forbidden_format",
+                                  "detail": f"Format '{ext}' not allowed for download"})
+            return
         mime_map = {
             ".pdf": "application/pdf",
             ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -1332,7 +1715,8 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self._set_cors()
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Disposition", f'attachment; filename="{basename}"')
+        safe_basename = basename.replace('"', '').replace('\n', '').replace('\r', '')
+        self.send_header("Content-Disposition", f'attachment; filename="{safe_basename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1361,12 +1745,20 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         """POST /api/mark-file — mark/unmark a raw file for deletion."""
         try:
             cl = int(self.headers.get("Content-Length", 0))
+            if cl > 1_000_000:
+                self._send_json(413, {"error": "body_too_large",
+                                      "detail": "JSON body exceeds 1 MB limit"})
+                return
             body = json.loads(self.rfile.read(cl)) if cl else {}
             rel_path = body.get("path", "")
             action = body.get("action", "")
             subject = body.get("subject", "")
-            if not subject or not rel_path:
-                self._send_json(400, {"error": "missing_fields", "detail": "path, subject, action required"})
+            if not subject or not rel_path or action not in ("delete", "undo"):
+                self._send_json(400, {"error": "missing_fields", "detail": "path, subject, and action (delete/undo) are required"})
+                return
+            if not _subject_exists(subject):
+                self._send_json(404, {"error": "subject_not_found",
+                                      "detail": f"Subject '{subject}' not found"})
                 return
             base_name = os.path.splitext(os.path.basename(rel_path))[0]
             pending = _read_pending_deletes(subject)
@@ -1392,6 +1784,10 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             return
         try:
             cl = int(self.headers.get("Content-Length", 0))
+            if cl > 1_000_000:
+                self._send_json(413, {"error": "body_too_large",
+                                      "detail": "JSON body exceeds 1 MB limit"})
+                return
             body = json.loads(self.rfile.read(cl)) if cl else {}
             subject = body.get("subject", "")
             if not subject:
@@ -1404,111 +1800,42 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             pending = _read_pending_deletes(subject)
             results = {"files_deleted": 0, "deleted_files": []}
 
-            # Step 1: Cascade delete (sync, fast)
-            # Collect ALL deleted node IDs across all pending deletions
+            # Step 1: Cascade delete (sync, fast) via shared function
             all_deleted_ids = set()  # node ids (filename without .md)
 
             for base_name in pending:
-                source_tag = f"raw/{base_name}.md"
-                # Delete the raw file
-                delete_path = os.path.join(raw_dir, f"{base_name}.md")
-                if os.path.isfile(delete_path):
-                    os.remove(delete_path)
-                # Delete exact-match wiki pages + scan frontmatter for derived pages
-                for wtype in ("concepts", "definitions", "formulas", "exercises"):
-                    wdir = os.path.join(vault_subject, wtype)
-                    if not os.path.isdir(wdir):
-                        continue
-                    for wf in list(os.listdir(wdir)):
-                        if not wf.endswith(".md"):
-                            continue
-                        wf_path = os.path.join(wdir, wf)
-                        # Delete exact match
-                        if wf == f"{base_name}.md":
-                            os.remove(wf_path)
-                            results["deleted_files"].append(f"{wtype}/{wf}")
-                            all_deleted_ids.add(base_name)
-                            continue
-                        # Delete derived pages via frontmatter source_url
-                        try:
-                            with open(wf_path, encoding="utf-8") as fh:
-                                head = fh.read(1024)
-                            if head.startswith("---"):
-                                end = head.find("---", 3)
-                                if end > 0:
-                                    fm = head[3:end]
-                                    for fmline in fm.splitlines():
-                                        k, _, v = fmline.partition(":")
-                                        if k.strip() == "source_url" and v.strip() == source_tag:
-                                            os.remove(wf_path)
-                                            derived_id = wf[:-3]  # strip .md
-                                            results["deleted_files"].append(f"{wtype}/{wf}")
-                                            all_deleted_ids.add(derived_id)
-                                            break
-                        except Exception:
-                            pass
-                # Delete originals
-                orig_dir = os.path.join(VAULT, "originals", subject)
-                if os.path.isdir(orig_dir):
-                    for f in os.listdir(orig_dir):
-                        if f.startswith(base_name + ".") or f == base_name:
-                            os.remove(os.path.join(orig_dir, f))
-                            results["deleted_files"].append(f"originals/{subject}/{f}")
-                # Delete objects (substring match)
-                obj_dir = os.path.join(VAULT, "objects", subject)
-                if os.path.isdir(obj_dir):
-                    for f in os.listdir(obj_dir):
-                        if base_name in f:
-                            fp = os.path.join(obj_dir, f)
-                            if os.path.isfile(fp):
-                                os.remove(fp)
-                                results["deleted_files"].append(f"objects/{subject}/{f}")
-                # Remove from ingested set
-                fname = f"{base_name}.md"
-                if fname in ingested:
-                    ingested.discard(fname)
+                cascade_result = _cascade_delete(subject, base_name, delete_raw=True)
+                results["deleted_files"].extend(cascade_result["deleted_files"])
+                all_deleted_ids.update(cascade_result["deleted_ids"])
                 results["files_deleted"] += 1
 
-            # Clean relationships.md: remove edges involving ANY deleted node
-            if all_deleted_ids:
-                rel_path = os.path.join(vault_subject, "relationships.md")
-                if os.path.isfile(rel_path):
-                    with open(rel_path, encoding="utf-8") as f:
-                        content = f.read()
-                    lines = content.splitlines()
-                    kept = []
-                    for line in lines:
-                        stripped = line.strip()
-                        if stripped.startswith("#") or stripped == "":
-                            kept.append(line)
-                            continue
-                        edge_text = stripped.lstrip("- ").strip()
-                        if "→" in edge_text:
-                            edge_parts = edge_text.split("→")
-                            src = edge_parts[0].strip()
-                            tgt = edge_parts[1].strip().split(" ")[0].strip()
-                            if src in all_deleted_ids or tgt in all_deleted_ids:
-                                continue
-                        kept.append(line)
-                    with open(rel_path, "w", encoding="utf-8") as f:
-                        f.write("\n".join(kept))
-
-            # Step 2: Clear pending, mark deleted ingested, save state
+            # Step 2: Clear pending, regenerate index (ingested already saved by _cascade_delete)
             _write_pending_deletes(subject, [])
-            _write_ingested(subject, ingested)
             self._regenerate_index(subject)
             _log_action(subject, "UPDATE_WIKI_DELETE",
                         f"{results['files_deleted']} deleted, starting LLM ingest")
 
             # Step 3: Count files pending ingest and spawn LLM thread (async)
+            # Re-read ingested state (cascade_delete may have modified it)
+            ingested = _read_ingested(subject)
             if os.path.isdir(raw_dir):
                 uningested = [f for f in os.listdir(raw_dir)
                               if f.endswith(".md") and f != ".ingested.json" and f not in ingested]
             else:
                 uningested = []
-            global _ingest_total_pending, _ingest_current_subject
+            global _ingest_total_pending, _ingest_current_subject, _ingest_initial_wiki_count, _ingest_initial_total
             _ingest_total_pending = len(uningested)
+            _ingest_initial_total = len(uningested) # save initial total so frontend can compute fraction
             _ingest_current_subject = subject
+            # Count existing wiki/ .md files BEFORE ingest — used for live progress tracking
+            wiki_dir = os.path.join(VAULT, "subjects", subject, "wiki")
+            if os.path.isdir(wiki_dir):
+                _ingest_initial_wiki_count = sum(
+                    1 for f in os.listdir(wiki_dir)
+                    if f.endswith(".md") and f not in ("index.md", "log.md")
+                )
+            else:
+                _ingest_initial_wiki_count = 0
             _ingest_running = True
             _ingest_result = None
             t = threading.Thread(target=_run_llm_ingest_thread,
@@ -1523,7 +1850,10 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             })
         except Exception as e:
             _ingest_running = False
-            self._send_json(500, {"error": "internal", "detail": str(e)})
+            _ingest_total_pending = 0
+            import logging
+            logging.exception("_api_update_wiki unhandled error")
+            self._send_json(500, {"error": "internal", "detail": "Internal server error"})
 
     # ── Routing ──
 
@@ -1569,7 +1899,9 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             else:
                 self._send_json(404, {"error": "not_found", "detail": f"Route not found: {path}"})
         except Exception as e:
-            self._send_json(500, {"error": "internal", "detail": str(e)})
+            import logging
+            logging.exception("do_GET unhandled error")
+            self._send_json(500, {"error": "internal", "detail": "Internal server error"})
 
     def do_POST(self):
         try:
@@ -1580,16 +1912,18 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 self._api_upload()
             elif path == "/api/delete-file":
                 self._api_delete_file()
-            elif path == "/api/regenerate-index":
-                self._api_regenerate_index({})
             elif path == "/api/mark-file":
                 self._api_mark_file()
             elif path == "/api/update-wiki":
                 self._api_update_wiki()
+            elif path == "/api/regenerate-index":
+                self._api_regenerate_index(params=None)
             else:
                 self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
         except Exception as e:
-            self._send_json(500, {"error": "internal", "detail": str(e)})
+            import logging
+            logging.exception("do_POST unhandled error")
+            self._send_json(500, {"error": "internal", "detail": "Internal server error"})
 
 
 if __name__ == "__main__":
