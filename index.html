@@ -1684,8 +1684,7 @@ function openSearchResult(el) {
  const path = el.dataset.path;
  const query = el.dataset.query || '';
  document.getElementById('search-results').style.display = 'none';
- document.getElementById('search-input').value = '';
- clearSearchHighlights();
+ // Keep highlights and search input visible after selection
  showFilePreview(path, query);
 }
 
