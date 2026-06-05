@@ -746,6 +746,9 @@ function hideObject() {
  const canvas = document.getElementById('graph-canvas');
  canvas.style.display = 'block';
  resizeGraphCanvas();
+ // Restore graph controls that were hidden in object view
+ document.getElementById('labels-toggle').style.display = 'inline-flex';
+ document.getElementById('glow-mode-btn').style.display = 'inline-flex';
  } else {
  // Keep overlay — sidebars stay position:absolute
  handleLeft.style.display = 'none';
