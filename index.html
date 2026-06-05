@@ -896,30 +896,40 @@ async function showFilePreview(path, searchQuery) {
 
 function highlightSearchInPreview(container, query) {
  const qLower = query.toLowerCase();
+ // Collect all text nodes first
+ const textNodes = [];
  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
- const toWrap = [];
  while (walker.nextNode()) {
- const node = walker.currentNode;
+ textNodes.push(walker.currentNode);
+ }
+ // Process each text node — walk in reverse so earlier replacements don't affect positions
+ for (let i = textNodes.length - 1; i >= 0; i--) {
+ const node = textNodes[i];
  const text = node.textContent;
- const idx = text.toLowerCase().indexOf(qLower);
+ let hasMatch = false;
+ const lower = text.toLowerCase();
+ let idx = lower.indexOf(qLower, 0);
  if (idx === -1) continue;
- // Split text node at match boundaries
- const before = text.slice(0, idx);
- const matchText = text.slice(idx, idx + query.length);
- const after = text.slice(idx + query.length);
+ // Build a fragment replacing all occurrences
+ const fragment = document.createDocumentFragment();
+ let pos = 0;
+ while (idx !== -1) {
+ hasMatch = true;
+ fragment.appendChild(document.createTextNode(text.slice(pos, idx)));
  const mark = document.createElement('mark');
  mark.style.background = '#8b5cf644';
  mark.style.color = 'inherit';
  mark.style.borderRadius = '2px';
  mark.style.padding = '0 1px';
- mark.textContent = matchText;
- const fragment = document.createDocumentFragment();
- fragment.appendChild(document.createTextNode(before));
+ mark.textContent = text.slice(idx, idx + query.length);
  fragment.appendChild(mark);
- if (after) fragment.appendChild(document.createTextNode(after));
+ pos = idx + query.length;
+ idx = lower.indexOf(qLower, pos);
+ }
+ if (hasMatch) {
+ fragment.appendChild(document.createTextNode(text.slice(pos)));
  node.parentNode.replaceChild(fragment, node);
- // Only highlight first occurrence to avoid excessive DOM changes
- return;
+ }
  }
 }
 
