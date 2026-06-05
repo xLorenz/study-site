@@ -183,8 +183,12 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
  text-overflow:ellipsis;white-space:nowrap;padding:1px 4px;border-radius:3px}
 .tree-item-name:hover{color:var(--text-bright)}
 .tree-item-name.graph-highlighted{
- background:var(--accent);color:#fff;font-weight:600;
- box-shadow:0 0 8px var(--accent-dim)}
+ color:var(--accent);font-weight:600}
+.tree-item-search-match{
+ position:relative;background:rgba(139,92,246,.12);border-radius:var(--radius-sm)}
+.tree-item-search-match::after{
+ content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);
+ width:6px;height:6px;border-radius:50%;background:#8b5cf6}
 .tree-item-action{background:none;border:none;cursor:pointer;
  color:var(--text-dim);font-size:var(--font-size-sm);
  padding:0 2px;transition:color .15s;text-decoration:none}
@@ -860,21 +864,68 @@ function toggleFolder(el) {
 }
 
 // ── File Preview ──
-async function showFilePreview(path) {
+async function showFilePreview(path, searchQuery) {
+ const preview = document.getElementById('file-preview');
  try {
  const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
  const data = await res.json();
  if (!res.ok) {
- showToast('\u2717 ' + (data.error || 'Failed to load'), 'danger');
+ showToast('✗ ' + (data.error || 'Failed to load'), 'danger');
  return;
  }
  currentPreviewPath = path;
  document.getElementById('preview-placeholder').style.display = 'none';
- const preview = document.getElementById('file-preview');
  preview.style.display = 'flex';
- renderMarkdown(document.getElementById('file-preview-content'), data.content);
+ const contentEl = document.getElementById('file-preview-content');
+ renderMarkdown(contentEl, data.content);
+ 
+ // If called from search, highlight query terms and scroll
+ if (searchQuery && searchQuery.length >= 2) {
+ highlightSearchInPreview(contentEl, searchQuery);
+ scrollToFirstMatch(contentEl);
+ }
  } catch (e) {
- showToast('\u2717 Failed to load preview', 'danger');
+ showToast('✗ Failed to load preview', 'danger');
+ } finally {
+ if (!preview.style.display || preview.style.display === 'none') {
+ preview.style.display = 'flex';
+ }
+ }
+}
+
+function highlightSearchInPreview(container, query) {
+ const qLower = query.toLowerCase();
+ const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+ const toWrap = [];
+ while (walker.nextNode()) {
+ const node = walker.currentNode;
+ const text = node.textContent;
+ const idx = text.toLowerCase().indexOf(qLower);
+ if (idx === -1) continue;
+ // Split text node at match boundaries
+ const before = text.slice(0, idx);
+ const matchText = text.slice(idx, idx + query.length);
+ const after = text.slice(idx + query.length);
+ const mark = document.createElement('mark');
+ mark.style.background = '#8b5cf644';
+ mark.style.color = 'inherit';
+ mark.style.borderRadius = '2px';
+ mark.style.padding = '0 1px';
+ mark.textContent = matchText;
+ const fragment = document.createDocumentFragment();
+ fragment.appendChild(document.createTextNode(before));
+ fragment.appendChild(mark);
+ if (after) fragment.appendChild(document.createTextNode(after));
+ node.parentNode.replaceChild(fragment, node);
+ // Only highlight first occurrence to avoid excessive DOM changes
+ return;
+ }
+}
+
+function scrollToFirstMatch(container) {
+ const firstMark = container.querySelector('mark');
+ if (firstMark) {
+ firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
  }
 }
 
@@ -1521,6 +1572,7 @@ document.getElementById('btn-copy-preview').addEventListener('click', async () =
 
 // ── Search Functions ──
 let searchTimeout = null;
+let lastSearchQuery = '';
 
 function performSearch() {
  const q = document.getElementById('search-input').value.trim();
@@ -1529,8 +1581,13 @@ function performSearch() {
 
  if (q.length < 2) {
  resultsContainer.style.display = 'none';
+ clearSearchHighlights();
  return;
  }
+
+ // Clear previous search highlights in tree and graph
+ clearSearchHighlights();
+ lastSearchQuery = q;
 
  fetch('/api/search?q=' + encodeURIComponent(q) + '&subject=' + encodeURIComponent(subject))
  .then(r => r.json())
@@ -1541,7 +1598,7 @@ function performSearch() {
  return;
  }
  resultsContainer.innerHTML = data.results.map(r =>
- '<div class="search-result-item" data-path="' + r.path + '" onclick="openSearchResult(this)">' +
+ '<div class="search-result-item" data-path="' + r.path + '" data-query="' + q.replace(/"/g, '&quot;') + '" onclick="openSearchResult(this)">' +
  '<div class="search-result-snippet">' + r.snippet + '</div>' +
  '<div class="search-result-meta">' +
  '<span class="search-result-path">' + r.path + '</span>' +
@@ -1550,6 +1607,11 @@ function performSearch() {
  '</div>'
  ).join('');
  resultsContainer.style.display = 'block';
+ 
+ // Highlight matching tree items
+ highlightSearchInTree(data.results);
+ // Highlight matching graph nodes
+ highlightSearchInGraph(q, data.results);
  })
  .catch(() => {
  resultsContainer.innerHTML = '<div style="padding:var(--space-3);color:var(--text-dim)">Search failed</div>';
@@ -1557,11 +1619,65 @@ function performSearch() {
  });
 }
 
+function clearSearchHighlights() {
+ document.querySelectorAll('.tree-item-search-match').forEach(el => {
+ el.classList.remove('tree-item-search-match');
+ });
+ // Clear graph search highlights
+ if (window.searchHighlightedNodes) {
+ window.searchHighlightedNodes = null;
+ }
+}
+
+function highlightSearchInTree(results) {
+ const treeContainer = document.getElementById('files-tree');
+ const names = treeContainer.querySelectorAll('.tree-item-name');
+ for (const el of names) {
+ // Get the onclick attribute to extract the path
+ const match = el.getAttribute('onclick')?.match(/'([^']+)'/);
+ if (!match) continue;
+ const filePath = match[1];
+ // Check if this path is in the search results
+ const found = results.some(r => r.path === filePath);
+ if (found) {
+ el.classList.add('tree-item-search-match');
+ // Expand parent folders so the highlighted item is visible
+ let parent = el.closest('.tree-children');
+ while (parent) {
+ parent.style.display = 'block';
+ const toggle = parent.previousElementSibling;
+ if (toggle && toggle.classList.contains('tree-folder-toggle')) {
+ toggle.textContent = toggle.textContent.replace(/^.\S*/, '📂');
+ }
+ parent = parent.parentElement?.closest('.tree-children');
+ }
+ // Scroll first match into view
+ el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+ }
+ }
+}
+
+function highlightSearchInGraph(q, results) {
+ if (!graphNodes || graphNodes.length === 0) return;
+ const qLower = q.toLowerCase();
+ // Find nodes whose title or label matches the search
+ const matched = [];
+ for (const node of graphNodes) {
+ const label = (node.title || node.label || '').toLowerCase();
+ if (label.includes(qLower)) {
+ matched.push(node.id);
+ }
+ }
+ window.searchHighlightedNodes = matched;
+}
+
 function openSearchResult(el) {
  const path = el.dataset.path;
+ const query = el.dataset.query || '';
  document.getElementById('search-results').style.display = 'none';
  document.getElementById('search-input').value = '';
- showFilePreview(path);
+ clearSearchHighlights();
+ showFilePreview(path, query);
 }
 
 // Close search results on click outside
@@ -1968,6 +2084,14 @@ function drawGraph() {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
       ctx.fillStyle = isSelected ? fillColor + '30' : typeHalo.glow;
+      ctx.fill();
+    }
+    // Search highlight glow
+    if (!hovered && !isSelected && window.searchHighlightedNodes &&
+        window.searchHighlightedNodes.includes(node.id)) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
+      ctx.fillStyle = '#8b5cf640';
       ctx.fill();
     }
 

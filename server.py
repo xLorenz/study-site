@@ -1623,6 +1623,14 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 if count == 0:
                     continue
 
+                # Find all match positions (line numbers)
+                lines = content.splitlines(keepends=True)
+                match_positions = []
+                search_idx = 0
+                for line_no, line in enumerate(lines, 1):
+                    if q_lower in line.lower():
+                        match_positions.append(line_no)
+                
                 idx = content.lower().find(q_lower)
                 start = max(0, idx - 75)
                 end = min(len(content), idx + 75)
@@ -1641,6 +1649,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                     "subject": subj,
                     "snippet": snippet,
                     "match_count": count,
+                    "match_positions": match_positions,
                 })
 
         results.sort(key=lambda r: r["match_count"], reverse=True)
