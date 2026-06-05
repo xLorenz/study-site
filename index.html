@@ -1741,8 +1741,9 @@ function initGraph(data) {
   const nodeCount = graphNodes.length;
   const idealZoom = nodeCount <= 5 ? 1.2 : nodeCount <= 15 ? 1.0 : nodeCount <= 30 ? 0.75 : 0.5;
   graphZoom = Math.min(idealZoom, 1.5);
-  graphPanX = 0;
-  graphPanY = 0;
+  // Center the view on the spawn area (nodes start near cx,cy)
+  graphPanX = w / 2 * (1 - graphZoom);
+  graphPanY = h / 2 * (1 - graphZoom);
   lastInteraction = Date.now();
   useThrottle = false;
   settleFrameCount = 0;
