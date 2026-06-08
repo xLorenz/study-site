@@ -14,11 +14,26 @@ import time
 import unicodedata
 import urllib.parse
 import yaml
-
 VAULT = os.path.expanduser("~/study-vault")
 STUDY_DIR = os.path.expanduser("~/study")
 PORT = 8081
+HOST = "0.0.0.0"
+NIM_API_KEY = ""
+NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
+# Load config.yaml if present
+_CFG_PATH = os.path.join(STUDY_DIR, "config.yaml")
+if os.path.isfile(_CFG_PATH):
+    try:
+        with open(_CFG_PATH) as _f:
+            _cfg = yaml.safe_load(_f) or {}
+        VAULT = os.path.expanduser(_cfg.get("vault_path", VAULT))
+        PORT = _cfg.get("port", PORT)
+        HOST = _cfg.get("host", HOST)
+        NIM_API_KEY = _cfg.get("nim_api_key", NIM_API_KEY)
+        NIM_BASE_URL = _cfg.get("nim_base_url", NIM_BASE_URL)
+    except Exception as e:
+        print(f"Warning: config.yaml load failed: {e}")
 # Ingest state (single-threaded server, so no threading lock needed)
 _ingest_running = False
 _ingest_result = None # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
@@ -1953,6 +1968,6 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
     socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer(("", PORT), StudyHandler) as httpd:
-        print(f"Study server on :{PORT}")
+    with socketserver.ThreadingTCPServer((HOST, PORT), StudyHandler) as httpd:
+        print(f"Study server on {HOST}:{PORT}")
         httpd.serve_forever()
