@@ -1936,7 +1936,10 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), StudyHandler) as httpd:
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("", PORT), StudyHandler) as httpd:
         print(f"Study server on :{PORT}")
         httpd.serve_forever()
