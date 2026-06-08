@@ -1788,16 +1788,16 @@ let labelsVisible = false;        // Toggle all labels on/off
 let settleFrameCount = 0;         // Frames since all nodes settled
 let hasZoomedToFit = false;       // Whether we've auto-fitted once
 
-// Physics constants (Obsidian-style — gentler, wider, smoother)
-const REPULSION = 20000;           // Stronger repulsion for wider spread
-const SPRING_LENGTH = 220;         // Longer edges for clarity
-const SPRING_K = 0.006;            // Softer springs
-const CENTER_GRAVITY = 0.001;      // Lighter center pull → more spread
-const DAMPING = 0.88;              // Stronger friction → faster settle
-const MIN_VELOCITY = 0.005;        // Lower threshold for settling
-const COLLISION_RADIUS = 1.6;      // Collision buffer multiplier
-const SETTLE_VELOCITY = 0.1;       // Below this → considered settled
-const SETTLE_FRAMES = 60;          // Consecutive settled frames before zoom-to-fit
+// Physics constants (balanced Obsidian-style spread)
+const REPULSION = 15000;
+const SPRING_LENGTH = 180;
+const SPRING_K = 0.005;
+const CENTER_GRAVITY = 0.002;
+const DAMPING = 0.85;
+const MIN_VELOCITY = 0.005;
+const COLLISION_RADIUS = 1.4;
+const SETTLE_VELOCITY = 0.1;
+const SETTLE_FRAMES = 60;
 
 // Type → halo color map (concept=blue, definition=green, formula=orange, exercise=purple, ghost=dim)
 const TYPE_HALOS = {
@@ -1945,8 +1945,9 @@ function simulationStep() {
       let dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1) dist = 1;
 
-      // Coulomb repulsion (clamped to prevent the nuke-and-oscillate)
-      const force = Math.min(REPULSION / (dist * dist), 50);
+      // Size-proportional Coulomb repulsion (clamped to prevent nuke-and-oscillate)
+      const repMag = REPULSION * (a.radius + b.radius) / 40;
+      const force = Math.min(repMag / (dist * dist), 50);
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       if (!a.pinned) { a.vx -= fx; a.vy -= fy; }
