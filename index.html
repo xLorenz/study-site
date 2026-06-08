@@ -2565,21 +2565,25 @@ graphCanvas.addEventListener('wheel', (e) => {
  lastInteraction = Date.now();
 }, { passive: false });
 
-// ── Mobile: Click outside sidebar to close ──
-if (window.innerWidth <= 768) {
-  document.addEventListener('click', (e) => {
-    const left = document.getElementById('sidebar-left');
-    const right = document.getElementById('sidebar-right');
-    const btnLeft = document.getElementById('btn-toggle-left');
-    const btnRight = document.getElementById('btn-toggle-right');
-    // If click is inside a sidebar or on a toggle button, do nothing
-    if (left.contains(e.target) || right.contains(e.target)) return;
-    if (e.target === btnLeft || e.target === btnRight) return;
-    // Close any open sidebars
-    if (left.dataset.collapsed === 'false') toggleSidebar('sidebar-left');
-    if (right.dataset.collapsed === 'false') toggleSidebar('sidebar-right');
-  });
+// ── Mobile: Tap outside sidebar to close ──
+function closeSidebarsIfMobile(e) {
+ if (window.innerWidth > 768) return;
+ const left = document.getElementById('sidebar-left');
+ const right = document.getElementById('sidebar-right');
+ const btnLeft = document.getElementById('btn-toggle-left');
+ const btnRight = document.getElementById('btn-toggle-right');
+ if (left.contains(e.target) || right.contains(e.target)) return;
+ if (e.target === btnLeft || e.target === btnRight) return;
+ if (left.dataset.collapsed === 'false') toggleSidebar('sidebar-left');
+ if (right.dataset.collapsed === 'false') toggleSidebar('sidebar-right');
 }
+document.addEventListener('click', closeSidebarsIfMobile);
+document.addEventListener('touchstart', (e) => {
+ if (window.innerWidth > 768) return;
+ // Only close on touch outside — not on interactive elements
+ if (e.target.closest('button, select, input, a, .resize-handle')) return;
+ closeSidebarsIfMobile(e);
+}, { passive: true });
 
 // ── Graph: Window resize ──
 window.addEventListener('resize', () => {
