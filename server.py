@@ -21,8 +21,7 @@ PORT = 8081
 
 # Ingest state (single-threaded server, so no threading lock needed)
 _ingest_running = False
-_ingest_queue = []  # list of tasks waiting for ingest
-_ingest_result = None  # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
+_ingest_result = None # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
 _ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
 _ingest_current_subject = None # subject currently being ingested (used for live progress)
 _ingest_initial_wiki_count = 0 # wiki/ .md file count BEFORE ingest started (for progress tracking)
@@ -1695,7 +1694,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             "pending_total": _ingest_total_pending,
             "initial_total": _ingest_initial_total,
             "wiki_pages_created": wiki_pages_created,
-            "queue_length": len(_ingest_queue),
+            "queue_length": 0,
             "result": _ingest_result,
         })
     def _api_original(self, params):
