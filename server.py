@@ -11,6 +11,7 @@ import socketserver
 import subprocess
 import threading
 import time
+import unicodedata
 import urllib.parse
 import yaml
 
@@ -47,8 +48,9 @@ def _resolve_vault_path(rel_path):
 
 
 def slugify(text):
-    """Slugify a filename: lowercase, strip special chars, spaces to hyphens."""
-    text = text.lower().strip()
+    """Slugify a filename: lowercase, normalize unicode, strip special chars, spaces to hyphens."""
+    text = unicodedata.normalize('NFD', text.lower().strip())
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
     text = re.sub(r'[^\w\s-]', '', text)
     text = re.sub(r'[\s_]+', '-', text)
     text = re.sub(r'-+', '-', text)
