@@ -451,11 +451,18 @@ def _count_objects(subject):
 
 # Object type detection
 OBJECT_TYPE_PREFIXES = {
-    "mock-": "mock",
-    "cheat-": "cheat",
-    "mindmap-": "mindmap",
-    "formula-": "formula",
-    "flash-": "flash",
+ "mock-": "mock",
+ "cheat-": "cheat",
+ "mindmap-": "mindmap",
+ "formula-": "formula",
+ "flash-": "flash",
+}
+
+OBJECT_TYPE_KEYWORDS = {
+ "examen": "mock", "practica": "mock",
+ "summary": "cheat", "mapa": "mindmap",
+ "concept": "cheat", "calculus": "formula",
+ "flashcard": "flash", "card": "flash",
 }
 
 TITLE_SUFFIX_RE = re.compile(r'-v\d+\.html$')
@@ -464,6 +471,11 @@ TITLE_SUFFIX_RE = re.compile(r'-v\d+\.html$')
 def _infer_object_type(filename):
     for prefix, obj_type in OBJECT_TYPE_PREFIXES.items():
         if filename.startswith(prefix):
+            return obj_type
+    # Content-based fallback
+    lower = filename.lower()
+    for keyword, obj_type in OBJECT_TYPE_KEYWORDS.items():
+        if keyword in lower:
             return obj_type
     return "unknown"
 
