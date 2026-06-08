@@ -330,7 +330,7 @@ def _parse_relationships(subject):
         edges.append({"source": src, "target": tgt})
         backlink_map.setdefault(tgt, set()).add(src)
 
-    def _resolve(target, source_id):
+    def _resolve_target(target, source_id):
         """Resolve a [[link]] to a node id (port of vaultParser.js §8.3)."""
         t = target.strip()
         if t in node_map:
@@ -379,7 +379,7 @@ def _parse_relationships(subject):
             for m in WIKILINK_RE.finditer(body):
                 link_part = m.group(1).split("|")[0]  # discard display alias
                 target = link_part.split("#")[0].strip()  # discard heading
-                resolved = _resolve(target, source_id)
+                resolved = _resolve_target(target, source_id)
                 if resolved:
                     _add_edge(source_id, resolved)
                 else:
