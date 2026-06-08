@@ -99,8 +99,11 @@ a:hover{color:var(--text-bright)}
 /* ── App Layout ── */
 #app{
  display:flex;
- height:calc(100vh - 40px - 36px); /* header - search bar */
+ height:calc(100dvh - 40px - 36px); /* header - search bar */
  position:relative}
+@media (not (height: 100dvh)){
+ #app{height:calc(100vh - 40px - 36px)}
+}
 
 /* ── Sidebars ── */
 aside{
