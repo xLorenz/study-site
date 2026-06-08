@@ -665,6 +665,7 @@ async function loadSubjects() {
      await reloadAll(data.subjects[0].name);
    }
  populateSearchFilter();
+ fitSubjectSelect();
  } catch (e) {
  showToast('\u2717 Failed to load subjects', 'danger');
  }
@@ -1524,6 +1525,7 @@ document.addEventListener('drop', async (e) => {
 // Subject selector change
 document.getElementById('subject-select').addEventListener('change', (e) => {
  reloadAll(e.target.value);
+ fitSubjectSelect();
 });
 
 // Sidebar toggle buttons
@@ -2584,6 +2586,19 @@ window.addEventListener('resize', () => {
  resizeGraphCanvas();
  }
 });
+
+// ── Subject Select: dynamic width ──
+function fitSubjectSelect() {
+ const sel = document.getElementById('subject-select');
+ if (!sel) return;
+ // Measure the width of the currently selected option text
+ const canvas = document.createElement('canvas').getContext('2d');
+ canvas.font = getComputedStyle(sel).font;
+ const text = sel.options[sel.selectedIndex]?.textContent || '';
+ const pad = 32; // padding + dropdown arrow
+ const measured = Math.ceil(canvas.measureText(text).width) + pad;
+ sel.style.width = Math.max(100, Math.min(measured, 240)) + 'px';
+}
 
 // ── Initialise ──
 loadSubjects();
