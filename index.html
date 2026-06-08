@@ -67,7 +67,7 @@ a:hover{color:var(--text-bright)}
 #header select{background:var(--surface-2);color:var(--text);
  border:1px solid var(--border);border-radius:var(--radius-sm);
  padding:2px var(--space-2);font-size:var(--font-size-sm);
- font-family:var(--font-sans);margin-left:auto;max-width:180px}
+ font-family:var(--font-sans);max-width:180px}
 #btn-toggle-left,#btn-toggle-right{background:transparent;
  font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1)}
 #labels-toggle{
@@ -87,6 +87,14 @@ a:hover{color:var(--text-bright)}
  vertical-align:middle;line-height:1;margin-left:4px;white-space:nowrap;
 }
 #glow-mode-btn:hover{color:var(--text);border-color:var(--accent)}
+#fit-graph-btn{
+ background:transparent;border:1px solid var(--border);color:var(--text-dim);
+ font-size:10px;font-weight:600;cursor:pointer;border-radius:var(--radius-sm);
+ height:24px;padding:0 6px;display:none;align-items:center;
+ font-family:var(--font-sans);transition:all .15s;
+ vertical-align:middle;line-height:1;margin-left:auto;white-space:nowrap;
+}
+#fit-graph-btn:hover{color:var(--text);border-color:var(--accent)}
 
 /* ── App Layout ── */
 #app{
@@ -482,11 +490,12 @@ pre:hover .copy-btn{opacity:1}
 <header id="header">
  <button id="btn-toggle-left">☰</button>
  <span class="logo">study</span>
- <select id="subject-select">
-   <option value="">— Select subject —</option>
- </select>
  <button id="labels-toggle" title="Toggle all node labels">Aa</button>
  <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
+ <button id="fit-graph-btn" title="Fit graph to view">⊞</button>
+ <select id="subject-select">
+ <option value="">— Select subject —</option>
+ </select>
  <button id="btn-toggle-right">≡</button>
 </header>
 
@@ -756,6 +765,7 @@ function hideObject() {
  // Restore graph controls that were hidden in object view
  document.getElementById('labels-toggle').style.display = 'inline-flex';
  document.getElementById('glow-mode-btn').style.display = 'inline-flex';
+ document.getElementById('fit-graph-btn').style.display = graphNodes.length > 0 ? 'inline-flex' : 'none';
  } else {
  // Keep overlay — sidebars stay position:absolute
  handleLeft.style.display = 'none';
@@ -1890,8 +1900,10 @@ function initGraph(data) {
   document.getElementById('labels-toggle').style.display =
     graphNodes.length > 0 ? 'inline-flex' : 'none';
   document.getElementById('glow-mode-btn').style.display =
-    graphNodes.length > 0 ? 'inline-flex' : 'none';
-}
+  graphNodes.length > 0 ? 'inline-flex' : 'none';
+  document.getElementById('fit-graph-btn').style.display =
+  graphNodes.length > 0 ? 'inline-flex' : 'none';
+  }
 
 // ── Graph: Stop Loop ──
 function stopGraphLoop() {
@@ -2281,11 +2293,15 @@ document.getElementById('labels-toggle').addEventListener('click', () => {
 
 // ── Graph: Glow Mode Toggle ──
 document.getElementById('glow-mode-btn').addEventListener('click', () => {
-  const modes = ['type', 'topic', 'source'];
-  const labels = { type: '⊙ Type', topic: '⊙ Topic', source: '⊙ Source' };
-  const idx = modes.indexOf(glowMode);
-  glowMode = modes[(idx + 1) % modes.length];
-  document.getElementById('glow-mode-btn').textContent = labels[glowMode];
+ const modes = ['type', 'topic', 'source'];
+ const labels = { type: '⊙ Type', topic: '⊙ Topic', source: '⊙ Source' };
+ const idx = modes.indexOf(glowMode);
+ glowMode = modes[(idx + 1) % modes.length];
+ document.getElementById('glow-mode-btn').textContent = labels[glowMode];
+});
+
+document.getElementById('fit-graph-btn').addEventListener('click', () => {
+ if (typeof zoomToFit === 'function') zoomToFit();
 });
 
 // ── Graph: Mouse Down ──
