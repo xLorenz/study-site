@@ -69,7 +69,11 @@ a:hover{color:var(--text-bright)}
  padding:2px var(--space-2);font-size:var(--font-size-sm);
  font-family:var(--font-sans);max-width:180px}
 #btn-toggle-left,#btn-toggle-right{background:transparent;
- font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1)}
+ font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1);
+ display:flex;align-items:center;justify-content:center;height:28px;width:28px;
+ color:var(--text-dim);cursor:pointer;border:none;border-radius:var(--radius-sm);
+ transition:color .15s}
+#btn-toggle-left:hover,#btn-toggle-right:hover{color:var(--text)}
 #labels-toggle{
   background:transparent;border:1px solid var(--border);color:var(--text-dim);
   font-size:11px;font-weight:700;cursor:pointer;border-radius:var(--radius-sm);
@@ -491,15 +495,20 @@ pre:hover .copy-btn{opacity:1}
 
 <!-- ── Header ── -->
 <header id="header">
- <button id="btn-toggle-left">☰</button>
+ <button id="btn-toggle-left">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+ </button>
  <span class="logo">study</span>
  <button id="labels-toggle" title="Toggle all node labels">Aa</button>
- <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
  <button id="fit-graph-btn" title="Fit graph to view">⊞</button>
+ <button id="glow-mode-btn" title="Switch glow mode">⊙</button>
+ <span style="flex:1"></span>
  <select id="subject-select">
  <option value="">— Select subject —</option>
  </select>
- <button id="btn-toggle-right">≡</button>
+ <button id="btn-toggle-right">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+ </button>
 </header>
 
 <!-- ── App ── -->
