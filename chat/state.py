@@ -39,7 +39,16 @@ def save_chat(subject, messages):
     """Save chat history to disk, trimmed to MAX_HISTORY_MESSAGES."""
     path = os.path.join(CHATS_DIR, f"{subject}.json")
     # Keep only user and assistant messages, trimmed
-    trimmed = [m for m in messages if m["role"] in ("user", "assistant")]
+    # Preserve tool_calls data on assistant messages
+    trimmed = []
+    for m in messages:
+        if m["role"] == "assistant":
+            entry = {"role": "assistant", "content": m["content"]}
+            if "tool_calls" in m and m["tool_calls"]:
+                entry["tool_calls"] = m["tool_calls"]
+            trimmed.append(entry)
+        elif m["role"] == "user":
+            trimmed.append({"role": "user", "content": m["content"]})
     if len(trimmed) > MAX_HISTORY_MESSAGES:
         trimmed = trimmed[-MAX_HISTORY_MESSAGES:]
     try:
@@ -77,15 +86,30 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         messages.append({"role": "user", "content": user_message})
 
         assistant_content = ""
+        tool_events = []  # collect tool_call/tool_result events for persistence
         for event in stream_chat(messages, task.model, task.subject):
             task.buffer.put(event)
             if event["type"] == "done":
                 assistant_content = event.get("content", "")
+            if event["type"] == "tool_call":
+                tool_events.append({
+                    "name": event.get("name", ""),
+                    "arguments": event.get("arguments", "{}"),
+                    "label": _tool_label(event.get("name", ""), event.get("arguments", "{}"))
+                })
+            if event["type"] == "tool_result":
+                for te in tool_events:
+                    if te["name"] == event.get("name") and "result" not in te:
+                        te["result"] = event.get("result")
+                        break
 
         # Save to chat history
         history = list(conversation)
         history.append({"role": "user", "content": user_message})
-        history.append({"role": "assistant", "content": assistant_content})
+        asst_msg = {"role": "assistant", "content": assistant_content}
+        if tool_events:
+            asst_msg["tool_calls"] = tool_events
+        history.append(asst_msg)
         save_chat(subject, history)
 
     except Exception as e:
@@ -96,6 +120,19 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         task.done.set()
         # Clean up after 60s
         threading.Timer(60, lambda: _background_tasks.pop(task_id, None)).start()
+
+
+def _tool_label(name, arguments_raw):
+    """Extract a short label from tool name + arguments."""
+    try:
+        args = json.loads(arguments_raw) if isinstance(arguments_raw, str) else arguments_raw
+    except (json.JSONDecodeError, TypeError):
+        args = {}
+    if name == "read_vault_file":
+        return args.get("path", "file")
+    elif name == "write_study_object":
+        return args.get("filename", "object")
+    return name
 
 
 def get_task(task_id):

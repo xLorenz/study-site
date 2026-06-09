@@ -452,9 +452,87 @@
 .msg-tool-box .dots span:nth-child(3) { animation-delay: 0.4s; }
 .msg-tool-box.completed .dots { display: none; }
 @keyframes toolPulse {
-  0%, 80%, 100% { opacity: 0.15; transform: scale(0.7); }
-  40% { opacity: 1; transform: scale(1.1); }
+ 0%, 80%, 100% { opacity: 0.15; transform: scale(0.7); }
+ 40% { opacity: 1; transform: scale(1.1); }
 }
+
+/* ── Read Group (collapsible dropdown) ── */
+.msg-tool-read-group {
+ margin-bottom: 6px;
+ border-radius: 6px;
+ background: rgba(99, 102, 241, 0.04);
+ border: 1px solid rgba(99, 102, 241, 0.10);
+ overflow: hidden;
+}
+.read-group-header {
+ display: flex;
+ align-items: center;
+ gap: 6px;
+ padding: 5px 10px;
+ cursor: pointer;
+ font-size: 10.5px;
+ font-family: var(--font-sans);
+ color: var(--text-dim);
+ transition: all 0.2s;
+ user-select: none;
+}
+.read-group-header:hover {
+ background: rgba(99, 102, 241, 0.08);
+ color: var(--text);
+}
+.read-group-icon { font-size: 12px; flex-shrink: 0; }
+.read-group-label { flex: 1; }
+.read-group-label strong { color: var(--accent); }
+.read-group-toggle { font-size: 10px; opacity: 0.6; }
+.read-group-list {
+ max-height: 200px;
+ overflow-y: auto;
+ transition: max-height 0.25s ease, padding 0.25s ease;
+ padding: 0 10px;
+}
+.read-group-list.collapsed {
+ max-height: 0;
+ padding: 0 10px;
+ overflow: hidden;
+}
+.read-group-item {
+ display: flex;
+ align-items: center;
+ gap: 6px;
+ padding: 3px 0;
+ font-size: 10px;
+ color: var(--text-dim);
+ border-top: 1px solid rgba(255,255,255,0.03);
+}
+.read-group-item code {
+ font-family: var(--font-mono);
+ font-size: 9.5px;
+ background: rgba(0,0,0,0.25);
+ padding: 1px 5px;
+ border-radius: 3px;
+ flex: 1;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+.read-group-item.completed { color: #4ade80; }
+.read-group-item .read-group-item-icon { font-size: 11px; flex-shrink: 0; }
+.read-group-item .dots {
+ display: inline-flex;
+ gap: 3px;
+ flex-shrink: 0;
+ align-items: center;
+}
+.read-group-item .dots span {
+ width: 4px;
+ height: 4px;
+ border-radius: 50%;
+ background: var(--accent);
+ animation: toolPulse 1.4s infinite ease-in-out;
+}
+.read-group-item .dots span:nth-child(2) { animation-delay: 0.2s; }
+.read-group-item .dots span:nth-child(3) { animation-delay: 0.4s; }
+.read-group-item.completed .dots { display: none; }
 
 /* ── Wikilinks ── */
 .wikilink {

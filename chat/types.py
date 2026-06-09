@@ -1,7 +1,7 @@
 """Chat types, event models, and constants."""
 import os
 
-AVAILABLE_MODELS = ["deepseek-ai/deepseek-v4-flash", "z-ai/glm-5.1"]
+AVAILABLE_MODELS = ["z-ai/glm-5.1", "deepseek-ai/deepseek-v4-flash"]
 MAX_HISTORY_MESSAGES = 20
 MAX_TOOL_ROUNDS = 5
 MAX_BODY_SIZE = 500 * 1024

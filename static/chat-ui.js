@@ -5,18 +5,20 @@
     'use strict';
 
     const chat = {
-        messages: [],
-        model: 'z-ai/glm-5.1',
-        availableModels: [],
-        streaming: false,
-        currentSubject: null,
-        abortController: null,
-        currentAssistantMsg: null,
-        currentBodyDiv: null,
-        currentReasoningDiv: null,
-        currentToolBoxes: [],
-        currentFullContent: '',
-        currentFullReasoning: '',
+    messages: [],
+    model: 'z-ai/glm-5.1',
+    availableModels: [],
+    streaming: false,
+    currentSubject: null,
+    abortController: null,
+    currentAssistantMsg: null,
+    currentBodyDiv: null,
+    currentReasoningDiv: null,
+    currentToolBoxes: [],
+    currentReadGroup: null,
+    currentToolCalls: [],
+    currentFullContent: '',
+    currentFullReasoning: '',
     };
 
     // ===========================
@@ -141,30 +143,34 @@
     }
 
     function stopChat() {
-        if (chat.abortController) {
-            chat.abortController.abort();
-            chat.streaming = false;
-            showStopButton(false);
-            if (chat.currentAssistantMsg) {
-                chat.currentAssistantMsg.classList.remove('streaming');
-            }
-            if (chat.currentFullContent) {
-                chat.messages.push({ role: 'assistant', content: chat.currentFullContent });
-            }
-            if (chat.currentReasoningDiv) {
-                chat.currentReasoningDiv.classList.remove('active');
-            }
-            setChatEnabled(true);
-            chat.currentFullContent = '';
-            chat.currentFullReasoning = '';
-            chat.currentToolBoxes = [];
-            chat.currentAssistantMsg = null;
-            chat.currentBodyDiv = null;
-            chat.currentReasoningDiv = null;
-        }
+    if (chat.abortController) {
+    chat.abortController.abort();
+    chat.streaming = false;
+    showStopButton(false);
+    if (chat.currentAssistantMsg) {
+    chat.currentAssistantMsg.classList.remove('streaming');
+    }
+    if (chat.currentReasoningDiv) {
+    chat.currentReasoningDiv.classList.remove('active');
+    }
+    if (chat.currentFullContent) {
+    var msg = { role: 'assistant', content: chat.currentFullContent };
+    if (chat.currentToolCalls.length > 0) msg.tool_calls = chat.currentToolCalls;
+    chat.messages.push(msg);
+    }
+    setChatEnabled(true);
+    chat.currentFullContent = '';
+    chat.currentFullReasoning = '';
+    chat.currentToolBoxes = [];
+    chat.currentReadGroup = null;
+    chat.currentToolCalls = [];
+    chat.currentAssistantMsg = null;
+    chat.currentBodyDiv = null;
+    chat.currentReasoningDiv = null;
+    }
     }
 
-    function handleEvent(event) {
+            function handleEvent(event) {
         switch (event.type) {
             case 'token':
                 chat.currentFullContent += event.content;
@@ -194,57 +200,85 @@
                 break;
 
             case 'tool_call': {
-                var args = safeParse(event.arguments, {});
-                var isRead = event.name === 'read_vault_file';
-                var label = isRead ? (args.path || 'file') : (args.filename || 'object');
-                var box = createToolBox(isRead, label, event.name);
-                chat.currentToolBoxes.push(box);
-                if (chat.currentBodyDiv) {
-                    chat.currentBodyDiv.parentNode.insertBefore(box, chat.currentBodyDiv.nextSibling);
-                }
-                smartScroll();
-                break;
+            var args = safeParse(event.arguments, {});
+            var isRead = event.name === 'read_vault_file';
+            var label = isRead ? (args.path || 'file') : (args.filename || 'object');
+            // Track for persistence
+            chat.currentToolCalls.push({ name: event.name, arguments: event.arguments, label: label });
+            if (isRead) {
+            if (chat.currentReadGroup) {
+            addToReadGroup(chat.currentReadGroup, label);
+            } else {
+            var group = createReadGroup();
+            chat.currentReadGroup = group;
+            if (chat.currentBodyDiv) {
+            chat.currentBodyDiv.parentNode.insertBefore(group, chat.currentBodyDiv.nextSibling);
+            }
+            addToReadGroup(group, label);
+            }
+            } else {
+            var box = createToolBox(isRead, label, event.name);
+            chat.currentToolBoxes.push(box);
+            if (chat.currentBodyDiv) {
+            var insertBefore = chat.currentReadGroup ? chat.currentReadGroup.nextSibling : chat.currentBodyDiv.nextSibling;
+            chat.currentBodyDiv.parentNode.insertBefore(box, insertBefore);
+            }
+            }
+            smartScroll();
+            break;
             }
 
             case 'tool_result':
-                for (var i = 0; i < chat.currentToolBoxes.length; i++) {
-                    var box = chat.currentToolBoxes[i];
-                    if (box.dataset.toolName === event.name && !box.classList.contains('completed')) {
-                        completeToolBox(box);
-                        break;
-                    }
-                }
-                smartScroll();
-                break;
+            if (event.name === 'read_vault_file' && chat.currentReadGroup) {
+            completeReadGroupItem(chat.currentReadGroup, event);
+            } else {
+            for (var i = 0; i < chat.currentToolBoxes.length; i++) {
+            var box = chat.currentToolBoxes[i];
+            if (box.dataset.toolName === event.name && !box.classList.contains('completed')) {
+            completeToolBox(box);
+            break;
+            }
+            }
+            // Auto-refresh objects tab when a study object is created
+            if (event.name === 'write_study_object' && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
+            window.reloadObjectTree(chat.currentSubject);
+            }
+            }
+            smartScroll();
+            break;
 
             case 'done':
-                if (event.content) {
-                    chat.currentFullContent = event.content;
-                    if (chat.currentBodyDiv) {
-                        chat.currentBodyDiv.innerHTML = marked.parse(chat.currentFullContent);
-                    }
-                }
-                if (chat.currentReasoningDiv) {
-                    chat.currentReasoningDiv.classList.remove('active');
-                }
-                if (chat.currentAssistantMsg) {
-                    chat.currentAssistantMsg.classList.remove('streaming');
-                }
-                highlightWikilinks(chat.currentBodyDiv);
-                chat.messages.push({ role: 'assistant', content: chat.currentFullContent });
-                setChatEnabled(true);
-                chat.streaming = false;
-                showStopButton(false);
-                chat.currentFullContent = '';
-                chat.currentFullReasoning = '';
-                chat.currentToolBoxes = [];
-                chat.currentAssistantMsg = null;
-                chat.currentBodyDiv = null;
-                chat.currentReasoningDiv = null;
-                smartScroll();
-                break;
+            if (event.content) {
+            chat.currentFullContent = event.content;
+            if (chat.currentBodyDiv) {
+            chat.currentBodyDiv.innerHTML = marked.parse(chat.currentFullContent);
+            }
+            }
+            if (chat.currentReasoningDiv) {
+            chat.currentReasoningDiv.classList.remove('active');
+            }
+            if (chat.currentAssistantMsg) {
+            chat.currentAssistantMsg.classList.remove('streaming');
+            }
+            highlightWikilinks(chat.currentBodyDiv);
+            var doneMsg = { role: 'assistant', content: chat.currentFullContent };
+            if (chat.currentToolCalls.length > 0) doneMsg.tool_calls = chat.currentToolCalls;
+            chat.messages.push(doneMsg);
+            setChatEnabled(true);
+            chat.streaming = false;
+            showStopButton(false);
+            chat.currentFullContent = '';
+            chat.currentFullReasoning = '';
+            chat.currentToolBoxes = [];
+            chat.currentReadGroup = null;
+            chat.currentToolCalls = [];
+            chat.currentAssistantMsg = null;
+            chat.currentBodyDiv = null;
+            chat.currentReasoningDiv = null;
+            smartScroll();
+            break;
 
-            case 'error':
+                case 'error':
                 showChatError(event.message || 'Error');
                 setChatEnabled(true);
                 chat.streaming = false;
@@ -252,12 +286,13 @@
                 chat.currentFullContent = '';
                 chat.currentFullReasoning = '';
                 chat.currentToolBoxes = [];
+                chat.currentReadGroup = null;
                 chat.currentAssistantMsg = null;
                 chat.currentBodyDiv = null;
                 chat.currentReasoningDiv = null;
                 break;
-        }
-    }
+                }
+                }
 
     // ===========================
     // DOM Helpers
@@ -267,6 +302,8 @@
         chat.currentFullContent = '';
         chat.currentFullReasoning = '';
         chat.currentToolBoxes = [];
+        chat.currentReadGroup = null;
+        chat.currentToolCalls = [];
 
         var msgDiv = document.createElement('div');
         msgDiv.className = 'chat-msg assistant streaming';
@@ -343,16 +380,105 @@
     }
 
     function completeToolBox(box) {
-        box.classList.add('completed');
-        var icon = box.querySelector('.tool-icon');
-        var label = box.querySelector('.tool-label code');
-        var labelText = label ? label.textContent : '';
-        var isRead = box.dataset.toolName === 'read_vault_file';
-        if (icon) icon.textContent = isRead ? '\uD83D\uDCD6' : '\u2705';
-        var labelSpan = box.querySelector('.tool-label');
-        if (labelSpan) {
-            labelSpan.innerHTML = (isRead ? 'read ' : 'created ') + '<code>' + escapeHtml(labelText) + '</code>';
-        }
+    box.classList.add('completed');
+    var icon = box.querySelector('.tool-icon');
+    var label = box.querySelector('.tool-label code');
+    var labelText = label ? label.textContent : '';
+    var isRead = box.dataset.toolName === 'read_vault_file';
+    if (icon) icon.textContent = isRead ? '\uD83D\uDCD6' : '\u2705';
+    var labelSpan = box.querySelector('.tool-label');
+    if (labelSpan) {
+    labelSpan.innerHTML = (isRead ? 'read ' : 'created ') + '<code>' + escapeHtml(labelText) + '</code>';
+    }
+    }
+
+    // ── Read Group (collapsible dropdown for multiple reads) ──
+
+    function createReadGroup() {
+    var group = document.createElement('div');
+    group.className = 'msg-tool-read-group';
+
+    var header = document.createElement('div');
+    header.className = 'read-group-header';
+    header.innerHTML = '<span class="read-group-icon">\uD83D\uDCD6</span><span class="read-group-label">read <strong>0</strong> files</span><span class="read-group-toggle">\u25B8</span>';
+    group.appendChild(header);
+
+    var list = document.createElement('div');
+    list.className = 'read-group-list collapsed';
+    group.appendChild(list);
+
+    header.addEventListener('click', function() {
+    var isCollapsed = list.classList.contains('collapsed');
+    list.classList.toggle('collapsed', !isCollapsed);
+    header.querySelector('.read-group-toggle').textContent = isCollapsed ? '\u25BE' : '\u25B8';
+    });
+
+    group._count = 0;
+    return group;
+    }
+
+    function addToReadGroup(group, label) {
+    var item = document.createElement('div');
+    item.className = 'read-group-item';
+    item.dataset.label = label;
+    item.innerHTML = '<span class="read-group-item-icon">\uD83D\uDCD6</span><code>' + escapeHtml(label) + '</code><span class="dots"><span></span><span></span><span></span></span>';
+    group.querySelector('.read-group-list').appendChild(item);
+    group._count++;
+    var countSpan = group.querySelector('.read-group-label strong');
+    if (countSpan) countSpan.textContent = group._count;
+    }
+
+    function completeReadGroupItem(group, event) {
+    var list = group.querySelector('.read-group-list');
+    if (!list) return;
+    var items = list.querySelectorAll('.read-group-item');
+    for (var i = items.length - 1; i >= 0; i--) {
+    if (!items[i].classList.contains('completed')) {
+    items[i].classList.add('completed');
+    var dots = items[i].querySelector('.dots');
+    if (dots) dots.remove();
+    var icon = items[i].querySelector('.read-group-item-icon');
+    if (icon) icon.textContent = '\u2705';
+    break;
+    }
+    }
+    }
+
+    // ── Render tool calls from saved history ──
+
+    function renderToolCalls(div, toolCalls) {
+    if (!toolCalls || toolCalls.length === 0) return;
+
+    var reads = [];
+    var writes = [];
+    for (var i = 0; i < toolCalls.length; i++) {
+    var tc = toolCalls[i];
+    if (tc.name === 'read_vault_file') {
+    reads.push(tc.label || 'file');
+    } else {
+    writes.push(tc);
+    }
+    }
+
+    // Render read group
+    if (reads.length > 0) {
+    var group = createReadGroup();
+    for (var j = 0; j < reads.length; j++) {
+    addToReadGroup(group, reads[j]);
+    completeReadGroupItem(group);
+    }
+    div.insertBefore(group, div.firstChild);
+    }
+
+    // Render write tool boxes
+    for (var k = 0; k < writes.length; k++) {
+    var w = writes[k];
+    var box = document.createElement('div');
+    box.className = 'msg-tool-box completed';
+    box.dataset.toolName = w.name || 'write_study_object';
+    box.innerHTML = '<span class="tool-icon">\u2705</span><span class="tool-label">created <code>' + escapeHtml(w.label || 'object') + '</code></span>';
+    div.insertBefore(box, div.firstChild);
+    }
     }
 
     function addUserMessage(text) {
@@ -608,24 +734,29 @@
         }
 
         for (var i = 0; i < chat.messages.length; i++) {
-            var msg = chat.messages[i];
-            if (msg.role === 'user') {
-                var div = document.createElement('div');
-                div.className = 'chat-msg user';
-                div.textContent = msg.content;
-                container.appendChild(div);
-            } else if (msg.role === 'assistant') {
-                var div = document.createElement('div');
-                div.className = 'chat-msg assistant';
-                var body = document.createElement('div');
-                body.className = 'chat-body';
-                body.innerHTML = marked.parse(msg.content || '');
-                div.appendChild(body);
-                container.appendChild(div);
-                highlightWikilinks(body);
-            }
+        var msg = chat.messages[i];
+        if (msg.role === 'user') {
+        var div = document.createElement('div');
+        div.className = 'chat-msg user';
+        div.textContent = msg.content;
+        container.appendChild(div);
+        } else if (msg.role === 'assistant') {
+        var div = document.createElement('div');
+        div.className = 'chat-msg assistant';
+        // Render tool calls before body
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+        renderToolCalls(div, msg.tool_calls);
         }
-        smartScroll();
+        var body = document.createElement('div');
+        body.className = 'chat-body';
+        body.innerHTML = marked.parse(msg.content || '');
+        div.appendChild(body);
+        container.appendChild(div);
+        highlightWikilinks(body);
+        }
+        }
+        // Force scroll to bottom on load
+        container.scrollTop = container.scrollHeight;
     }
 
     window.saveCurrentChat = function() {
