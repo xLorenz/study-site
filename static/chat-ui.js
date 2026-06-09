@@ -755,8 +755,10 @@
         highlightWikilinks(body);
         }
         }
-        // Force scroll to bottom on load
-        container.scrollTop = container.scrollHeight;
+         // Force scroll to bottom on load
+         setTimeout(function() {
+         container.scrollTop = container.scrollHeight;
+         }, 100);
     }
 
     window.saveCurrentChat = function() {

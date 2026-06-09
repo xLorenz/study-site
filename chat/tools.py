@@ -106,7 +106,7 @@ def write_study_object(subject, filename, html_content):
     if not filename.endswith(".html"):
         filename += ".html"
 
-    objects_dir = os.path.join(VAULT_DIR, "subjects", subject, "objects")
+    objects_dir = os.path.join(VAULT_DIR, "objects", subject)
     os.makedirs(objects_dir, exist_ok=True)
 
     target_path = os.path.join(objects_dir, filename)
