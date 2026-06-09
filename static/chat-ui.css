@@ -761,3 +761,14 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* ── LaTeX / KaTeX ── */
+.katex-display {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.math-error {
+  color: #f87171;
+  font-style: italic;
+}

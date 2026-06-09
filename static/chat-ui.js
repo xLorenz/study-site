@@ -22,6 +22,56 @@
     };
 
     // ===========================
+    // Render helper: marked → LaTeX → DOM
+    // ===========================
+
+    function renderContent(text, container) {
+            // Pre-process: protect LaTeX from marked.js
+            var placeholders = [];
+            var counter = 0;
+            function protect(regex, display) {
+                text = text.replace(regex, function(match, inner) {
+                    var id = 'LATEX_PH_' + counter + '_PH_';
+                    counter++;
+                    placeholders.push({id: id, inner: inner, display: display});
+                    return id;
+                });
+            }
+            // Display math: \[ ... \]  (model outputs literal backslash-bracket)
+            protect(/\\\[([\s\S]*?)\\\]/g, true);
+            // Inline math: \( ... \)
+            protect(/\\\(([\s\S]*?)\\\)/g, false);
+            // Display math: $$...$$
+            protect(/\$\$([\s\S]*?)\$\$/g, true);
+            // Inline math: $...$
+            protect(/\$([^\n$]*?)\$/g, false);
+
+            container.innerHTML = marked.parse(text, { gfm: true, breaks: true });
+
+            // Restore LaTeX placeholders — render with KaTeX directly
+            if (window.katex && placeholders.length > 0) {
+                for (var i = 0; i < placeholders.length; i++) {
+                    var p = placeholders[i];
+                    try {
+                        var html = katex.renderToString(p.inner, {
+                            displayMode: p.display,
+                            throwOnError: false
+                        });
+                        // Replace ALL occurrences of this placeholder
+                        while (container.innerHTML.indexOf(p.id) !== -1) {
+                            container.innerHTML = container.innerHTML.replace(p.id, html);
+                        }
+                    } catch(e) {
+                        while (container.innerHTML.indexOf(p.id) !== -1) {
+                            container.innerHTML = container.innerHTML.replace(p.id,
+                                '<span class="math-error">' + p.inner + '</span>');
+                        }
+                    }
+                }
+            }
+        }
+
+    // ===========================
     // Init
     // ===========================
 
@@ -175,7 +225,7 @@
             case 'token':
                 chat.currentFullContent += event.content;
                 if (chat.currentBodyDiv) {
-                    chat.currentBodyDiv.innerHTML = marked.parse(chat.currentFullContent);
+                    renderContent(chat.currentFullContent, chat.currentBodyDiv);
                 }
                 smartScroll();
                 break;
@@ -251,7 +301,7 @@
             if (event.content) {
             chat.currentFullContent = event.content;
             if (chat.currentBodyDiv) {
-            chat.currentBodyDiv.innerHTML = marked.parse(chat.currentFullContent);
+            renderContent(chat.currentFullContent, chat.currentBodyDiv);
             }
             }
             if (chat.currentReasoningDiv) {
@@ -749,7 +799,7 @@
         }
         var body = document.createElement('div');
         body.className = 'chat-body';
-        body.innerHTML = marked.parse(msg.content || '');
+        renderContent(msg.content || '', body);
         div.appendChild(body);
         container.appendChild(div);
         highlightWikilinks(body);
