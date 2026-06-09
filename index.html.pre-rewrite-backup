@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>study</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
-<link rel="stylesheet" href="/static/chat-ui.css?v=9">
-<script defer src="/static/chat-ui.js?v=9"></script>
 <style>
 /* ── Reset ── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -21,14 +19,14 @@
  --accent:#6366f1;
  --accent-dim:#4345b0;
  --violet:#8b5cf6;
- --blue:#3b82f6;
- --blue-dim:#2563eb;
  --text:#c0c0d0;
  --text-dim:#505068;
  --text-bright:#e8e8f0;
  --success:#22c55e;
  --warning:#f59e0b;
  --danger:#ef4444;
+ --blue:#3b82f6;
+ --blue-dim:#2563eb;
  --font-sans:'Inter','Segoe UI',system-ui,sans-serif;
  --font-mono:'JetBrains Mono','Fira Code',monospace;
  --font-size-xs:11px;--font-size-sm:12px;
@@ -46,7 +44,10 @@
 /* ── Base ── */
 html,body{height:100%;background:var(--bg);color:var(--text);
  font-family:var(--font-sans);font-size:var(--font-size-base);
- overflow:hidden}
+ overflow:hidden;
+ height:100vh; /* fallback */
+ height:100dvh}
+body{display:flex;flex-direction:column}
 button{cursor:pointer;border:none;background:var(--surface-2);
  color:var(--text);font-family:var(--font-sans);
  border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);
@@ -58,7 +59,7 @@ a:hover{color:var(--text-bright)}
 /* ── Header ── */
 #header{
  display:flex;align-items:center;gap:var(--space-2);
- height:40px;padding:0 var(--space-3);
+ height:40px;padding:0 var(--space-3);flex-shrink:0;
  background:var(--surface);border-bottom:1px solid var(--border);
  position:relative;z-index:var(--z-sidebar)}
 #header .logo{font-size:var(--font-size-md);font-weight:600;
@@ -69,13 +70,9 @@ a:hover{color:var(--text-bright)}
 #header select{background:var(--surface-2);color:var(--text);
  border:1px solid var(--border);border-radius:var(--radius-sm);
  padding:2px var(--space-2);font-size:var(--font-size-sm);
- font-family:var(--font-sans);max-width:180px}
+ font-family:var(--font-sans);margin-left:auto;max-width:180px}
 #btn-toggle-left,#btn-toggle-right{background:transparent;
- font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1);
- display:flex;align-items:center;justify-content:center;height:28px;width:28px;
- color:var(--text-dim);cursor:pointer;border:none;border-radius:var(--radius-sm);
- transition:color .15s}
-#btn-toggle-left:hover,#btn-toggle-right:hover{color:var(--text)}
+ font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1)}
 #labels-toggle{
   background:transparent;border:1px solid var(--border);color:var(--text-dim);
   font-size:11px;font-weight:700;cursor:pointer;border-radius:var(--radius-sm);
@@ -98,18 +95,16 @@ a:hover{color:var(--text-bright)}
  font-size:10px;font-weight:600;cursor:pointer;border-radius:var(--radius-sm);
  height:24px;padding:0 6px;display:none;align-items:center;
  font-family:var(--font-sans);transition:all .15s;
- vertical-align:middle;line-height:1;margin-left:auto;white-space:nowrap;
+ vertical-align:middle;line-height:1;margin-left:4px;white-space:nowrap;
 }
 #fit-graph-btn:hover{color:var(--text);border-color:var(--accent)}
 
 /* ── App Layout ── */
 #app{
  display:flex;
- height:calc(100dvh - 40px - 36px); /* header - search bar */
+ flex:1 1 0;
+ min-height:0;
  position:relative}
-@media (not (height: 100dvh)){
- #app{height:calc(100vh - 40px - 36px)}
-}
 
 /* ── Sidebars ── */
 aside{
@@ -150,8 +145,120 @@ padding:var(--space-4);text-align:center;
 background:var(--surface-2);border-radius:var(--radius-md);
 border:1px dashed var(--border-2);margin:var(--space-2) 0}
 
+/* ── Chat Section ── */
+#chat-section{display:flex;flex-direction:column;min-height:0;
+ flex:1 1 auto;overflow:hidden}
+#chat-section h3{margin-bottom:var(--space-2)}
+/* Resize handle between study objects and chat */
+#chat-resize-handle{height:4px;cursor:row-resize;
+ background:transparent;flex-shrink:0;
+ position:relative;z-index:5;transition:background .15s;
+ width:100%;touch-action:none}
+#chat-resize-handle::before{
+ content:'';position:absolute;left:0;right:0;top:-14px;height:32px}
+#chat-resize-handle:hover,
+#chat-resize-handle.active{background:var(--accent)}
+/* Reasoning box — per assistant message, above the chat body */
+.msg-reasoning{
+  display:none;background:var(--surface-2);border:1px solid var(--violet);
+  border-radius:var(--radius-sm);overflow:hidden;
+  padding:4px 8px;margin-bottom:6px;
+  height:auto;min-height:24px;line-height:1.4;
+  white-space:normal;
+  font-size:var(--font-size-xs);color:var(--violet);
+  font-family:var(--font-mono);
+  position:relative;flex-shrink:0;
+  display:flex;align-items:center;gap:4px}
+.msg-reasoning.active{display:flex}
+.msg-reasoning .thinking-dot{display:inline-block;
+  animation:thinkPulse 1.2s ease-in-out infinite;
+  font-style:italic;color:var(--text-dim)}
+.msg-reasoning .thinking-dot:nth-child(2){animation-delay:.2s}
+.msg-reasoning .thinking-dot:nth-child(3){animation-delay:.4s}
+@keyframes thinkPulse{
+ 0%,100%{opacity:.3}50%{opacity:1}}
+.msg-reasoning .reasoning-text{
+  display:inline;white-space:normal;overflow:visible;
+  vertical-align:middle}
+.msg-reasoning .reasoning-icon{margin-right:2px;font-style:normal}
+/* Object creation box — blue, below message body */
+.msg-object-creation{
+ display:none;background:var(--surface-2);border:1px solid var(--blue);
+ border-radius:var(--radius-sm);overflow:hidden;
+ padding:6px 10px;margin-top:6px;
+ height:auto;min-height:28px;line-height:1.4;
+ white-space:normal;
+ font-size:var(--font-size-xs);color:var(--blue);
+ font-family:var(--font-mono);
+ position:relative;flex-shrink:0;
+ align-items:center;gap:4px}
+.msg-object-creation.active{display:flex}
+.msg-object-creation.created{border-color:var(--blue-dim);color:var(--blue-dim)}
+.msg-object-creation.completed{border-color:var(--success);color:var(--success)}
+.msg-object-creation .obj-done{font-weight:600;color:var(--blue)}
+.msg-object-creation .obj-icon{margin-right:4px;font-style:normal}
+.msg-object-creation .obj-text{
+ display:inline-block;white-space:nowrap;
+ overflow:hidden;text-overflow:clip;
+ vertical-align:middle;max-width:calc(100% - 40px)}
+.msg-object-creation .obj-dot{display:inline-block;
+ animation:thinkPulse 1.2s ease-in-out infinite;
+ font-style:italic;color:var(--text-dim)}
+.msg-object-creation .obj-dot:nth-child(2){animation-delay:.2s}
+.msg-object-creation .obj-dot:nth-child(3){animation-delay:.4s}
+/* Chat messages area — grows to fill space */
+#chat-messages{
+ flex:1;overflow-y:auto;min-height:40px;
+ font-size:var(--font-size-sm);padding:var(--space-2);
+ background:var(--surface-2);border-radius:var(--radius-md);
+ border:1px solid var(--border);margin-bottom:var(--space-2)}
+/* Model label above input */
+#chat-model-label{font-size:10px;color:var(--text-dim);
+ text-align:right;padding:0 var(--space-1) var(--space-1) 0;
+ letter-spacing:.3px;flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;gap:4px}
+#chat-model-label select{background:var(--bg);color:var(--accent);border:1px solid var(--border);border-radius:4px;font-size:10px;padding:1px 4px;cursor:pointer;max-width:180px}
+.chat-msg{margin-bottom:var(--space-2);line-height:1.45}
+.chat-msg.user{color:var(--accent);background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.2);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3)}
+.chat-msg.assistant{color:var(--text-bright)}
+.chat-msg .chat-role{font-size:var(--font-size-xs);font-weight:600;
+ text-transform:uppercase;letter-spacing:.5px;margin-right:4px}
+.chat-msg.error{color:var(--danger)}
+.chat-msg ol,.chat-msg ul{padding-left:1.5em;margin:0.3em 0;overflow-wrap:break-word;word-wrap:break-word}
+.chat-msg .chat-body{overflow-wrap:break-word;word-wrap:break-word;word-break:break-word}
+.chat-msg code{background:var(--bg);padding:1px 4px;border-radius:3px;
+ font-family:var(--font-mono);font-size:var(--font-size-xs)}
+.chat-msg pre{background:var(--bg);padding:var(--space-2);border-radius:var(--radius-sm);
+ overflow-x:auto;font-size:var(--font-size-xs);margin:var(--space-1) 0}
+#chat-input-area{display:flex;gap:var(--space-1)}
+#chat-input{flex:1;background:var(--surface-2);color:var(--text-bright);
+ border:1px solid var(--border);border-radius:var(--radius-sm);
+ padding:var(--space-1) var(--space-2);font-size:var(--font-size-sm);
+ font-family:var(--font-sans);outline:none}
+#chat-input:focus{border-color:var(--accent)}
+#chat-input:disabled{opacity:.5;cursor:not-allowed}
+#chat-send{padding:var(--space-1) var(--space-2);font-size:var(--font-size-md);
+ background:var(--accent);color:#fff;border-radius:var(--radius-sm);
+ font-family:var(--font-sans);transition:background .15s}
+#chat-send:hover{background:var(--accent-dim)}
+#chat-send:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Typing Animation (three dots) ── */
+.chat-msg.assistant .chat-typing::after{
+ content:'...';display:inline-block;
+ color:var(--accent);
+ font-family:var(--font-mono);
+ font-weight:700;
+ letter-spacing:1px;
+ animation:typingBlink 1.2s ease-in-out infinite alternate;
+ margin-left:2px}
+@keyframes typingBlink{
+ 0%{opacity:.3}50%{opacity:.8}100%{opacity:.3}}
+.chat-typing{display:inline}
+
+/* Typing dots fade out — when done, remove the span entirely */
+
 /* ── Update Wiki Button ── */
-.btn-update{width:100%;padding:var(--space-2) var(--space-3);font-size:var(--font-size-sm);font-weight:600;border:none;border-radius:var(--radius-md);cursor:pointer;background:#eab308;color:#1a1a2e;transition:opacity .2s}
+.btn-update{width:auto;padding:var(--space-2) var(--space-3);font-size:var(--font-size-sm);font-weight:600;border:none;border-radius:var(--radius-md);cursor:pointer;background:#eab308;color:#1a1a2e;transition:opacity .2s}
 .btn-update:hover:not(:disabled){opacity:.85}
 .btn-update:disabled{opacity:.4;cursor:not-allowed;background:var(--surface-3);color:var(--text-dim)}
 
@@ -174,7 +281,7 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
 .delete-btn.undo-btn:hover{color:#4ade80}
 
 /* ── Wiki Update Results Popup ── */
-.wiki-results-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7)}
+.wiki-results-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .wiki-results-card{background:var(--surface-1);border:1px solid var(--border-2);border-radius:var(--radius-lg);padding:24px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.4)}
 .wiki-results-card h3{margin:0 0 16px 0;font-size:var(--font-size-lg)}
 .wiki-results-row{display:flex;justify-content:space-between;padding:6px 0;font-size:var(--font-size-sm);border-bottom:1px solid var(--border-1)}
@@ -202,7 +309,8 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
  text-overflow:ellipsis;white-space:nowrap;padding:1px 4px;border-radius:3px}
 .tree-item-name:hover{color:var(--text-bright)}
 .tree-item-name.graph-highlighted{
- color:var(--accent);font-weight:600}
+ color:var(--accent);font-weight:600;
+ background:rgba(139,92,246,.18);border-radius:3px;padding:1px 4px}
 .tree-item-search-match{
  position:relative;background:rgba(139,92,246,.12);border-radius:var(--radius-sm)}
 .tree-item-search-match::after{
@@ -379,7 +487,7 @@ pre:hover .copy-btn{opacity:1}
 /* ── Search Bar ── */
 #search-bar{
  display:flex;align-items:center;gap:var(--space-2);
- height:36px;padding:0 var(--space-3);
+ height:36px;padding:0 var(--space-3);flex-shrink:0;
  background:var(--surface);border-top:1px solid var(--border);
  position:relative}
 #search-input{
@@ -452,65 +560,80 @@ pre:hover .copy-btn{opacity:1}
   z-index: 20 !important;
   transition: width .2s ease;
  }
- #sidebar-left { left: 0 !important; border-left: none; }
- #sidebar-right { right: 0 !important; border-right: none; }
+#sidebar-left { left: 0 !important; border-left: none; }
+#sidebar-right { right: 0 !important; border-right: none; }
 
- /* Sidebars closed by default (no !important — JS inline style on desktop may set width) */
- #sidebar-left, #sidebar-right { width: 0; }
+/* Sidebars closed by default (no !important — JS inline style on desktop may set width) */
+#sidebar-left, #sidebar-right { width: 0; }
 
- /* Remove resize handles on mobile */
- #resize-handle-left, #resize-handle-right { display: none !important; }
+/* Remove resize handles on mobile */
+#resize-handle-left, #resize-handle-right { display: none !important; }
 
- /* Sidebar overlay: visible + shadow on mobile */
- #sidebar-left.sidebar-overlay, #sidebar-right.sidebar-overlay {
-  width: 280px;
-  box-shadow: var(--shadow-lg);
- }
-
- /* Back button bigger on mobile */
- #object-back-btn{
-  font-size:var(--font-size-base);
-  padding:var(--space-2) var(--space-4);
-  top:var(--space-2);left:var(--space-2);
-  z-index:100;
- }
-
- /* Search bar full width, minimal */
- #search-bar{height:auto;padding:var(--space-2)}
- #search-subject-filter{max-width:120px}
- #search-results{left:var(--space-2);right:var(--space-2)}
- #search-input{font-size:var(--font-size-base)}
-
- /* Smaller, bottom toast */
- #toast-container{
-  bottom:var(--space-3);right:var(--space-2);
-  left:var(--space-2);gap:var(--space-1)
- }
- .toast{font-size:var(--font-size-xs);padding:var(--space-1) var(--space-3)}
-
- /* Toggle buttons always clickable */
- #btn-toggle-left,#btn-toggle-right{z-index:30;font-size:20px;padding:0 var(--space-2)}
+/* Sidebar overlay: visible + shadow on mobile */
+#sidebar-left.sidebar-overlay, #sidebar-right.sidebar-overlay {
+ width: 280px;
+ box-shadow: var(--shadow-lg);
 }
+
+/* Back button bigger on mobile */
+#object-back-btn{
+ font-size:var(--font-size-base);
+ padding:var(--space-2) var(--space-4);
+ top:var(--space-2);left:var(--space-2);
+ z-index:100;
+}
+
+/* Search bar full width, minimal */
+#search-bar{height:auto;padding:var(--space-2)}
+#search-subject-filter{max-width:120px}
+#search-results{left:var(--space-2);right:var(--space-2)}
+#search-input{font-size:var(--font-size-base)}
+
+/* Smaller, bottom toast */
+#toast-container{
+ bottom:var(--space-3);right:var(--space-2);
+ left:var(--space-2);gap:var(--space-1)
+}
+.toast{font-size:var(--font-size-xs);padding:var(--space-1) var(--space-3)}
+
+/* Toggle buttons always clickable */
+#btn-toggle-left,#btn-toggle-right{z-index:30;font-size:20px;padding:0 var(--space-2)}
+
+/* ── Mobile: prevent chat input overflow on keyboard open ── */
+#chat-section { min-height: 0; }
+#chat-input-area { flex-shrink: 0; }
+#chat-messages { flex: 1 1 auto; min-height: 30px; }
+
+/* ── Mobile header: prevent overflow ── */
+#header {
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Keep all header buttons visible on mobile; shrink select to fit */
+#subject-select { margin-left: 0; min-width: 40px; max-width: none; flex: 0 1 auto; font-size: var(--font-size-xs); padding: 2px 4px; }
+#header .logo { font-size: var(--font-size-base); }
+#glow-mode-btn, #fit-graph-btn { font-size: var(--font-size-xs); padding: var(--space-1); }
+#labels-toggle { font-size: var(--font-size-xs); padding: var(--space-1); }
+
 </style>
 </head>
 <body>
 
 <!-- ── Header ── -->
 <header id="header">
- <button id="btn-toggle-left">
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
- </button>
+ <button id="btn-toggle-left">☰</button>
  <span class="logo">study</span>
  <button id="labels-toggle" title="Toggle all node labels">Aa</button>
- <button id="fit-graph-btn" title="Fit graph to view">⊞</button>
  <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
- <span style="flex:1"></span>
+ <button id="fit-graph-btn" title="Fit all nodes to view">⊞ Fit</button>
  <select id="subject-select">
- <option value="">— Select subject —</option>
+   <option value="">— Select subject —</option>
  </select>
- <button id="btn-toggle-right">
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
- </button>
+ <button id="btn-toggle-right">☰</button>
 </header>
 
 <!-- ── App ── -->
@@ -518,55 +641,26 @@ pre:hover .copy-btn{opacity:1}
 
  <!-- Left Sidebar — Objects -->
  <aside id="sidebar-left" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
-   <div id="objects-section" class="sidebar-section grow">
-     <h3>Study Objects</h3>
-     <div id="objects-tree">
-       <p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>
-     </div>
-   </div>
-   <!-- Chat Resize Handle -->
-   <div id="chat-resize-handle"><div class="grip"><span></span><span></span><span></span></div></div>
-   <!-- Chat Section -->
-   <div id="chat-section">
-     <div id="chat-header">
-       <div class="left">
-         <span class="chat-title">Chat :)</span>
-         <span class="chat-subject-badge" id="chat-subject-badge"></span>
-       </div>
-       <div class="chat-actions">
-         <button class="chat-action-btn" id="chat-clear-btn" title="Clear conversation">🗑️</button>
-       </div>
-     </div>
-     <div id="chat-messages">
-       <div class="chat-placeholder" id="chat-placeholder">
-         <div class="icon">💡</div>
-         <div>Select a subject to start chatting</div>
-         <div class="sub">Click a node on the graph or pick one from the header</div>
-       </div>
-     </div>
-     <div id="chat-model-bar">
-       <span class="model-label">Model</span>
-       <span class="model-select-wrap">
-         <select id="chat-model-select" title="Select AI model">
-         <option value="z-ai/glm-5.1">GLM-5.1</option>
-         <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4</option>
-         </select>
-         </span>
-         </div>
-     <div id="chat-input-area">
-       <textarea id="chat-input" placeholder="Ask about this subject..." rows="1"></textarea>
-       <button id="chat-stop-btn" aria-label="Stop generation">
-         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-           <rect x="6" y="6" width="12" height="12" rx="2" fill="white"/>
-         </svg>
-       </button>
-       <button id="chat-send-btn" disabled aria-label="Send message">
-         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-           <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-         </svg>
-       </button>
-     </div>
-   </div>
+  <div class="sidebar-section">
+  <h3>Study Objects</h3>
+  <div id="objects-tree">
+  <p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>
+  </div>
+  </div>
+
+  <!-- Chat Resize Handle -->
+  <div id="chat-resize-handle"></div>
+
+  <!-- Chat Section (grows to fill remaining space) -->
+  <div class="sidebar-section" id="chat-section">
+  <h3>💬 Study Chat</h3>
+  <div id="chat-messages"></div>
+  <div id="chat-model-label">Model: <select id="chat-model-select" onchange="onModelChange(this.value)"></select></div>
+  <div id="chat-input-area">
+  <input type="text" id="chat-input" placeholder="Ask about this subject…" autocomplete="off" />
+  <button id="chat-send" title="Send">➤</button>
+  </div>
+  </div>
  </aside>
 
  <!-- Left Resize Handle -->
@@ -596,24 +690,22 @@ pre:hover .copy-btn{opacity:1}
 
  <!-- Right Sidebar — Upload, Files, Preview -->
   <aside id="sidebar-right" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
-  <!-- Upload (top) -->
- <div class="sidebar-section">
- <h3>Upload</h3>
- <div id="upload-zone">
- <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
- <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
- <label for="file-input" class="btn">Choose Files</label>
+  <!-- Upload + Update Wiki (combined) -->
+  <div class="sidebar-section">
+  <h3>Upload</h3>
+  <div id="upload-zone">
+  <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
+  <div style="display:flex;gap:var(--space-2)">
+  <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
+  <label for="file-input" class="btn">Choose Files</label>
+  <button id="update-wiki-btn" class="btn btn-update" onclick="updateWiki()" disabled title="No pending changes">&#9889; Update Wiki</button>
   </div>
   </div>
-
-  <!-- Update Wiki Button / Progress Bar -->
-  <div class="sidebar-section" id="update-wiki-section">
-   <button id="update-wiki-btn" class="btn btn-update" onclick="updateWiki()" disabled title="No pending changes">&#9889; Update Wiki</button>
-   <div id="ingest-progress" class="ingest-progress-container" style="display:none">
-    <div class="ingest-progress-track"><div id="ingest-progress-fill" class="ingest-progress-fill"></div></div>
-    <div id="ingest-progress-text" class="ingest-progress-text">Preparing…</div>
-   </div>
-   <div id="update-wiki-summary" style="display:none"></div>
+  <div id="ingest-progress" class="ingest-progress-container" style="display:none">
+  <div class="ingest-progress-track"><div id="ingest-progress-fill" class="ingest-progress-fill"></div></div>
+  <div id="ingest-progress-text" class="ingest-progress-text">Preparing…</div>
+  </div>
+  <div id="update-wiki-summary" style="display:none"></div>
   </div>
 
   <!-- Files (middle, grows) -->
@@ -715,14 +807,35 @@ async function loadSubjects() {
  select.appendChild(opt);
  });
  if (data.subjects.length > 0) {
-     select.value = data.subjects[0].name;
-     await reloadAll(data.subjects[0].name);
-   }
+   select.value = data.subjects[0].name;
+   await reloadAll(data.subjects[0].name);
+   fitSubjectSelect();
+ }
  populateSearchFilter();
- fitSubjectSelect();
  } catch (e) {
  showToast('\u2717 Failed to load subjects', 'danger');
  }
+}
+
+/**
+ * Dynamically resize the subject <select> to fit the selected option's text.
+ * Prevents the select from being wider than needed (default: widest option wins).
+ */
+function fitSubjectSelect() {
+  const select = document.getElementById('subject-select');
+  if (!select || !select.options[select.selectedIndex]) return;
+
+  // Measure selected text width with canvas for precision
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const cs = getComputedStyle(select);
+  ctx.font = (cs.fontSize || '14px') + ' ' + (cs.fontFamily || 'sans-serif');
+  const textWidth = ctx.measureText(select.options[select.selectedIndex].textContent).width;
+
+  const isMobile = window.innerWidth <= 768;
+  const totalWidth = Math.ceil(textWidth) + 28; // text + arrow + padding + border
+  const maxW = isMobile ? Math.floor(window.innerWidth * 0.5) : 180;
+  select.style.width = Math.min(totalWidth, maxW) + 'px';
 }
 
 // ── Object Tree (Left Sidebar) ──
@@ -741,9 +854,19 @@ async function reloadObjectTree(subject) {
  }
  container.innerHTML = data.objects.map(obj => {
  const badge = TYPE_BADGES[obj.type] || TYPE_BADGES.unknown;
+ let badgeLabel = badge.label;
+ let badgeColor = badge.color;
+ if (obj.type === 'unknown' && obj.name) {
+   const stem = obj.name.replace(/\.html$/, '').replace(/-v\d+$/, '');
+   const words = stem.split(/[-_]/);
+   const significant = words.filter(w => w.length > 2 && !['html', 'v1', 'v2'].includes(w));
+   badgeLabel = (significant.length ? significant.slice(0, 2).join('-') : words[0] || '?').toUpperCase();
+   const hash = stem.split('').reduce((a,c)=>a*31+c.charCodeAt(0),0);
+   badgeColor = 'hsl(' + (((hash % 360) + 360) % 360) + ', 45%, 55%)';
+ }
  const path = encodeURIComponent(obj.path);
  return '<div class="tree-item" onclick="showObject(\'' + obj.path + '\')">' +
- '<span class="type-badge" style="background:' + badge.color + '">' + badge.label + '</span>' +
+ '<span class="type-badge" style="background:' + badgeColor + '">' + badgeLabel + '</span>' +
  '<span class="tree-item-name" title="' + obj.title + '">' + obj.title + '</span>' +
  '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">\u2b07</a>' +
  '</div>';
@@ -823,7 +946,7 @@ function hideObject() {
  // Restore graph controls that were hidden in object view
  document.getElementById('labels-toggle').style.display = 'inline-flex';
  document.getElementById('glow-mode-btn').style.display = 'inline-flex';
- document.getElementById('fit-graph-btn').style.display = graphNodes.length > 0 ? 'inline-flex' : 'none';
+ document.getElementById('fit-graph-btn').style.display = 'inline-flex';
  } else {
  // Keep overlay — sidebars stay position:absolute
  handleLeft.style.display = 'none';
@@ -1304,8 +1427,8 @@ async function updateWiki() {
       clearInterval(_progressInterval);
       _progressInterval = null;
 
-      // Merge initial delete info with final result
-      const finalData = Object.assign({}, initialData || {}, s.result || {});
+      // Merge initial delete info with final result + ingest_subject from status
+      const finalData = Object.assign({}, initialData || {}, s.result || {}, { ingest_subject: s.ingest_subject });
       const ok = !(s.result && s.result.status === 'error');
       finishIngestProgress(ok);
 
@@ -1324,19 +1447,41 @@ async function updateWiki() {
 }
 
 function showWikiResults(data) {
+ const ingestSubject = data.ingest_subject || '';
+
+ // If ingest finished on a different subject than current, show toast instead
+ if (ingestSubject && currentSubject && ingestSubject !== currentSubject) {
+ const label = ingestSubject.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+ showToast('⚡ Wiki updated for ' + label, 'success');
+ // Add "Switch to" button in toast
+ const container = document.getElementById('toast-container');
+ const lastToast = container ? container.lastElementChild : null;
+ if (lastToast) {
+ const switchBtn = document.createElement('button');
+ switchBtn.textContent = 'Switch to ' + label;
+ switchBtn.style.cssText = 'margin-left:8px;padding:2px 8px;border-radius:4px;border:1px solid var(--border-2);background:var(--surface-2);color:var(--text-bright);cursor:pointer;font-size:var(--font-size-xs)';
+ switchBtn.onclick = () => {
+ document.getElementById('subject-select').value = ingestSubject;
+ onSubjectChange();
+ };
+ lastToast.appendChild(switchBtn);
+ }
+ return;
+ }
+
  const overlay = document.createElement('div');
  overlay.className = 'wiki-results-overlay';
  overlay.id = 'wiki-results-overlay';
- overlay.onclick = function(e) { if (e.target === this) closeWikiResults(); };
+ // No outside-click dismiss — user must click OK
  overlay.innerHTML =
-  '<div class="wiki-results-card">' +
-  '<h3>⚡ Wiki Updated</h3>' +
-  '<div class="wiki-results-row"><span class="label">Pages created</span><span class="value">' + (data.pages_created ?? '—') + '</span></div>' +
-  '<div class="wiki-results-row"><span class="label">Files deleted</span><span class="value">' + (data.files_deleted ?? 0) + '</span></div>' +
-  '<div class="wiki-results-row"><span class="label">Tokens used</span><span class="value">' + (data.tokens_used ?? 0) + '</span></div>' +
-  '<div class="wiki-results-row"><span class="label">Model</span><span class="value">' + (data.model || 'deterministic') + '</span></div>' +
-  '<button class="btn-close" onclick="closeWikiResults()">Close</button>' +
-  '</div>';
+ '<div class="wiki-results-card">' +
+ '<h3>⚡ Wiki Updated</h3>' +
+ '<div class="wiki-results-row"><span class="label">Pages created</span><span class="value">' + (data.pages_created ?? '—') + '</span></div>' +
+ '<div class="wiki-results-row"><span class="label">Files deleted</span><span class="value">' + (data.files_deleted ?? 0) + '</span></div>' +
+ '<div class="wiki-results-row"><span class="label">Tokens used</span><span class="value">' + (data.tokens_used ?? 0) + '</span></div>' +
+ '<div class="wiki-results-row"><span class="label">Model</span><span class="value">' + (data.model || 'deterministic') + '</span></div>' +
+ '<button class="btn-close" onclick="closeWikiResults()">OK</button>' +
+ '</div>';
  document.body.appendChild(overlay);
 }
 
@@ -1347,13 +1492,12 @@ function closeWikiResults() {
 
 // ── reloadAll: Refresh Everything ──
 async function reloadAll(subject) {
-  currentSubject = subject;
-  // Update chat subject
-  if (window.setChatSubject) {
-    window.setChatSubject(subject);
-  }
-  await reloadObjectTree(subject);
-  await reloadFileTree(subject);
+ currentSubject = subject;
+ chatConversation = [];
+ chatMessages.innerHTML = '';
+ await reloadObjectTree(subject);
+ await reloadFileTree(subject);
+ await loadChat(subject);
 
  const placeholder = document.getElementById('main-placeholder');
  const frame = document.getElementById('object-frame');
@@ -1558,8 +1702,8 @@ async function uploadFile(file, subject) {
   : `\u2713 ${file.name} uploaded`;
  showToast(msg, 'success');
  reloadFileTree(subject);
- reloadGraph(subject);
- reloadObjectTree(subject);
+  reloadGraph(subject);
+  await reloadObjectTree(subject);
  } else {
  showToast(`\u2717 ${data.error}: ${data.detail || ''}`, 'danger');
  }
@@ -1652,98 +1796,9 @@ document.getElementById('btn-copy-preview').addEventListener('click', async () =
  document.removeEventListener('mouseup', onUp);
  };
  document.addEventListener('mousemove', onMove);
-         document.addEventListener('mouseup', onUp);
-     });
- })();
-
- // ── Chat Resize Handle (mirrors initPreviewResize pattern) ──
- (function initChatResize() {
-     const handle = document.getElementById('chat-resize-handle');
-     const chatSection = document.getElementById('chat-section');
-     const sidebar = document.getElementById('sidebar-left');
-     if (!handle || !chatSection || !sidebar) return;
-
-     const RATIO = 0.75;
-
-     // Set initial: 75% of sidebar
-     function setDefaultHeight() {
-         const sidebarH = sidebar.getBoundingClientRect().height;
-         if (sidebarH < 50) return;
-         chatSection.style.height = Math.round(sidebarH * RATIO) + 'px';
-     }
-
-     // Wait for layout
-     setTimeout(setDefaultHeight, 50);
-
-     // Recalc on window resize
-     let resizeTimer;
-     window.addEventListener('resize', () => {
-         clearTimeout(resizeTimer);
-         resizeTimer = setTimeout(setDefaultHeight, 100);
-     });
-
-     // Recalc on sidebar toggle
-     const sidebarObserver = new MutationObserver(() => setTimeout(setDefaultHeight, 50));
-     sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['data-collapsed', 'style'] });
-
-     // Drag — pixel based, same exact pattern as preview-resize-handle
-     handle.addEventListener('mousedown', (e) => {
-         e.preventDefault();
-         const startY = e.clientY;
-         const startH = chatSection.getBoundingClientRect().height;
-         handle.classList.add('active');
-         const sidebarH = sidebar.getBoundingClientRect().height;
-         const maxH = sidebarH * RATIO;
-         const minH = 80;
-         document.body.style.cursor = 'ns-resize';
-         document.body.style.userSelect = 'none';
-
-         const onMove = (me) => {
-             const delta = startY - me.clientY; // drag up = grow
-             const newH = Math.max(minH, Math.min(maxH, startH + delta));
-             chatSection.style.height = newH + 'px';
-             chatSection.style.maxHeight = 'none';
-         };
-         const onUp = () => {
-             handle.classList.remove('active');
-             document.body.style.cursor = '';
-             document.body.style.userSelect = '';
-             chatSection.style.maxHeight = '';
-             document.removeEventListener('mousemove', onMove);
-             document.removeEventListener('mouseup', onUp);
-         };
-         document.addEventListener('mousemove', onMove);
-         document.addEventListener('mouseup', onUp);
-     });
-
-     // Touch support
-     handle.addEventListener('touchstart', (e) => {
-         e.preventDefault();
-         const touch = e.touches[0];
-         const startY = touch.clientY;
-         const startH = chatSection.getBoundingClientRect().height;
-         handle.classList.add('active');
-         const sidebarH = sidebar.getBoundingClientRect().height;
-         const maxH = sidebarH * RATIO;
-         const minH = 80;
-
-         const onMove = (te) => {
-             const t = te.touches[0];
-             const delta = startY - t.clientY;
-             const newH = Math.max(minH, Math.min(maxH, startH + delta));
-             chatSection.style.height = newH + 'px';
-             chatSection.style.maxHeight = 'none';
-         };
-         const onEnd = () => {
-             handle.classList.remove('active');
-             chatSection.style.maxHeight = '';
-             document.removeEventListener('touchmove', onMove);
-             document.removeEventListener('touchend', onEnd);
-         };
-         document.addEventListener('touchmove', onMove, { passive: false });
-         document.addEventListener('touchend', onEnd);
-     }, { passive: false });
- })();
+ document.addEventListener('mouseup', onUp);
+ });
+})();
 
 // ── Search Functions ──
 let searchTimeout = null;
@@ -1935,16 +1990,17 @@ let labelsVisible = false;        // Toggle all labels on/off
 let settleFrameCount = 0;         // Frames since all nodes settled
 let hasZoomedToFit = false;       // Whether we've auto-fitted once
 
-// Physics constants (balanced Obsidian-style spread)
-const REPULSION = 25000;
-const SPRING_LENGTH = 240;
-const SPRING_K = 0.003;
-const CENTER_GRAVITY = 0.0015;
-const DAMPING = 0.85;
-const MIN_VELOCITY = 0.005;
-const COLLISION_RADIUS = 1.4;
-const SETTLE_VELOCITY = 0.1;
-const SETTLE_FRAMES = 120;
+// Physics constants (Obsidian-style — gentler, wider, smoother)
+const REPULSION = 50000;           // Stronger repulsion for wider spread
+const SPRING_LENGTH = 320;         // Longer edges for clarity
+const SPRING_K = 0.002;            // Very soft springs — repulsion dominates → nodes spread wide
+const CENTER_GRAVITY = 0.00025;    // Light center pull (reduced so size-based spread dominates)
+const DAMPING = 0.88;              // Stronger friction → faster settle
+const MIN_RADIUS = 14;             // Base node radius (for repulsion normalization)
+const MIN_VELOCITY = 0.005;        // Lower threshold for settling
+const COLLISION_RADIUS = 1.8;      // Collision buffer multiplier
+const SETTLE_VELOCITY = 0.1;       // Below this → considered settled
+const SETTLE_FRAMES = 60;          // Consecutive settled frames before zoom-to-fit
 
 // Type → halo color map (concept=blue, definition=green, formula=orange, exercise=purple, ghost=dim)
 const TYPE_HALOS = {
@@ -1999,6 +2055,18 @@ async function reloadGraph(subject) {
  const url = subject ? '/api/graph?subject=' + encodeURIComponent(subject) : '/api/graph';
  const data = await fetch(url).then(r => r.json());
  initGraph(data);
+ // Schedule zoom-to-fit after simulation spreads nodes (~2s)
+ let spreadFrames = 0;
+ const scheduleZoom = () => {
+   spreadFrames++;
+   if (spreadFrames >= 120 && !hasZoomedToFit && graphNodes.length > 0) {
+     hasZoomedToFit = true; // prevent settle check from re-firing
+     zoomToFit();
+   } else if (!hasZoomedToFit) {
+     requestAnimationFrame(scheduleZoom);
+   }
+ };
+ requestAnimationFrame(scheduleZoom);
  } catch (e) {
  console.error('Graph fetch failed:', e);
  }
@@ -2022,8 +2090,8 @@ function initGraph(data) {
     return {
       ...n,
       // Start at center for smooth ease-out animation
-      x: cx + (Math.random() - 0.5) * w * 0.6,
-      y: cy + (Math.random() - 0.5) * h * 0.6,
+      x: cx + (Math.random() - 0.5) * w * 0.15,
+      y: cy + (Math.random() - 0.5) * h * 0.15,
       vx: 0,
       vy: 0,
       radius: r,
@@ -2052,10 +2120,10 @@ function initGraph(data) {
   document.getElementById('labels-toggle').style.display =
     graphNodes.length > 0 ? 'inline-flex' : 'none';
   document.getElementById('glow-mode-btn').style.display =
-  graphNodes.length > 0 ? 'inline-flex' : 'none';
+    graphNodes.length > 0 ? 'inline-flex' : 'none';
   document.getElementById('fit-graph-btn').style.display =
-  graphNodes.length > 0 ? 'inline-flex' : 'none';
-  }
+    graphNodes.length > 0 ? 'inline-flex' : 'none';
+}
 
 // ── Graph: Stop Loop ──
 function stopGraphLoop() {
@@ -2092,9 +2160,9 @@ function simulationStep() {
       let dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1) dist = 1;
 
-      // Size-proportional Coulomb repulsion (clamped to prevent nuke-and-oscillate)
-      const repMag = REPULSION * (a.radius + b.radius) / 30;
-      const force = Math.min(repMag / (dist * dist), 50);
+      // Coulomb repulsion — proportional to node size so big hubs spread more
+      const sizeFactor = (a.radius * b.radius) / (MIN_RADIUS * MIN_RADIUS);
+      const force = Math.min(REPULSION * sizeFactor / (dist * dist), 50 * sizeFactor);
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       if (!a.pinned) { a.vx -= fx; a.vy -= fy; }
@@ -2150,13 +2218,15 @@ function simulationStep() {
     if (speed > maxSpeed) maxSpeed = speed;
   }
 
-  // ── Auto zoom-to-fit after 2s ──
-  if (!hasZoomedToFit && !selectedNode && n > 20) {
+  // ── Settle tracking → zoom-to-fit ──
+  if (maxSpeed < SETTLE_VELOCITY && n > 0) {
     settleFrameCount++;
-    if (settleFrameCount >= SETTLE_FRAMES) {
+    if (settleFrameCount >= SETTLE_FRAMES && !hasZoomedToFit && !selectedNode) {
       zoomToFit();
       hasZoomedToFit = true;
     }
+  } else {
+    settleFrameCount = 0;
   }
 
   // ── Draw ──
@@ -2352,7 +2422,16 @@ function zoomToFit(padding = 0.15) {
   const graphH = maxY - minY || 1;
   const scaleX = (w * (1 - padding)) / graphW;
   const scaleY = (h * (1 - padding)) / graphH;
-  const zoom = Math.min(scaleX, scaleY, 1.5);
+  // Natural fit: zoom computed directly from actual node positions
+  const zoom = Math.min(scaleX, scaleY);
+  console.log('[zoomToFit] nodes='+graphNodes.length+' box=['+minX.toFixed(0)+','+minY.toFixed(0)+'–'+maxX.toFixed(0)+','+maxY.toFixed(0)+'] zoom='+zoom.toFixed(3));
+
+  // Center on the VISIBLE area (accounting for sidebar overlays)
+  const sl = document.getElementById('sidebar-left');
+  const sr = document.getElementById('sidebar-right');
+  const slW = (sl.dataset.collapsed === 'true') ? 0 : (parseInt(sl.style.width) || sl.getBoundingClientRect().width || 0);
+  const srW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || sr.getBoundingClientRect().width || 0);
+  const visibleCenterX = slW + (w - slW - srW) / 2;
 
   const midX = (minX + maxX) / 2;
   const midY = (minY + maxY) / 2;
@@ -2361,7 +2440,7 @@ function zoomToFit(padding = 0.15) {
   const startZoom = graphZoom;
   const startPanX = graphPanX;
   const startPanY = graphPanY;
-  const targetPanX = (w / 2) - midX * zoom;
+  const targetPanX = visibleCenterX - midX * zoom;
   const targetPanY = (h / 2) - midY * zoom;
   const duration = 500;
   const startTime = performance.now();
@@ -2444,15 +2523,17 @@ document.getElementById('labels-toggle').addEventListener('click', () => {
 
 // ── Graph: Glow Mode Toggle ──
 document.getElementById('glow-mode-btn').addEventListener('click', () => {
- const modes = ['type', 'topic', 'source'];
- const labels = { type: '⊙ Type', topic: '⊙ Topic', source: '⊙ Source' };
- const idx = modes.indexOf(glowMode);
- glowMode = modes[(idx + 1) % modes.length];
- document.getElementById('glow-mode-btn').textContent = labels[glowMode];
+  const modes = ['type', 'topic', 'source'];
+  const labels = { type: '⊙ Type', topic: '⊙ Topic', source: '⊙ Source' };
+  const idx = modes.indexOf(glowMode);
+  glowMode = modes[(idx + 1) % modes.length];
+  document.getElementById('glow-mode-btn').textContent = labels[glowMode];
 });
 
+// ── Graph: Fit to View ──
 document.getElementById('fit-graph-btn').addEventListener('click', () => {
- if (typeof zoomToFit === 'function') zoomToFit();
+  hasZoomedToFit = true; // mark so settle check doesn't re-fire
+  zoomToFit();
 });
 
 // ── Graph: Mouse Down ──
@@ -2599,7 +2680,7 @@ graphCanvas.addEventListener('touchmove', (e) => {
 
   if (graphCanvas._pinchDist) {
    const ratio = dist / graphCanvas._pinchDist;
-   const newZoom = Math.max(0.08, Math.min(3.0, graphZoom * ratio));
+   const newZoom = Math.max(0.02, Math.min(3.0, graphZoom * ratio));
    // Zoom towards midpoint — delta-based like the wheel handler
    graphPanX = midX - (midX - graphPanX) * (newZoom / graphZoom);
    graphPanY = midY - (midY - graphPanY) * (newZoom / graphZoom);
@@ -2700,7 +2781,7 @@ graphCanvas.addEventListener('wheel', (e) => {
  const sy = e.clientY - rect.top;
 
  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
- const newZoom = Math.max(0.08, Math.min(3.0, graphZoom * zoomFactor));
+ const newZoom = Math.max(0.02, Math.min(3.0, graphZoom * zoomFactor));
 
  // Zoom towards cursor
  graphPanX = sx - (sx - graphPanX) * (newZoom / graphZoom);
@@ -2711,50 +2792,84 @@ graphCanvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ── Mobile: Tap outside sidebar to close ──
-function closeSidebarsIfMobile(e) {
+// On mobile, the graph canvas touch handlers call preventDefault(),
+// which suppresses synthetic click events. So we listen for touchend
+// instead of click on mobile. On desktop, click still works.
+let _touchStartTarget = null;
+let _touchStartPos = null;
+
+document.addEventListener('touchstart', (e) => {
  if (window.innerWidth > 768) return;
+ if (e.touches.length !== 1) return;
+ _touchStartTarget = e.target;
+ _touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+
+document.addEventListener('touchend', (e) => {
+ if (window.innerWidth > 768) return;
+ if (!_touchStartTarget) return;
+
+ // Check it was a tap (not a drag/scroll)
+ const touch = e.changedTouches[0];
+ if (_touchStartPos) {
+  const dx = Math.abs(touch.clientX - _touchStartPos.x);
+  const dy = Math.abs(touch.clientY - _touchStartPos.y);
+  if (dx > 10 || dy > 10) { _touchStartTarget = null; return; }
+ }
+
+ const target = document.elementFromPoint(touch.clientX, touch.clientY) || _touchStartTarget;
+
  const left = document.getElementById('sidebar-left');
  const right = document.getElementById('sidebar-right');
  const btnLeft = document.getElementById('btn-toggle-left');
  const btnRight = document.getElementById('btn-toggle-right');
- if (left.contains(e.target) || right.contains(e.target)) return;
- if (e.target === btnLeft || e.target === btnRight) return;
- if (left.dataset.collapsed === 'false') toggleSidebar('sidebar-left');
- if (right.dataset.collapsed === 'false') toggleSidebar('sidebar-right');
-}
-document.addEventListener('click', closeSidebarsIfMobile);
-document.addEventListener('touchstart', (e) => {
- if (window.innerWidth > 768) return;
- // Only close on touch outside — not on interactive elements
- if (e.target.closest('button, select, input, a, .resize-handle')) return;
- closeSidebarsIfMobile(e);
-}, { passive: true });
+ const header = document.getElementById('header');
+ const searchBar = document.getElementById('search-bar');
+
+ const leftOpen = left.dataset.collapsed === 'false';
+ const rightOpen = right.dataset.collapsed === 'false';
+
+ if (!leftOpen && !rightOpen) { _touchStartTarget = null; return; }
+
+ // If tapping a toggle button, let toggleSidebar handle it
+ if (target === btnLeft || target === btnRight || btnLeft.contains(target) || btnRight.contains(target)) { _touchStartTarget = null; return; }
+
+ // If tapping inside the header or search bar, don't close sidebars
+ if (header && header.contains(target)) { _touchStartTarget = null; return; }
+ if (searchBar && searchBar.contains(target)) { _touchStartTarget = null; return; }
+
+ // If tapping inside an open sidebar, don't close it
+ if (leftOpen && left.contains(target)) { _touchStartTarget = null; return; }
+ if (rightOpen && right.contains(target)) { _touchStartTarget = null; return; }
+
+ // If a graph drag just happened, don't close sidebar
+ if (hasDragged) { _touchStartTarget = null; return; }
+
+ // Tap is outside any open sidebar → close whichever is open
+ if (leftOpen) toggleSidebar('sidebar-left');
+ if (rightOpen) toggleSidebar('sidebar-right');
+
+ _touchStartTarget = null;
+});
+
+// Desktop: clicking outside sidebars does NOT close them.
+// Only mobile has tap-to-close via touchstart/touchend above.
 
 // ── Graph: Window resize ──
 window.addEventListener('resize', () => {
  if (graphCanvas.style.display !== 'none') {
  resizeGraphCanvas();
  }
+ // Re-adjust sidebar chat area on mobile keyboard open/close
+ const chatMessages = document.getElementById('chat-messages');
+ if (chatMessages) {
+   chatMessages.style.maxHeight = '';
+ }
+ fitSubjectSelect();
 });
 
-// ── Subject Select: dynamic width ──
-function fitSubjectSelect() {
- const sel = document.getElementById('subject-select');
- if (!sel) return;
- // Measure the width of the currently selected option text
- const canvas = document.createElement('canvas').getContext('2d');
- canvas.font = getComputedStyle(sel).font;
- const text = sel.options[sel.selectedIndex]?.textContent || '';
- const pad = 32; // padding + dropdown arrow
- const measured = Math.ceil(canvas.measureText(text).width) + pad;
- sel.style.width = Math.max(100, Math.min(measured, 240)) + 'px';
-}
-
 // ── Initialise ──
-loadSubjects();
-// initChat may already be defined (defer script ran) or not yet — handle both
-if (typeof initChat === 'function') initChat();
-else document.addEventListener('DOMContentLoaded', initChat);
+// loadSubjects() is called below after the chat patch is applied
 
 // On mobile, collapse sidebars initially
 if (window.innerWidth <= 768) {
@@ -2784,18 +2899,24 @@ function startIngestPoll() {
    const uploadInput = document.getElementById('file-input');
    const uploadZone = document.getElementById('upload-zone');
    if (data.ingest_running) {
-    const frame = document.getElementById('object-frame');
-    if (frame && frame.style.display === 'block') {
-     overlay.classList.add('hidden');
-     overlay.style.pointerEvents = 'none';
-    } else {
-     overlay.classList.remove('hidden');
-     overlay.style.pointerEvents = '';
-    }
-    if (uploadInput) uploadInput.disabled = true;
-    if (uploadZone) uploadZone.style.pointerEvents = 'none';
-    // Disable all delete buttons
-    document.querySelectorAll('.delete-btn').forEach(b => b.disabled = true);
+   // Only show overlay if the ingesting subject matches the current one
+   if (data.ingest_subject && data.ingest_subject !== currentSubject) {
+   overlay.classList.add('hidden');
+   overlay.style.pointerEvents = 'none';
+   } else {
+   const frame = document.getElementById('object-frame');
+   if (frame && frame.style.display === 'block') {
+   overlay.classList.add('hidden');
+   overlay.style.pointerEvents = 'none';
+   } else {
+   overlay.classList.remove('hidden');
+   overlay.style.pointerEvents = '';
+   }
+   }
+   if (uploadInput) uploadInput.disabled = true;
+   if (uploadZone) uploadZone.style.pointerEvents = 'none';
+   // Disable all delete buttons
+   document.querySelectorAll('.delete-btn').forEach(b => b.disabled = true);
    } else {
     overlay.classList.add('hidden');
     overlay.style.pointerEvents = '';
@@ -2820,6 +2941,498 @@ reloadGraph = function(subject) {
 };
 
 console.log('Study UI — Phase 5: Force-Directed Graph');
+
+// ── Chat Logic ──
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const chatSend = document.getElementById('chat-send');
+let chatConversation = []; // [{role, content}]
+let chatAbortController = null; // to cancel in-flight stream
+let chatSafetyTimer = null; // safety timeout to re-enable input
+
+// ── Chat Persistence ──
+const CHAT_STORAGE_KEY = 'study_chat_history';
+function saveChat(subject) {
+ if (!subject) return;
+ const payload = { subject, conversation: chatConversation, model: currentModel };
+ fetch('/api/chat-save', {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify(payload),
+ }).catch(e => console.warn('saveChat failed:', e));
+}
+async function loadChat(subject) {
+ if (!subject) return;
+ try {
+ const res = await fetch('/api/chat-load?subject=' + encodeURIComponent(subject));
+ const data = await res.json();
+ chatConversation = data.conversation || [];
+ chatMessages.innerHTML = '';
+ chatConversation.forEach(msg => renderChatMsg(msg.role, msg.content, false));
+ chatMessages.scrollTop = chatMessages.scrollHeight;
+ if (data.model) updateModelLabel(data.model);
+ } catch(e) {
+ console.warn('loadChat failed:', e);
+ chatConversation = [];
+ chatMessages.innerHTML = '';
+ }
+}
+
+let currentModel = 'z-ai/glm-5.1';
+const AVAILABLE_MODELS = [
+  { id: 'z-ai/glm-5.1', label: 'GLM 5.1 ⚡' },
+  { id: 'deepseek-ai/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+];
+function initModelSelect(selected) {
+ const sel = document.getElementById('chat-model-select');
+ if (!sel) return;
+ sel.innerHTML = '';
+ AVAILABLE_MODELS.forEach(m => {
+   const opt = document.createElement('option');
+   opt.value = m.id;
+   opt.textContent = m.label;
+   if (m.id === selected) opt.selected = true;
+   sel.appendChild(opt);
+ });
+}
+function onModelChange(val) {
+ currentModel = val;
+ if (currentSubject) saveChat(currentSubject);
+}
+initModelSelect(currentModel);
+function updateModelLabel(name) {
+ currentModel = name;
+ const sel = document.getElementById('chat-model-select');
+ if (sel) sel.value = name;
+}
+
+// ── Highlight [[wikilinks]] in chat messages ──
+function highlightWikiLinks(container) {
+ const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+ const textNodes = [];
+ while (walker.nextNode()) textNodes.push(walker.currentNode);
+ for (let i = textNodes.length - 1; i >= 0; i--) {
+ const node = textNodes[i];
+ const text = node.textContent;
+ if (!text.includes('[[')) continue;
+ const fragment = document.createDocumentFragment();
+ const parts = text.split(/(\[\[[^\]]+\]\])/g);
+ for (const part of parts) {
+ if (part.startsWith('[[') && part.endsWith(']]')) {
+ const label = part.slice(2, -2);
+ const span = document.createElement('span');
+ span.className = 'wiki-link-inline';
+ span.textContent = label;
+ span.style.color = '#8b5cf6';
+ span.style.fontWeight = '500';
+ span.style.cursor = 'pointer';
+ span.title = 'Click to open: ' + label;
+ // Build vault path: subjects/{subject}/wiki/{label}.md
+ span.onclick = function() {
+   const path = 'subjects/' + currentSubject + '/wiki/' + label + '.md';
+   showFilePreview(path);
+ };
+ fragment.appendChild(span);
+ } else {
+ fragment.appendChild(document.createTextNode(part));
+ }
+ }
+ node.parentNode.replaceChild(fragment, node);
+ }
+}
+
+function renderChatMsg(role, content, save = true) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  if (role === 'assistant' && content) {
+ const body = document.createElement('div');
+ body.className = 'chat-body';
+ body.innerHTML = marked.parse(content);
+ body.querySelectorAll('pre').forEach(p => {
+ p.style.background = 'var(--bg)';
+ p.style.padding = 'var(--space-2)';
+ p.style.borderRadius = 'var(--radius-sm)';
+ p.style.overflowX = 'auto';
+ });
+ highlightWikiLinks(body);
+ div.appendChild(body);
+ } else if (content) {
+ div.appendChild(document.createTextNode(content));
+ }
+ chatMessages.appendChild(div);
+ smartScrollToBottom();
+ if (save && currentSubject) saveChat(currentSubject);
+}
+
+// ── Reasoning box per assistant message ──
+// Driven entirely by SSE events (tool_call, tool_result, object_creation).
+function createReasoningBox() {
+  const box = document.createElement('div');
+  box.className = 'msg-reasoning active';
+  box.innerHTML = '<span class="reasoning-icon">⏳</span><span class="reasoning-text">Thinking</span>' +
+    '<span class="thinking-dot">·</span><span class="thinking-dot">·</span><span class="thinking-dot">·</span>';
+  return box;
+}
+function updateReasoningBox(box, icon, text) {
+  if (!box || !box.closest('.chat-msg')) return;
+  const iconEl = box.querySelector('.reasoning-icon');
+  const textEl = box.querySelector('.reasoning-text');
+  if (iconEl) iconEl.textContent = icon || '⏳';
+  if (textEl) textEl.textContent = text || 'Thinking';
+  box.querySelectorAll('.thinking-dot').forEach(d => d.style.display = icon ? 'none' : '');
+  smartScrollToBottom();
+}
+function hideReasoning(box) {
+  if (!box) return;
+  box.classList.remove('active');
+  box.style.display = 'none';
+}
+
+function isScrolledToBottom(el) {
+  return el.scrollHeight - el.clientHeight - el.scrollTop <= 40;
+}
+function smartScrollToBottom() {
+  if (isScrolledToBottom(chatMessages)) {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+function enableChatInput() {
+  chatInput.disabled = false;
+  chatSend.disabled = false;
+  if (chatSafetyTimer) { clearTimeout(chatSafetyTimer); chatSafetyTimer = null; }
+}
+
+async function sendChat() {
+  const msg = chatInput.value.trim();
+  if (!msg || !currentSubject) return;
+
+  if (chatAbortController) { chatAbortController.abort(); chatAbortController = null; }
+
+  chatInput.disabled = true;
+  chatSend.disabled = true;
+  chatInput.value = '';
+
+  // NVIDIA is slow — 300s safety timeout
+  chatSafetyTimer = setTimeout(enableChatInput, 300000);
+
+  renderChatMsg('user', msg);
+  chatConversation.push({ role: 'user', content: msg });
+
+  // ── Build assistant message container ──
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'chat-msg assistant';
+  msgDiv.id = 'chat-streaming';
+
+  const reasoningBox = createReasoningBox();
+  msgDiv.appendChild(reasoningBox);
+
+  const bodyDiv = document.createElement('div');
+  bodyDiv.className = 'chat-body';
+  msgDiv.appendChild(bodyDiv);
+
+  const typingSpan = document.createElement('span');
+  typingSpan.className = 'chat-typing';
+  bodyDiv.appendChild(typingSpan);
+
+  // Object creation box — hidden initially, shown on write_study_object tool call
+  const creationBox = document.createElement('div');
+  creationBox.className = 'msg-object-creation';
+  msgDiv.appendChild(creationBox);
+
+  chatMessages.appendChild(msgDiv);
+  smartScrollToBottom();
+
+  let fullReply = '';
+  let phase3Reply = '';
+  let hasObjectCreation = false;
+  let phase3Div = null;
+
+  try {
+    chatAbortController = new AbortController();
+
+    const res = await fetch('/api/chat-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: currentSubject,
+        message: msg,
+        conversation: chatConversation.slice(0, -1),
+        model: currentModel,
+      }),
+      signal: chatAbortController.signal,
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    function renderBody(el, text) {
+      el.innerHTML = marked.parse(text);
+      const t = document.createElement('span');
+      t.className = 'chat-typing';
+      el.appendChild(t);
+      el.querySelectorAll('pre').forEach(p => {
+        p.style.background = 'var(--bg)';
+        p.style.padding = 'var(--space-2)';
+        p.style.borderRadius = 'var(--radius-sm)';
+        p.style.overflowX = 'auto';
+      });
+      highlightWikiLinks(el);
+      smartScrollToBottom();
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let data;
+        try { data = JSON.parse(line.slice(6)); } catch { continue; }
+
+        // ── Token ──
+        if (data.token) {
+          fullReply += data.token;
+          if (hasObjectCreation) {
+            // Phase 3 text goes into a new div below creation box
+            phase3Reply += data.token;
+            if (!phase3Div) {
+              phase3Div = document.createElement('div');
+              phase3Div.className = 'chat-body';
+              msgDiv.appendChild(phase3Div);
+            }
+            renderBody(phase3Div, phase3Reply);
+          } else {
+            renderBody(bodyDiv, fullReply);
+          }
+        }
+
+        // ── Tool call ──
+        if (data.tool_call) {
+          const { name, args } = data.tool_call;
+          if (name === 'read_vault_file') {
+            updateReasoningBox(reasoningBox, '📖', 'Reading ' + (args.path || 'file'));
+          } else if (name === 'write_study_object') {
+            const fn = args.filename || 'object.html';
+            hasObjectCreation = true;
+            updateReasoningBox(reasoningBox, '✏️', 'Creating ' + fn);
+            creationBox.className = 'msg-object-creation active';
+            creationBox.innerHTML = '<span class="obj-icon">✏️</span><span class="obj-text">Creating ' + fn + '</span>';
+            smartScrollToBottom();
+          }
+        }
+
+        // ── Tool result ──
+        if (data.tool_result) {
+          const { name, status, path } = data.tool_result;
+          if (name === 'read_vault_file' && status === 'ok' && path) {
+            updateReasoningBox(reasoningBox, '📖', 'Read ' + path);
+          }
+        }
+
+        // ── Object creation started ──
+        if (data.object_creation === 'started') {
+          hasObjectCreation = true;
+          creationBox.className = 'msg-object-creation active';
+          creationBox.innerHTML = '<span class="obj-icon">✏️</span><span class="obj-text">Creating ' +
+            (data.filename || 'object') +
+            '<span class="obj-dot">.</span><span class="obj-dot">.</span><span class="obj-dot">.</span></span>';
+          smartScrollToBottom();
+        }
+
+        // ── Object creation done ──
+        if (data.object_creation === 'done') {
+          creationBox.className = 'msg-object-creation active completed';
+          creationBox.innerHTML = '<span class="obj-icon">✅</span><span class="obj-text obj-done">Created ' +
+            (data.filename || 'object') + '</span>';
+          await reloadObjectTree(currentSubject);
+          smartScrollToBottom();
+        }
+
+        // ── Done ──
+        if (data.done) {
+          if (data.model) updateModelLabel(data.model);
+          if (data.clean_reply) {
+            fullReply = data.clean_reply;
+            if (!hasObjectCreation) {
+              bodyDiv.innerHTML = marked.parse(fullReply);
+              bodyDiv.querySelectorAll('pre').forEach(p => {
+                p.style.background = 'var(--bg)';
+                p.style.padding = 'var(--space-2)';
+                p.style.borderRadius = 'var(--radius-sm)';
+                p.style.overflowX = 'auto';
+              });
+              highlightWikiLinks(bodyDiv);
+            }
+          }
+          if (data.created_object) {
+            const fn = data.created_object.filename || 'object.html';
+            creationBox.className = 'msg-object-creation active completed';
+            creationBox.innerHTML = '<span class="obj-icon">✅</span><span class="obj-text obj-done">Created ' + fn + '</span>';
+            await reloadObjectTree(currentSubject);
+          } else if (!creationBox.classList.contains('completed')) {
+            creationBox.className = 'msg-object-creation';
+            creationBox.innerHTML = '';
+          }
+        }
+
+        // ── Error ──
+        if (data.error) {
+          throw new Error(data.error);
+        }
+      }
+    }
+
+    // Stream ended
+    hideReasoning(reasoningBox);
+    const typingEl = msgDiv.querySelector('.chat-typing');
+    if (typingEl) typingEl.remove();
+
+    if (fullReply) {
+      msgDiv.id = '';
+      chatConversation.push({ role: 'assistant', content: fullReply });
+      if (currentSubject) saveChat(currentSubject);
+    }
+
+  } catch (err) {
+    hideReasoning(reasoningBox);
+    const typingEl = msgDiv.querySelector('.chat-typing');
+    if (typingEl) typingEl.remove();
+    if (err.name === 'AbortError') {
+      const st = document.getElementById('chat-streaming');
+      if (st) st.remove();
+      chatConversation.pop();
+      enableChatInput();
+      return;
+    }
+    const st = document.getElementById('chat-streaming');
+    if (st) st.remove();
+    let errorMsg = err.message || 'Network error';
+    if (errorMsg.includes('524')) {
+      errorMsg = '⏱ 524 — Server took too long (NVIDIA NIM). Try a shorter question or switch models.';
+    } else if (errorMsg.includes('502') || errorMsg.includes('503')) {
+      errorMsg = '⏱ LLM service unavailable. Try again.';
+    }
+    renderChatMsg('error', errorMsg);
+  } finally {
+    enableChatInput();
+    chatAbortController = null;
+    chatInput.focus();
+  }
+}
+
+function escapeHtml(text) {
+ const d = document.createElement('div');
+ d.textContent = text;
+ return d.innerHTML;
+}
+
+// ── Chat Resize Handle ──
+(function initChatResize() {
+ const handle = document.getElementById('chat-resize-handle');
+ const objectsSection = document.querySelector('#sidebar-left > .sidebar-section:first-child');
+ if (!handle || !objectsSection) return;
+
+ // Set a basic min-height so it doesn't collapse to 0 before tree loads
+ const initH = objectsSection.getBoundingClientRect().height;
+ objectsSection.style.minHeight = Math.max(initH, 80) + 'px';
+
+ function onStart(startY, startH) {
+  handle.classList.add('active');
+  const sidebar = document.getElementById('sidebar-left');
+  const sidebarH = sidebar.getBoundingClientRect().height;
+ const maxH = sidebarH * 0.6;
+ const minH = 60;
+ document.body.style.cursor = 'row-resize';
+ document.body.style.userSelect = 'none';
+
+ function onMove(deltaY) {
+  const newH = Math.max(minH, Math.min(maxH, startH + deltaY));
+  objectsSection.style.height = newH + 'px';
+  objectsSection.style.boxSizing = 'border-box';
+  objectsSection.style.maxHeight = 'none';
+ }
+ function onEnd() {
+  handle.classList.remove('active');
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  objectsSection.style.boxSizing = '';
+  objectsSection.style.maxHeight = '';
+  document.removeEventListener('mousemove', mouseMove);
+ document.removeEventListener('mouseup', mouseUp);
+ document.removeEventListener('touchmove', touchMove);
+ document.removeEventListener('touchend', touchEnd);
+ }
+ function mouseMove(me) { onMove(me.clientY - startY); }
+ function mouseUp() { onEnd(); }
+ function touchMove(te) { onMove(te.touches[0].clientY - startY); }
+ function touchEnd() { onEnd(); }
+
+ document.addEventListener('mousemove', mouseMove);
+ document.addEventListener('mouseup', mouseUp);
+ document.addEventListener('touchmove', touchMove, { passive: true });
+ document.addEventListener('touchend', touchEnd);
+ }
+
+ handle.addEventListener('mousedown', (e) => {
+ e.preventDefault();
+ onStart(e.clientY, objectsSection.getBoundingClientRect().height);
+ });
+ handle.addEventListener('touchstart', (e) => {
+ e.preventDefault();
+ onStart(e.touches[0].clientY, objectsSection.getBoundingClientRect().height);
+ }, { passive: false });
+})();
+
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => {
+ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+
+// Load chat on subject switch
+const origLoadSubjectsChat = loadSubjects;
+loadSubjects = async function() {
+ // Abort any in-flight chat
+ if (chatAbortController) {
+ chatAbortController.abort();
+ chatAbortController = null;
+ }
+ if (chatSafetyTimer) { clearTimeout(chatSafetyTimer); chatSafetyTimer = null; }
+ // Clear UI
+ chatConversation = [];
+ chatMessages.innerHTML = '';
+ const result = await origLoadSubjectsChat.apply(this, arguments);
+ // Update objects section min-height now that tree is populated
+ const os = document.querySelector('#sidebar-left > .sidebar-section:first-child');
+ if (os) {
+  const contentH = os.getBoundingClientRect().height;
+  os.style.minHeight = Math.max(contentH, 80) + 'px';
+ }
+ // Load saved chat for this subject
+ await loadChat(currentSubject);
+ return result;
+ };
+
+ // Initial load — the patched loadSubjects() now calls loadChat() automatically
+ loadSubjects();
+
+ // Get model name from server (lightweight, no LLM call)
+fetch('/api/model').then(r => r.json()).then(d => {
+ if (d.model) updateModelLabel(d.model);
+}).catch(() => {});
+
+// loadSubjects() was called above (patched version, so loadChat runs automatically)
 </script>
 </body>
 </html>

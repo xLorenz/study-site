@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Study server — zero external dependencies. Port 8081."""
+#!/home/ubuntu/study/venv/bin/python3
+"""Study server - LLM chatbox via openai SDK. Port 8081."""
 
 import email.parser
 import email.policy
@@ -11,38 +11,60 @@ import socketserver
 import subprocess
 import threading
 import time
-import unicodedata
 import urllib.parse
 import yaml
-from chat import handle_chat_start, handle_chat_stream, handle_chat_save, handle_chat_load, AVAILABLE_MODELS
+from openai import OpenAI
+
 VAULT = os.path.expanduser("~/study-vault")
 STUDY_DIR = os.path.expanduser("~/study")
 PORT = 8081
-HOST = "0.0.0.0"
-NIM_API_KEY = ""
-NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
-# Load config.yaml if present
-_CFG_PATH = os.path.join(STUDY_DIR, "config.yaml")
-if os.path.isfile(_CFG_PATH):
-    try:
-        with open(_CFG_PATH) as _f:
-            _cfg = yaml.safe_load(_f) or {}
-        VAULT = os.path.expanduser(_cfg.get("vault_path", VAULT))
-        PORT = _cfg.get("port", PORT)
-        HOST = _cfg.get("host", HOST)
-        NIM_API_KEY = _cfg.get("nim_api_key", NIM_API_KEY)
-        NIM_BASE_URL = _cfg.get("nim_base_url", NIM_BASE_URL)
-    except Exception as e:
-        print(f"Warning: config.yaml load failed: {e}")
 # Ingest state (single-threaded server, so no threading lock needed)
 _ingest_running = False
-_ingest_result = None # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
+_ingest_queue = []  # list of tasks waiting for ingest
+_ingest_result = None  # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
 _ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
 _ingest_current_subject = None # subject currently being ingested (used for live progress)
 _ingest_initial_wiki_count = 0 # wiki/ .md file count BEFORE ingest started (for progress tracking)
 _ingest_initial_total = 0 # initial count of files to ingest (saved so frontend can compute fraction)
-_upload_in_progress = False # separate lock for upload (sync, fast — not LLM ingest)
+_upload_in_progress = False # separate lock for upload (sync, fast - not LLM ingest)
+
+# ── LLM Chat Config ──
+_LLM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+_LLM_MODEL = "z-ai/glm-5.1"
+_LLM_MAX_CONTEXT_CHARS = 15000 # ~3.7k tokens cap for context files
+_LLM_MAX_OUTPUT_TOKENS = 8192
+_llm_client = None
+_llm_client_key = None # track which key built the client
+
+def _resolve_api_key():
+ """Resolve NVIDIA_API_KEY from env or .env file (lazy, survives restart)."""
+ key = os.environ.get("NVIDIA_API_KEY", "")
+ if key:
+  return key
+ # Fallback: read .env file directly
+ env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+ try:
+  with open(env_path) as f:
+   for line in f:
+    line = line.strip()
+    if line.startswith("NVIDIA_API_KEY="):
+     key = line.split("=", 1)[1].strip().strip("'\"")
+     break
+ except FileNotFoundError:
+  pass
+ return key
+
+def _get_llm_client():
+ global _llm_client, _llm_client_key
+ key = _resolve_api_key()
+ if not key:
+  return None
+ # Rebuild client if key changed (e.g. .env updated)
+ if _llm_client is None or _llm_client_key != key:
+  _llm_client = OpenAI(api_key=key, base_url=_LLM_BASE_URL)
+  _llm_client_key = key
+ return _llm_client
 
 with open(os.path.join(STUDY_DIR, "subject_themes.json")) as f:
     SUBJECT_THEMES = json.load(f)
@@ -63,9 +85,10 @@ def _resolve_vault_path(rel_path):
 
 
 def slugify(text):
-    """Slugify a filename: lowercase, normalize unicode, strip special chars, spaces to hyphens."""
-    text = unicodedata.normalize('NFD', text.lower().strip())
-    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    """Slugify a filename: lowercase, strip special chars, spaces to hyphens."""
+    import unicodedata
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    text = text.lower().strip()
     text = re.sub(r'[^\w\s-]', '', text)
     text = re.sub(r'[\s_]+', '-', text)
     text = re.sub(r'-+', '-', text)
@@ -331,7 +354,7 @@ def _parse_relationships(subject):
         edges.append({"source": src, "target": tgt})
         backlink_map.setdefault(tgt, set()).add(src)
 
-    def _resolve_target(target, source_id):
+    def _resolve(target, source_id):
         """Resolve a [[link]] to a node id (port of vaultParser.js §8.3)."""
         t = target.strip()
         if t in node_map:
@@ -380,7 +403,7 @@ def _parse_relationships(subject):
             for m in WIKILINK_RE.finditer(body):
                 link_part = m.group(1).split("|")[0]  # discard display alias
                 target = link_part.split("#")[0].strip()  # discard heading
-                resolved = _resolve_target(target, source_id)
+                resolved = _resolve(target, source_id)
                 if resolved:
                     _add_edge(source_id, resolved)
                 else:
@@ -468,19 +491,29 @@ def _count_objects(subject):
 
 # Object type detection
 OBJECT_TYPE_PREFIXES = {
- "mock-": "mock",
- "cheat-": "cheat",
- "mindmap-": "mindmap",
- "formula-": "formula",
- "flash-": "flash",
+    "mock-": "mock",
+    "cheat-": "cheat",
+    "mindmap-": "mindmap",
+    "formula-": "formula",
+    "flash-": "flash",
 }
 
-OBJECT_TYPE_KEYWORDS = {
- "examen": "mock", "practica": "mock",
- "summary": "cheat", "mapa": "mindmap",
- "concept": "cheat", "calculus": "formula",
- "flashcard": "flash", "card": "flash",
-}
+# Content-based fallback: if no prefix matches, scan for these keywords in the filename
+OBJECT_TYPE_KEYWORDS = [
+    ("mock", "mock"),
+    ("examen", "mock"),
+    ("practica", "mock"),
+    ("cheat", "cheat"),
+    ("summary", "cheat"),  # content summaries might not say "cheat" explicitly
+    ("mindmap", "mindmap"),
+    ("mapa", "mindmap"),
+    ("concept", "mindmap"),
+    ("formula", "formula"),
+    ("calculus", "formula"),
+    ("flash", "flash"),
+    ("flashcard", "flash"),
+    ("card", "flash"),
+]
 
 TITLE_SUFFIX_RE = re.compile(r'-v\d+\.html$')
 
@@ -489,9 +522,9 @@ def _infer_object_type(filename):
     for prefix, obj_type in OBJECT_TYPE_PREFIXES.items():
         if filename.startswith(prefix):
             return obj_type
-    # Content-based fallback
+    # Fallback: scan for keywords in the lowercase filename
     lower = filename.lower()
-    for keyword, obj_type in OBJECT_TYPE_KEYWORDS.items():
+    for keyword, obj_type in OBJECT_TYPE_KEYWORDS:
         if keyword in lower:
             return obj_type
     return "unknown"
@@ -753,9 +786,11 @@ def _get_remaining_ingest(subject):
     if not os.path.isdir(raw_dir):
         return []
     ingested = _read_ingested(subject)
+    # Normalize: strip "raw/" prefix from ingested entries for comparison
+    ingested_normalized = {f.replace("raw/", "", 1) if f.startswith("raw/") else f for f in ingested}
     return [
         f for f in sorted(os.listdir(raw_dir))
-        if f.endswith(".md") and f != ".ingested.json" and f not in ingested
+        if f.endswith(".md") and f != ".ingested.json" and f not in ingested_normalized
     ]
 
 def _write_ingested(subject, ingested):
@@ -816,14 +851,16 @@ def _run_llm_ingest_thread(subject):
     # Find un-ingested files
     raw_dir = os.path.join(VAULT, "subjects", subject, "raw")
     ingested = _read_ingested(subject)
+    # Normalize: strip "raw/" prefix from ingested entries for comparison
+    ingested_normalized = {f.replace("raw/", "", 1) if f.startswith("raw/") else f for f in ingested}
     uningested = []
     if os.path.isdir(raw_dir):
         for f in sorted(os.listdir(raw_dir)):
-            if f.endswith(".md") and f != ".ingested.json" and f not in ingested:
+            if f.endswith(".md") and f != ".ingested.json" and f not in ingested_normalized:
                 uningested.append(f)
 
     if not uningested:
-        # Nothing to ingest — return early
+        # Nothing to ingest - return early
         _ingest_result = {
             "pages_created": 0,
             "files_deleted": 0,
@@ -840,38 +877,39 @@ def _run_llm_ingest_thread(subject):
         return
 
     file_list = "\n".join(f"- {f}" for f in uningested)
-    prompt = f"""This is a NON-INTERACTIVE automated wiki ingest for subject '{subject}'. Do NOT ask the user questions or wait for discussion — just do the work.
+    prompt = f"""This is a NON-INTERACTIVE automated wiki ingest for subject '{subject}'. Do NOT ask the user questions or wait for discussion - just do the work.
 
 Un-ingested raw files in ~/study-vault/subjects/{subject}/raw/:
 {file_list}
 
-STEP 1 — Read SCHEMA.md at ~/study-vault/subjects/{subject}/SCHEMA.md if it exists.
-Follow its page format, frontmatter, and interlinking rules. If SCHEMA.md says to "discuss" or "ask the user", SKIP that step — this is automated.
+STEP 1 - Read SCHEMA.md at ~/study-vault/subjects/{subject}/SCHEMA.md if it exists.
+Follow its page format, frontmatter, and interlinking rules. If SCHEMA.md says to "discuss" or "ask the user", SKIP that step - this is automated.
 
 If SCHEMA.md does NOT exist, use these defaults:
 - Page format: markdown with YAML frontmatter (title, created, type, tags, source_url)
 - Frontmatter type: one of source_summary, concept, formula, definition, exercise
 - `tags`: exactly ONE topic tag per page (e.g., `tags: [arrays]`). Pick the single most specific topic.
 - `source_url`: path to the raw file this page derives from (e.g., `source_url: raw/2026-cd-tp6.md`)
-- Source summaries: name them `src-{{base-name}}` (e.g., `src-2026-cd-tp6.md`) — never reuse raw/ filenames
+- Source summaries: name them `src-{{base-name}}` (e.g., `src-2026-cd-tp6.md`) - never reuse raw/ filenames
 - Create BOTH a source summary page per raw file AND concept pages for each distinct concept
 - Use [[wikilinks]] with exact lowercase-hyphen filenames (e.g., `[[cable-coaxial]]`, not `[[Cable Coaxial]]`)
-- Every concept wikilinked MUST have its own page — no orphan wikilinks
+- Every concept wikilinked MUST have its own page - no orphan wikilinks
 - End each concept page with a "## Related concepts" section
 - Page names: lowercase-with-hyphens.md
+- **Language:** All wiki pages must be written in the **same language** as the raw source material they reference - match its terminology and phrasing, do not translate key terms
 
-STEP 2 — Follow the Ingest Workflow defined in SCHEMA.md:
+STEP 2 - Follow the Ingest Workflow defined in SCHEMA.md:
 - For each un-ingested raw .md file, do exactly what SCHEMA.md says (source pages + concept pages)
 - After processing each file, **immediately** add its filename to the `ingested` array in raw/.ingested.json
 
-STEP 3 — After all files are processed:
+STEP 3 - After all files are processed:
 1. Update wiki/index.md with new pages and one-line descriptions
 2. Append an entry to wiki/log.md with the date, source name, and what changed
 
 RULES:
-- Preserve any existing wiki pages — never overwrite or delete files you did not create
+- Preserve any existing wiki pages - never overwrite or delete files you did not create
 - Never modify anything in raw/
-- This is non-interactive — never ask the user questions or wait for input
+- This is non-interactive - never ask the user questions or wait for input
 
 WHEN COMPLETE, write the result file at {result_path} with EXACTLY this JSON (no other text in the file):
 {{"pages_created": N, "tokens_used": N, "model": "<provider>/<model>", "status": "complete"}}
@@ -881,13 +919,13 @@ WHEN COMPLETE, write the result file at {result_path} with EXACTLY this JSON (no
 - model: the model identifier (e.g., opencode-zen/minimax-m3-free)
 - status: "complete" on success, "error" on failure
 
-Use the terminal and file tools to read/write files. Be thorough — the wiki pages should be high quality with proper structure, examples, and cross-links."""
+Use the terminal and file tools to read/write files. Be thorough - the wiki pages should be high quality with proper structure, examples, and cross-links."""
 
     # Spawn hermes subprocess (one-shot, quiet, yolo for non-interactive tool use).
-    # No skills loaded — the agent follows SCHEMA.md for page format and conventions.
+    # No skills loaded - the agent follows SCHEMA.md for page format and conventions.
     # No --provider/-m flags → Hermes uses the default model and falls through
     # fallback_providers automatically if the default is unavailable.
-    # NOTE: No timeout — process only stops when the LLM completes or errors.
+    # NOTE: No timeout - process only stops when the LLM completes or errors.
     try:
         proc = subprocess.run(
             ["hermes", "chat", "-q", prompt,
@@ -975,7 +1013,7 @@ def _cascade_delete(subject, base_name, delete_raw=True):
     Returns dict with:
       - deleted_files: list of relative paths deleted
       - deleted_ids: set of node ids
-      - ingested_updated: bool — whether .ingested.json was modified
+      - ingested_updated: bool - whether .ingested.json was modified
     """
     result = {
         "deleted_files": [],
@@ -986,13 +1024,13 @@ def _cascade_delete(subject, base_name, delete_raw=True):
     source_tag = f"raw/{base_name}.md"
     ingested = _read_ingested(subject)
 
-    # — 1. Delete raw file —
+    # - 1. Delete raw file -
     raw_path = os.path.join(subj_dir, "raw", f"{base_name}.md")
     if delete_raw and os.path.isfile(raw_path):
         os.remove(raw_path)
         result["deleted_files"].append(f"subjects/{subject}/raw/{base_name}.md")
 
-    # — 2. Delete wiki pages (exact match + derived via frontmatter) —
+    # - 2. Delete wiki pages (exact match + derived via frontmatter) -
     for wtype in ("concepts", "definitions", "formulas", "exercises", "wiki"):
         wdir = os.path.join(subj_dir, wtype)
         if not os.path.isdir(wdir):
@@ -1031,7 +1069,7 @@ def _cascade_delete(subject, base_name, delete_raw=True):
             except Exception:
                 pass
 
-    # — 3. Delete original file —
+    # - 3. Delete original file -
     orig_dir = os.path.join(VAULT, "originals", subject)
     if os.path.isdir(orig_dir):
         for f in os.listdir(orig_dir):
@@ -1039,7 +1077,7 @@ def _cascade_delete(subject, base_name, delete_raw=True):
                 os.remove(os.path.join(orig_dir, f))
                 result["deleted_files"].append(f"originals/{subject}/{f}")
 
-    # — 4. Delete objects (prefix match, not substring) —
+    # - 4. Delete objects (prefix match, not substring) -
     obj_dir = os.path.join(VAULT, "objects", subject)
     if os.path.isdir(obj_dir):
         for f in os.listdir(obj_dir):
@@ -1049,14 +1087,14 @@ def _cascade_delete(subject, base_name, delete_raw=True):
                     os.remove(fp)
                     result["deleted_files"].append(f"objects/{subject}/{f}")
 
-    # — 5. Remove from ingested set —
+    # - 5. Remove from ingested set -
     fname = f"{base_name}.md"
     if fname in ingested:
         ingested.discard(fname)
         _write_ingested(subject, ingested)
         result["ingested_updated"] = True
 
-    # — 6. Remove edges from relationships.md — REMOVED — edges come exclusively from [[wikilinks]] in wiki/ pages
+    # - 6. Remove edges from relationships.md - REMOVED - edges come exclusively from [[wikilinks]] in wiki/ pages
     
     return result
 
@@ -1090,7 +1128,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, abs_path, content_type, cache_control=None):
+    def _send_file(self, abs_path, content_type):
         if not os.path.isfile(abs_path):
             self._send_json(404, {"error": "not_found", "detail": "File not found"})
             return
@@ -1098,8 +1136,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             body = f.read()
         self.send_response(200)
         self._set_cors()
-        if cache_control:
-            self.send_header("Cache-Control", cache_control)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -1169,7 +1205,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, {"error": "missing_path", "detail": "path parameter is required"})
             return
 
-        # Security check first — traversal is a security concern, overrides extension validation
+        # Security check first - traversal is a security concern, overrides extension validation
         abs_path = _resolve_vault_path(rel_path)
         if abs_path is None:
             self._send_json(403, {"error": "path_traversal", "detail": "Path traversal detected"})
@@ -1224,9 +1260,9 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         obj_dir = os.path.join(VAULT, "objects", subject)
         objects = []
         if os.path.isdir(obj_dir):
-            for fname in sorted(os.listdir(obj_dir)):
-                if fname.startswith(".") or not fname.endswith(".html"):
-                    continue
+            fnames = [f for f in os.listdir(obj_dir) if not f.startswith(".") and f.endswith(".html")]
+            fnames.sort(key=lambda f: os.path.getmtime(os.path.join(obj_dir, f)), reverse=True)
+            for fname in fnames:
                 fpath = os.path.join(obj_dir, fname)
                 size = os.path.getsize(fpath)
                 objects.append({
@@ -1275,7 +1311,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         self._send_json(200, {"subject_filter": subject, "nodes": nodes, "edges": edges})
 
     def _api_lint(self, params):
-        """GET /api/lint?subject=X — orphan, missing frontmatter, stale checks."""
+        """GET /api/lint?subject=X - orphan, missing frontmatter, stale checks."""
         subject = params.get("subject", [None])[0]
         if not subject:
             self._send_json(400, {"error": "missing_subject", "detail": "subject parameter is required"})
@@ -1339,7 +1375,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                             "type": "stale",
                             "severity": "info",
                             "node": n["id"],
-                            "detail": f"Created {delta} days ago ({n['created']}). Lint never deletes content — study when ready."
+                            "detail": f"Created {delta} days ago ({n['created']}). Lint never deletes content - study when ready."
                         })
                 except ValueError:
                     pass
@@ -1356,7 +1392,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
     def _regenerate_index(self, subject):
         """Rewrite index.md for a subject from the actual filesystem."""
         subj_dir = os.path.join(VAULT, "subjects", subject)
-        lines = [f"# {subject.title()} — Index", ""]
+        lines = [f"# {subject.title()} - Index", ""]
 
         # Raw materials section
         lines.append("## Raw Materials")
@@ -1401,8 +1437,1085 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         with open(index_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
+    # ── LLM Chat ──
+
+    def _gather_subject_context(self, subject):
+            """Read all .md files from a subject's raw/ + wiki/ dirs into a single string."""
+            parts = []
+            total_chars = 0
+            subj_dir = os.path.join(VAULT, "subjects", subject)
+            if not os.path.isdir(subj_dir):
+                return ""
+            for subdir in ("raw", "wiki"):
+                d = os.path.join(subj_dir, subdir)
+                if not os.path.isdir(d):
+                    continue
+                for fname in sorted(os.listdir(d)):
+                    if not fname.endswith(".md"):
+                        continue
+                    fpath = os.path.join(d, fname)
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            content = f.read()
+                    except Exception:
+                        continue
+                    label = f"[{subdir}/{fname}]"
+                    if total_chars + len(content) + len(label) > _LLM_MAX_CONTEXT_CHARS:
+                        remaining = _LLM_MAX_CONTEXT_CHARS - total_chars - len(label) - 20
+                        if remaining > 200:
+                            parts.append(f"{label}\n{content[:remaining]}\n...[truncated]")
+                        break
+                    parts.append(f"{label}\n{content}")
+                    total_chars += len(content) + len(label)
+            return "\n\n".join(parts)
+
+    def _build_subject_index(self, subject):
+        """Build a lightweight file index (names + first-line summaries) for a subject."""
+        subj_dir = os.path.join(VAULT, "subjects", subject)
+        if not os.path.isdir(subj_dir):
+            return [], ""
+        file_list = []
+        for subdir in ("raw", "wiki"):
+            d = os.path.join(subj_dir, subdir)
+            if not os.path.isdir(d):
+                continue
+            for fname in sorted(os.listdir(d)):
+                if not fname.endswith(".md"):
+                    continue
+                fpath = os.path.join(d, fname)
+                summary = ""
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        first_line = f.readline(200).strip()
+                        if first_line:
+                            summary = first_line[:120]
+                except Exception:
+                    pass
+                file_list.append({"subdir": subdir, "fname": fname, "summary": summary})
+        # Read SCHEMA.md separately
+        schema_path = os.path.join(subj_dir, "SCHEMA.md")
+        schema = ""
+        if os.path.isfile(schema_path):
+            try:
+                with open(schema_path, "r", encoding="utf-8") as f:
+                    schema = f.read()[:3000]
+            except Exception:
+                pass
+        return file_list, schema
+
+    def _read_subject_files(self, subject, filenames):
+        """Read specific files from a subject by filename. Returns dict {fname: content}."""
+        subj_dir = os.path.join(VAULT, "subjects", subject)
+        result = {}
+        for subdir in ("raw", "wiki"):
+            for fname in filenames:
+                fpath = os.path.join(subj_dir, subdir, fname)
+                if os.path.isfile(fpath):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            result[fname] = f.read()[:8000]  # cap per file
+                    except Exception:
+                        pass
+        return result
+
+    def _read_vault_file(self, subject, rel_path):
+        """Read a file from the vault, validating path is within subject dir.
+        Returns (content, error)."""
+        subj_dir = os.path.realpath(os.path.join(VAULT, "subjects", subject))
+
+        # Handle edge cases
+        rel_path = rel_path.strip().lstrip("/").lstrip(".")
+
+        # If it's empty or just ".", try the index
+        if not rel_path or rel_path == ".":
+            idx_path = os.path.join(subj_dir, "index.md")
+            if os.path.isfile(idx_path):
+                try:
+                    with open(idx_path, "r", encoding="utf-8") as f:
+                        return f.read(50000), None
+                except Exception as e:
+                    return None, str(e)
+            return None, "Debes especificar un archivo concreto. Usa 'wiki/nombre.md' o 'raw/nombre.md'. Consulta la lista de ARCHIVOS DISPONIBLES."
+
+        # If rel_path has no subdirectory (just "pcm.md"), scan wiki/ then raw/
+        if "/" not in rel_path:
+            # Try wiki/{filename}
+            wiki_try = os.path.realpath(os.path.join(subj_dir, "wiki", rel_path))
+            if os.path.isfile(wiki_try) and wiki_try.startswith(subj_dir + "/"):
+                rel_path = f"wiki/{rel_path}"
+            else:
+                # Try raw/{filename}
+                raw_try = os.path.realpath(os.path.join(subj_dir, "raw", rel_path))
+                if os.path.isfile(raw_try) and raw_try.startswith(subj_dir + "/"):
+                    rel_path = f"raw/{rel_path}"
+
+        target = os.path.realpath(os.path.join(subj_dir, rel_path))
+        if not target.startswith(subj_dir + "/"):
+            return None, "Acceso denegado: path fuera del directorio de la materia"
+        if not os.path.isfile(target):
+            return None, f"Archivo no encontrado: {rel_path}. Verifica que el path exista en ARCHIVOS DISPONIBLES."
+        if os.path.getsize(target) > 100_000:
+            return None, f"Archivo demasiado grande (>100KB): {rel_path}"
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                content = f.read(50000)
+            return content, None
+        except Exception as e:
+            return None, str(e)
+
+    def _select_files_by_keywords(self, message, file_index, max_files=5):
+        """Score files by keyword overlap with the user's message. Returns list of rel_paths."""
+        STOP_WORDS = {
+            "que", "del", "las", "los", "por", "para", "con", "una", "uno",
+            "como", "mas", "pero", "sus", "son", "era", "han", "has", "hay",
+            "the", "and", "for", "are", "its", "has", "had", "but", "not",
+            "what", "this", "that", "from", "they", "you", "all", "can",
+        }
+        words = re.findall(r"[a-záéíóúñü]{3,}", message.lower())
+        keywords = {w for w in words if w not in STOP_WORDS}
+        if not keywords:
+            # Fallback: return first N wiki files
+            wiki_files = [fi for fi in file_index if fi["subdir"] == "wiki"]
+            return [f"wiki/{fi['fname']}" for fi in wiki_files[:max_files]]
+
+        scored = []
+        for fi in file_index:
+            score = 0
+            text = (fi["fname"] + " " + fi["summary"]).lower()
+            for kw in keywords:
+                if kw in text:
+                    score += 1
+            if score > 0:
+                scored.append((score, fi))
+        scored.sort(key=lambda x: -x[0])
+
+        selected = scored[:max_files]
+        return [f"{fi['subdir']}/{fi['fname']}" for _, fi in selected]
+
+    def _extract_file_requests(self, text):
+        """Extract [READ: path] markers from LLM response text."""
+        markers = re.findall(r'\[READ:\s*(.*?)\]', text)
+        return [m.strip() for m in markers if m.strip()]
+
+    def _build_chat_system_prompt(self, subject, file_index, schema, file_contents=None):
+        """Build the study-professor system prompt with file index and optional file contents."""
+        index_text = "\n".join(
+            f"- {fi['subdir']}/{fi['fname']}: {fi['summary']}" for fi in file_index
+        )
+
+        prompt = (
+            f'Eres un profesor de estudio para la materia "{subject}".\n'
+            "Actúa como un profesor universitario profesional: conciso, directo y preciso.\n"
+            "Responde en español. NO inventes información - si los archivos no contienen la respuesta, dilo honestamente.\n"
+            "Siempre menciona qué archivo usaste como fuente.\n"
+            "REGLAS ESTRICTAS:\n"
+            "1. NUNCA incluyas código HTML en tu respuesta de chat. Usa write_study_object() para crear archivos HTML.\n"
+            "2. Para leer archivos del vault, usa read_vault_file(path). NUNCA copies el contenido en tu respuesta.\n"
+            "3. Después de crear un objeto de estudio, solo menciona brevemente que lo creaste - sin repetir el código.\n"
+            "4. La herramienta write_study_object ya guarda el HTML correctamente, no necesitas mostrarlo.\n\n"
+        )
+
+        if schema:
+            prompt += f"ESQUEMA DE LA MATERIA (SCHEMA.md):\n{schema}\n\n"
+
+        prompt += f"ARCHIVOS DISPONIBLES:\n{index_text}\n\n"
+
+        # Explicit tool-use instructions
+        prompt += (
+            "HERRAMIENTAS DISPONIBLES (úsalas mediante function calling):\n"
+            "- read_vault_file(path): Lee el contenido de un archivo del vault. "
+            "Úsalo cuando necesites consultar información.\n"
+            "- write_study_object(filename, html_content): Crea un objeto de estudio HTML. "
+            "El HTML debe ser completo, autónomo, con tema oscuro y responsive. "
+            "Después de usarlo, solo menciona brevemente qué creaste.\n\n"
+            "IMPORTANTE: NO incluyas código HTML ni XML en tu respuesta de texto. "
+            "NO uses bloques ```html. NO escribas etiquetas HTML directamente. "
+            "TODO el contenido HTML debe ir EXCLUSIVAMENTE en el parámetro html_content de write_study_object.\n"
+        )
+
+        if file_contents:
+            prompt += "\nCONTENIDO DE ARCHIVOS LEÍDOS:\n"
+            for path, content in file_contents.items():
+                if len(content) > 8000:
+                    content = content[:8000] + "\n... [truncado]"
+                prompt += f"\n--- {path} ---\n{content}\n"
+            prompt += "\nResponde basándote en estos archivos. Cita las fuentes.\n"
+
+        return prompt
+
+        # ── Tool Definitions ──
+
+    def _get_tool_definitions(self, subject):
+        """Return OpenAI-compatible tool definitions for the study assistant."""
+        return [
+                    {
+                    "type": "function",
+                    "function": {
+                    "name": "read_vault_file",
+                                            "description": (
+                                                    "Lee un archivo del vault de la materia. "
+                                                    "Usalo cuando necesites consultar el contenido de un archivo especifico "
+                                                    "para responder la pregunta del estudiante. "
+                                                    "SIEMPRE debes especificar un archivo concreto que exista en ARCHIVOS DISPONIBLES. "
+                                                    "NO uses '.' o la raiz del directorio como path."
+                                            ),
+                                            "parameters": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                            "path": {
+                                                                    "type": "string",
+                                                                    "description": (
+                                                                            "Ruta relativa al directorio de la materia, incluyendo subdirectorio. "
+                                                                            "Debe ser un archivo .md concreto que exista en ARCHIVOS DISPONIBLES. "
+                                                                            "NUNCA uses '.' como path. "
+                                                                            "Ejemplos validos: 'wiki/herencia.md' o 'wiki/muestreo.md' o 'raw/clase1.md'. "
+                                                                            "NO uses solo el nombre del archivo sin subdirectorio. "
+                                                                            "NO uses rutas absolutas."
+                                                                    )
+                                                            }
+                                                    },
+                                                    "required": ["path"]
+                                            }
+                                    }
+                            },
+                            {
+                                    "type": "function",
+                                    "function": {
+                                            "name": "write_study_object",
+                                            "description": (
+                                                    "Crea un objeto de estudio (archivo HTML) en la carpeta de objetos de la materia. "
+                                                    "Usalo cuando el estudiante te pida crear materiales de estudio como: "
+                                                    "resumenes, cheat-sheets, flashcards, examenes de practica, "
+                                                    "mapas conceptuales, o ejercicios. "
+                                                    "El HTML debe ser autonomo (sin dependencias externas), "
+                                                    "con tema oscuro y responsive. "
+                                                    "IMPORTANTE: NO incluyas el contenido HTML en tu respuesta de texto. "
+                                                    "Despues de llamar a esta herramienta, solo di brevemente que creaste el archivo, "
+                                                    "sin mencionar ni repetir el codigo HTML ni el contenido del mismo. "
+                                                    "La herramienta ya se encarga de guardar el HTML correctamente. "
+                                                    "TODO el HTML va exclusivamente en el parametro html_content, jamas en tu mensaje de chat."
+                                            ),
+                                            "parameters": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                            "filename": {
+                                                                    "type": "string",
+                                                                    "description": (
+                                                                            "Nombre del archivo HTML (ej: 'herencia-resumen.html', "
+                                                                            "'poo-flashcards.html'). Se sanitiza automaticamente "
+                                                                            "a minusculas con guiones."
+                                                                    )
+                                                            },
+                                                            "html_content": {
+                                                            "type": "string",
+                                                            "description": (
+                                                            "Contenido HTML completo y autonomo (CSS inline, sin dependencias). "
+                                                            "Usa dark theme (#0a0a0f fondo, #e2e2e8 texto, #111118 cards). "
+                                                            "Responsive mobile-first, con <html>/<head>/<body> completos."
+                                                            )
+                                                            }
+                                                    },
+                                                    "required": ["filename", "html_content"]
+                                            }
+                                    }
+                            }
+                    ]
+
+    def _execute_tool(self, subject, tool_call):
+        """Execute a tool call from the LLM. Returns a dict result."""
+        fn_name = tool_call.get("function_name", "")
+        try:
+            args = json.loads(tool_call.get("arguments", "{}"))
+        except json.JSONDecodeError as e:
+            return {"error": f"Invalid arguments JSON: {str(e)}"}
+
+        if fn_name == "read_vault_file":
+            path = args.get("path", "")
+            if not path:
+                return {"error": "Missing 'path' parameter"}
+            # Security: _read_vault_file validates path is within subject dir
+            content, error = self._read_vault_file(subject, path)
+            if error:
+                return {"error": error}
+            return {"content": content[:50000], "path": path}
+
+        elif fn_name == "write_study_object":
+            filename = args.get("filename", "")
+            html_content = args.get("html_content", "")
+            if not filename or not html_content:
+                return {"error": "Missing 'filename' or 'html_content' parameter"}
+
+            # Validate HTML completeness
+            if "</html>" not in html_content.lower():
+                return {"error": "HTML content is incomplete - must include </html> tag"}
+
+            # Sanitize filename
+            safe_name = re.sub(r"[^a-z0-9-]", "", filename.lower().replace(" ", "-"))
+            if not safe_name.endswith(".html"):
+                safe_name += ".html"
+
+            # Write to objects folder (bound exclusively to subject)
+            obj_dir = os.path.join(VAULT, "objects", subject)
+            os.makedirs(obj_dir, exist_ok=True)
+            dest = os.path.join(obj_dir, safe_name)
+
+            # Avoid overwriting - append version
+            base, ext = os.path.splitext(safe_name)
+            v = 1
+            while os.path.exists(dest):
+                v += 1
+                dest = os.path.join(obj_dir, f"{base}-v{v}{ext}")
+
+            try:
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+                return {
+                    "success": True,
+                    "path": f"objects/{subject}/{os.path.basename(dest)}",
+                    "filename": os.path.basename(dest),
+                }
+            except Exception as e:
+                return {"error": f"Failed to write file: {str(e)}"}
+
+        else:
+            return {"error": f"Unknown tool: {fn_name}"}
+
+    # ── Chat Endpoints ──
+
+    def _api_chat(self):
+        """POST /api/chat — non-streaming chat with tool support (same logic as stream)."""
+        try:
+            cl = int(self.headers.get("Content-Length", 0))
+            if cl > 100_000:
+                self._send_json(413, {"error": "body_too_large"})
+                return
+            body = self.rfile.read(cl)
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            self._send_json(400, {"error": "invalid_json"})
+            return
+
+        subject = data.get("subject", "").strip()
+        message = data.get("message", "").strip()
+        conversation = data.get("conversation", [])
+        model = data.get("model", "").strip() or _LLM_MODEL
+
+        if not subject or not message:
+            self._send_json(400, {"error": "missing_fields"})
+            return
+
+        subj_dir = os.path.join(VAULT, "subjects", subject)
+        if not os.path.isdir(subj_dir):
+            self._send_json(404, {"error": "not_found"})
+            return
+
+        clean_conversation = []
+        for msg in conversation:
+            role = msg.get("role", "")
+            content = str(msg.get("content", ""))[:5000]
+            if role in ("user", "assistant") and content:
+                clean_conversation.append({"role": role, "content": content})
+        clean_conversation = clean_conversation[-20:]
+
+        file_index, schema = self._build_subject_index(subject)
+        tools_def = self._get_tool_definitions(subject)
+        system_prompt = self._build_chat_system_prompt(subject, file_index, schema)
+        messages = [{"role": "system", "content": system_prompt}] + clean_conversation + [{"role": "user", "content": message}]
+
+        client = _get_llm_client()
+        if not client:
+            self._send_json(503, {"error": "llm_unavailable"})
+            return
+
+        max_rounds = 5
+        try:
+            for rnd in range(max_rounds):
+                request_kwargs = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": _LLM_MAX_OUTPUT_TOKENS,
+                    "timeout": 300,
+                }
+                # Only pass tools on first round
+                if tools_def and rnd == 0:
+                    request_kwargs["tools"] = tools_def
+
+                # Use streaming internally for DeepSeek (NVIDIA non-streaming times out)
+                use_stream = "deepseek" in model.lower()
+                request_kwargs["stream"] = use_stream
+
+                if use_stream:
+                    stream_resp = client.chat.completions.create(**request_kwargs)
+                    native_tool_calls = {}
+                    full_content = ""
+                    finish_reason = None
+                    for chunk in stream_resp:
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        finish_reason = chunk.choices[0].finish_reason
+                        if delta and delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in native_tool_calls:
+                                    native_tool_calls[idx] = {"id": "", "function_name": "", "arguments": ""}
+                                if tc.id:
+                                    native_tool_calls[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        native_tool_calls[idx]["function_name"] = tc.function.name
+                                    if tc.function.arguments:
+                                        native_tool_calls[idx]["arguments"] += tc.function.arguments
+                        if delta and delta.content:
+                            full_content += delta.content
+                        if finish_reason:
+                            break
+
+                    from openai.types.chat import ChatCompletionMessageToolCall
+                    from openai.types.chat.chat_completion_message_tool_call import Function
+                    msg_tool_calls = None
+                    if finish_reason == "tool_calls" and native_tool_calls:
+                        msg_tool_calls = []
+                        for idx in sorted(native_tool_calls.keys()):
+                            tc = native_tool_calls[idx]
+                            msg_tool_calls.append(ChatCompletionMessageToolCall(
+                                id=tc["id"],
+                                type="function",
+                                function=Function(name=tc["function_name"], arguments=tc["arguments"]),
+                            ))
+                    reply_content = full_content
+                else:
+                    response = client.chat.completions.create(**request_kwargs)
+                    msg = response.choices[0].message
+                    reply_content = msg.content or ""
+                    msg_tool_calls = msg.tool_calls
+
+                # Handle tool calls
+                if msg_tool_calls:
+                    tc_list = []
+                    for tc in msg_tool_calls:
+                        tc_list.append({
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        })
+                    messages.append({
+                        "role": "assistant",
+                        "content": reply_content or None,
+                        "tool_calls": tc_list,
+                    })
+                    for tc in msg_tool_calls:
+                        tool_data = {
+                            "id": tc.id,
+                            "function_name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        }
+                        result = self._execute_tool(subject, tool_data)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(result),
+                        })
+                    continue  # Next round
+
+                # No tool calls — return the reply
+                self._send_json(200, {"reply": reply_content, "model": model})
+                return
+
+            self._send_json(502, {"error": "max_tool_rounds_exceeded"})
+
+        except Exception as e:
+            self._send_json(502, {"error": f"LLM error: {str(e)[:200]}"})
+
+    def _api_chat_stream(self):
+        """POST /api/chat-stream — SSE streaming chat with clean tool support.
+
+        SSE events:
+          {"token": "..."}               — text token (streamed progressively)
+          {"tool_call": {"name":"read_vault_file","args":{"path":"..."}}}
+                                       — model invoked a tool
+          {"tool_result": {"name":"read_vault_file","path":"...","status":"ok"}}
+                                       — tool executed
+          {"object_creation": "started", "filename": "..."}
+                                       — write_study_object started
+          {"object_creation": "done", "filename": "..."}
+                                       — write_study_object completed
+          {"done": true, "model": "...", "clean_reply": "...", "created_object": {...}}
+                                       — stream complete
+          {"error": "..."}              — error
+        """
+        try:
+            cl = int(self.headers.get("Content-Length", 0))
+            if cl > 100_000:
+                self._send_json(413, {"error": "body_too_large"})
+                return
+            body = self.rfile.read(cl)
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            self._send_json(400, {"error": "invalid_json"})
+            return
+
+        subject = data.get("subject", "").strip()
+        message = data.get("message", "").strip()
+        conversation = data.get("conversation", [])
+        model = data.get("model", "").strip() or _LLM_MODEL
+
+        if not subject or not message:
+            self._send_json(400, {"error": "missing_fields"})
+            return
+
+        subj_dir = os.path.join(VAULT, "subjects", subject)
+        if not os.path.isdir(subj_dir):
+            self._send_json(404, {"error": "not_found"})
+            return
+
+        client = _get_llm_client()
+        if not client:
+            self._send_json(503, {"error": "llm_unavailable"})
+            return
+
+        # ── Build conversation ──
+        clean_conversation = []
+        for msg in conversation:
+            role = msg.get("role", "")
+            content = str(msg.get("content", ""))[:5000]
+            if role in ("user", "assistant") and content:
+                clean_conversation.append({"role": role, "content": content})
+        clean_conversation = clean_conversation[-20:]
+
+        file_index, schema = self._build_subject_index(subject)
+        tools_def = self._get_tool_definitions(subject)
+        system_prompt = self._build_chat_system_prompt(subject, file_index, schema)
+        messages = [{"role": "system", "content": system_prompt}] + clean_conversation + [{"role": "user", "content": message}]
+
+        # ── SSE helpers ──
+        self.send_response(200)
+        self._set_cors()
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        wfile = self.wfile
+
+        def sse(event_data):
+            line = f"data: {json.dumps(event_data)}\n\n"
+            try:
+                wfile.write(line.encode("utf-8"))
+                wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # client disconnected
+
+        # ── Text-based tool call helpers (fallback) ──
+        # Some models may emit tool calls as inline text instead of native delta.tool_calls.
+        TEXT_READ_RE = re.compile(
+            r'read_vault_file\s*\(\s*["\']([^"\']+)["\']\s*\)'
+        )
+        TEXT_WRITE_START_RE = re.compile(
+            r'write_study_object\s*\('
+        )
+
+        def _extract_text_tool_calls(text):
+            """Scan text for read_vault_file/write_study_object calls made as plain text.
+            Returns a list of synthetic tool_call dicts."""
+            calls = []
+            for m in TEXT_READ_RE.finditer(text):
+                calls.append({
+                    "id": f"txt_read_{m.start()}",
+                    "function_name": "read_vault_file",
+                    "arguments": json.dumps({"path": m.group(1).strip()}),
+                })
+            for m in TEXT_WRITE_START_RE.finditer(text):
+                # Find balanced closing paren
+                depth = 1
+                j = m.end()
+                while j < len(text) and depth > 0:
+                    if text[j] == '(':
+                        depth += 1
+                    elif text[j] == ')':
+                        depth -= 1
+                    j += 1
+                if depth == 0:
+                    call_text = text[m.start():j]
+                    parts = re.findall(r'["\']((?:[^"\'\\]|\\.)*)["\']', call_text)
+                    if len(parts) >= 2:
+                        calls.append({
+                            "id": f"txt_write_{m.start()}",
+                            "function_name": "write_study_object",
+                            "arguments": json.dumps({"filename": parts[0], "html_content": parts[1]}),
+                        })
+            return calls
+
+        XML_TOOL_CALL_RE = re.compile(
+            r'<tool_call>(\w+)'  # function name
+            r'(?:<arg_key>(\w+)</arg_key><arg_value>([^<]+)</arg_value>)*'
+            r'</tool_call>'
+        )
+
+        def _parse_xml_tool_calls(text):
+            """Parse <tool_call>...</tool_call> XML blocks. Returns synthetic tool call dicts."""
+            calls = []
+            for m in XML_TOOL_CALL_RE.finditer(text):
+                fn_name = m.group(1)
+                # Collect key-value pairs
+                args = {}
+                for kv in re.finditer(
+                    r'<arg_key>(\w+)</arg_key><arg_value>([^<]+)</arg_value>',
+                    m.group(0)
+                ):
+                    args[kv.group(1)] = kv.group(2)
+                if fn_name in ('read_vault_file', 'write_study_object'):
+                    calls.append({
+                        "id": f"xml_{m.start()}",
+                        "function_name": fn_name,
+                        "arguments": json.dumps(args),
+                    })
+            return calls
+
+        def _clean_tool_text(text):
+            """Strip tool call text and ```html blocks from display content."""
+            # Remove ```html ... ``` blocks
+            text = re.sub(r'```html\s*\n.*?```', '', text, flags=re.DOTALL)
+            # Remove read_vault_file calls (simple parens, no nesting)
+            text = re.sub(r'read_vault_file\s*\([^)]*\)', '', text)
+            # Remove write_study_object calls (nested parens via state machine)
+            result = []
+            i = 0
+            while i < len(text):
+                if text[i:i+20] == 'write_study_object(':
+                    depth = 1
+                    j = i + 20
+                    while j < len(text) and depth > 0:
+                        if text[j] == '(':
+                            depth += 1
+                        elif text[j] == ')':
+                            depth -= 1
+                        j += 1
+                    i = j
+                else:
+                    result.append(text[i])
+                    i += 1
+            text = ''.join(result)
+            # Remove XML-style tool calls: <tool_call>...</tool_call>
+            text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.DOTALL)
+            return text.strip()
+
+        # ── Phase 1: Stream WITH tools (two paths: native or text-fallback) ──
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools_def,
+                max_tokens=_LLM_MAX_OUTPUT_TOKENS,
+                stream=True,
+                timeout=300,  # NVIDIA NIM is slow
+            )
+        except Exception as e:
+            sse({"error": f"LLM connection failed: {str(e)[:200]}"})
+            return
+
+        native_tool_calls = {}
+        accumulated_raw = ""
+        finish_reason = None
+        html_capture_buf = None  # non-None = inside ```html block
+        text_tool_mode = False   # True = inside text-based tool call (read_vault_file(...))
+        text_tool_buf = ""
+        xml_tool_mode = False    # True = inside XML tool call (<tool_call>...</tool_call>)
+        xml_tool_buf = ""
+
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            finish_reason = chunk.choices[0].finish_reason
+
+            # ── Native tool calls ──
+            if delta and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in native_tool_calls:
+                        native_tool_calls[idx] = {"id": "", "function_name": "", "arguments": ""}
+                    if tc.id:
+                        native_tool_calls[idx]["id"] = tc.id
+                    if tc.function:
+                        if tc.function.name:
+                            native_tool_calls[idx]["function_name"] = tc.function.name
+                        if tc.function.arguments:
+                            native_tool_calls[idx]["arguments"] += tc.function.arguments
+
+            # ── Text content ──
+            if delta and delta.content:
+                piece = delta.content
+                accumulated_raw += piece
+
+                # HTML block suppression
+                if html_capture_buf is not None:
+                    html_capture_buf += piece
+                    if html_capture_buf.rstrip().endswith('```'):
+                        html_capture_buf = None
+                    continue
+                if '```html' in piece:
+                    idx = piece.index('```html')
+                    before = piece[:idx]
+                    if before:
+                        sse({"token": before})
+                    html_capture_buf = piece[idx:]
+                    continue
+
+                # ── XML-style tool calls (<tool_call>...</tool_call>) ──
+                if xml_tool_mode:
+                    xml_tool_buf += piece
+                    if '</tool_call>' in xml_tool_buf:
+                        # Parse the XML tool call
+                        xml_calls = _parse_xml_tool_calls(xml_tool_buf)
+                        for c in xml_calls:
+                            native_tool_calls[f"xml_{len(native_tool_calls)}"] = c
+                        xml_tool_buf = ""
+                        xml_tool_mode = False
+                        # Check for text after the closing tag in the current piece
+                        after_close = piece.split('</tool_call>', 1)[-1] if '</tool_call>' in piece else ''
+                        if after_close:
+                            # Check if after_close has another tool call or just text
+                            if '<tool_call>' in after_close:
+                                # Re-enter mode with the remaining text
+                                rest = after_close.split('<tool_call>', 1)[1]
+                                xml_tool_buf = '<tool_call>' + rest
+                                xml_tool_mode = True
+                            else:
+                                xml_tool_buf = ""
+                                xml_tool_mode = False
+                                sse({"token": after_close})
+                    if len(xml_tool_buf) > 10000:
+                        sse({"token": xml_tool_buf})
+                        xml_tool_buf = ""
+                        xml_tool_mode = False
+                    continue
+                if '<tool_call>' in piece:
+                    idx = piece.index('<tool_call>')
+                    before = piece[:idx]
+                    if before:
+                        sse({"token": before})
+                    # Process ALL tool calls in this chunk
+                    remaining = piece[idx:]
+                    while remaining:
+                        if '<tool_call>' not in remaining:
+                            # Plain text remaining
+                            sse({"token": remaining})
+                            break
+                        tc_start = remaining.index('<tool_call>')
+                        after_tc = remaining[tc_start + len('<tool_call>'):]
+                        close_pos = after_tc.find('</tool_call>')
+                        if close_pos >= 0:
+                            # Complete XML tool call in this chunk
+                            xml_block = '<tool_call>' + after_tc[:close_pos + len('</tool_call>')]
+                            xml_calls = _parse_xml_tool_calls(xml_block)
+                            for c in xml_calls:
+                                native_tool_calls[f"xml_{len(native_tool_calls)}"] = c
+                            remaining = after_tc[close_pos + len('</tool_call>'):]
+                        else:
+                            # Incomplete — buffer for next chunk
+                            xml_tool_buf = remaining[tc_start:]
+                            xml_tool_mode = True
+                            break
+                    continue
+
+                # ── Text-based tool call detection ──
+                # Text-based tool call detection
+                if text_tool_mode:
+                    text_tool_buf += piece
+                    # Check if tool call completed
+                    if '"' in text_tool_buf and ')' in text_tool_buf:
+                        calls = _extract_text_tool_calls(text_tool_buf)
+                        if calls:
+                            for c in calls:
+                                idx = len(native_tool_calls) + text_tool_buf.count(str(c.get("function_name", "")))
+                                native_tool_calls[f"txt_{idx}"] = c
+                            text_tool_buf = ""
+                            text_tool_mode = False
+                    # Safety: if buffer gets too long, it was a false positive
+                    if len(text_tool_buf) > 5000 and text_tool_mode:
+                        sse({"token": text_tool_buf})
+                        text_tool_buf = ""
+                        text_tool_mode = False
+                    continue
+
+                # Check if this chunk starts a text-based tool call
+                if 'read_vault_file(' in piece or 'write_study_object(' in piece:
+                    # Emit text before the tool call
+                    for keyword in ('read_vault_file(', 'write_study_object('):
+                        kpos = piece.find(keyword)
+                        if kpos >= 0:
+                            before = piece[:kpos]
+                            if before:
+                                sse({"token": before})
+                            text_tool_buf = piece[kpos:]
+                            text_tool_mode = True
+                            break
+                    continue
+
+                # Normal text — emit as token
+                sse({"token": piece})
+
+            if finish_reason:
+                break
+
+        # After stream ends, flush text tool buffer
+        if text_tool_mode and text_tool_buf:
+            calls = _extract_text_tool_calls(text_tool_buf)
+            for c in calls:
+                native_tool_calls[f"txt_last_{len(native_tool_calls)}"] = c
+        if xml_tool_mode and xml_tool_buf:
+            xml_calls = _parse_xml_tool_calls(xml_tool_buf)
+            for c in xml_calls:
+                native_tool_calls[f"xml_last_{len(native_tool_calls)}"] = c
+
+        # ── Assemble all tool calls ──
+        all_tool_calls = []
+        for idx in sorted(native_tool_calls.keys(), key=lambda k: str(k)):
+            tc = native_tool_calls[idx]
+            if tc.get("function_name"):
+                all_tool_calls.append(tc)
+
+        phase1_raw = accumulated_raw
+        has_native_tool_calls = finish_reason == "tool_calls" and bool(native_tool_calls)
+        has_text_tool_calls = bool(all_tool_calls) and not has_native_tool_calls
+
+        # ── Phase 2: Execute tool calls (if any) ──
+        created_objects = []
+        tool_calls_to_execute = []
+
+        if has_native_tool_calls or has_text_tool_calls:
+            # Emit tool_call events
+            for tc in all_tool_calls:
+                fn_name = tc["function_name"]
+                try:
+                    args = json.loads(tc.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+                sse({"tool_call": {"name": fn_name, "args": args}})
+
+            # Build assistant message with tool calls
+            if has_native_tool_calls:
+                assistant_tc_list = []
+                for tc in all_tool_calls:
+                    assistant_tc_list.append({
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["function_name"],
+                            "arguments": tc["arguments"],
+                        }
+                    })
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": assistant_tc_list,
+                })
+
+            # Execute tools
+            for tc in all_tool_calls:
+                result = self._execute_tool(subject, tc)
+                if has_native_tool_calls:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", "tc_exec"),
+                        "content": json.dumps(result),
+                    })
+
+                # Emit result event
+                fn_name = tc["function_name"]
+                if fn_name == "read_vault_file":
+                    sse({"tool_result": {
+                        "name": "read_vault_file",
+                        "path": result.get("path", ""),
+                        "status": "ok" if "content" in result else "error",
+                        "error": result.get("error", ""),
+                    }})
+                elif fn_name == "write_study_object":
+                    sse({"tool_result": {
+                        "name": "write_study_object",
+                        "filename": result.get("filename", ""),
+                        "status": "ok" if result.get("success") else "error",
+                        "error": result.get("error", ""),
+                    }})
+                    if result.get("success"):
+                        created_objects.append(result)
+
+            # Emit object_creation events for write_study_object results
+            for obj in created_objects:
+                sse({"object_creation": "started", "filename": obj.get("filename", "object.html")})
+                sse({"object_creation": "done", "filename": obj.get("filename", "object.html")})
+
+            # ── Phase 3: Second stream (no tools, text only) ──
+            # Skip if ALL tool calls were write_study_object (no reads — no text to stream)
+            all_write_only = (
+                len(created_objects) > 0
+                and len(created_objects) == len(all_tool_calls)
+            )
+
+            if not all_write_only:
+                try:
+                    stream2 = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=_LLM_MAX_OUTPUT_TOKENS,
+                        stream=True,
+                        timeout=300,
+                    )
+                except Exception as e:
+                    sse({"error": f"LLM connection failed: {str(e)[:200]}"})
+                    return
+
+                phase3_raw = ""
+                phase3_html_buf = None
+                phase3_xml_buf = None  # non-None = inside <tool_call> block
+                for chunk in stream2:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        piece = delta.content
+                        # DEBUG
+                        if '<tool_call>' in piece and '</tool_call>' in piece:
+                            pass  # full XML in one piece
+                        elif '<tool_call>' in piece:
+                            sse({"D3BUG": f"delta=content tool_call_no_close in:{repr(piece[:60])}"})
+                        # END DEBUG
+                        # HTML block suppression
+                        if phase3_html_buf is not None:
+                            phase3_html_buf += piece
+                            phase3_raw += piece
+                            if phase3_html_buf.rstrip().endswith('```'):
+                                phase3_html_buf = None
+                            continue
+                        # XML tool call suppression
+                        if phase3_xml_buf is not None:
+                            phase3_xml_buf += piece
+                            # Don't append piece to phase3_raw yet — we need to strip the XML first
+                            close_idx = phase3_xml_buf.find('</tool_call>')
+                            if close_idx >= 0:
+                                tag_end_offset = close_idx + len('</tool_call>')
+                                after = phase3_xml_buf[tag_end_offset:]
+                                phase3_xml_buf = None
+                                # Add only the clean text after </tool_call> to raw
+                                if after:
+                                    phase3_raw += after
+                                    sse({"token": after})
+                            continue
+                        if '<tool_call>' in piece:
+                            # Process ALL tool calls in this chunk
+                            remaining = piece
+                            while remaining:
+                                if '<tool_call>' not in remaining:
+                                    if remaining.strip():
+                                        phase3_raw += remaining
+                                        sse({"token": remaining})
+                                    break
+                                idx = remaining.index('<tool_call>')
+                                before = remaining[:idx]
+                                if before:
+                                    phase3_raw += before
+                                    sse({"token": before})
+                                after_tc = remaining[idx + len('<tool_call>'):]
+                                close_pos = after_tc.find('</tool_call>')
+                                if close_pos >= 0:
+                                    # Complete XML tool call — suppressed from tokens
+                                    sse({"tool_call_suppressed": True})  # debug
+                                    remaining = after_tc[close_pos + len('</tool_call>'):]
+                                else:
+                                    # Incomplete — buffer for next chunk
+                                    sse({"tool_call_suppressed": True})  # debug
+                                    phase3_xml_buf = remaining[idx:]
+                                    break
+                            continue
+                        if '```html' in piece:
+                            idx = piece.index('```html')
+                            before = piece[:idx]
+                            if before:
+                                phase3_raw += before
+                                sse({"token": before})
+                            phase3_html_buf = piece[idx:]
+                            phase3_raw += piece[idx:]
+                            continue
+                        phase3_raw += piece
+                        sse({"token": piece})
+
+                # Strip residual tool text from Phase 3 text
+                clean_reply = _clean_tool_text(phase3_raw)
+
+                done_data = {
+                    "done": True,
+                    "model": model,
+                    "clean_reply": clean_reply,
+                }
+                if created_objects:
+                    done_data["created_object"] = created_objects[0]
+                sse(done_data)
+            else:
+                # No Phase 3 — all tool calls were writes
+                names = ", ".join(o.get("filename", "object.html") for o in created_objects)
+                done_data = {
+                    "done": True,
+                    "model": model,
+                    "clean_reply": f"Created: {names}",
+                    "created_object": created_objects[0] if created_objects else None,
+                }
+                sse(done_data)
+
+        else:
+            # No tool calls — content was streamed directly
+            clean_reply = _clean_tool_text(accumulated_raw)
+            done_data = {
+                "done": True,
+                "model": model,
+                "clean_reply": clean_reply,
+            }
+            sse(done_data)
+
+    def _api_chat_save(self):
+        """POST /api/chat-save - persist chat history for a subject."""
+        try:
+            cl = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(cl)
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            self._send_json(400, {"error": "invalid_json"})
+            return
+        subject = data.get("subject", "").strip()
+        conversation = data.get("conversation", [])
+        model = data.get("model", "")
+        if not subject:
+            self._send_json(400, {"error": "missing_subject"})
+            return
+        chat_dir = os.path.join(VAULT, "chats")
+        os.makedirs(chat_dir, exist_ok=True)
+        safe_subject = re.sub(r"[^a-z0-9_-]", "", subject.lower().replace(" ", "-"))
+        chat_file = os.path.join(chat_dir, safe_subject + ".json")
+        with open(chat_file, "w", encoding="utf-8") as f:
+            json.dump({"subject": subject, "conversation": conversation, "model": model}, f, ensure_ascii=False)
+        self._send_json(200, {"ok": True})
+
+    def _api_chat_load(self, params):
+        """GET /api/chat-load?subject=X - load chat history for a subject."""
+        subject = params.get("subject", [None])[0] if params else None
+        if not subject:
+            self._send_json(400, {"error": "missing_subject"})
+            return
+        chat_dir = os.path.join(VAULT, "chats")
+        safe_subject = re.sub(r"[^a-z0-9_-]", "", subject.lower().replace(" ", "-"))
+        chat_file = os.path.join(chat_dir, safe_subject + ".json")
+        if os.path.isfile(chat_file):
+            try:
+                with open(chat_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self._send_json(200, data)
+            except Exception:
+                self._send_json(200, {"subject": subject, "conversation": [], "model": ""})
+        else:
+            self._send_json(200, {"subject": subject, "conversation": [], "model": ""})
+
     def _api_regenerate_index(self, params):
-        """POST /api/regenerate-index — rewrite index.md from filesystem (or GET with ?subject=X)."""
+        """POST /api/regenerate-index - rewrite index.md from filesystem (or GET with ?subject=X)."""
         subject = params.get("subject", [None])[0] if params else None
         if not subject:
             try:
@@ -1426,7 +2539,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         self._send_json(200, {"subject": subject, "path": f"subjects/{subject}/index.md", "updated": True})
 
     def _api_upload(self):
-        """POST /api/upload — multipart upload with MarkItDown conversion + auto-ingest."""
+        """POST /api/upload - multipart upload with MarkItDown conversion + auto-ingest."""
         global _upload_in_progress
         if _upload_in_progress or _ingest_running:
             self._send_json(503, {"error": "busy",
@@ -1440,7 +2553,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             _upload_in_progress = False
 
     def _do_upload(self):
-        """POST /api/upload — multipart upload with MarkItDown conversion."""
+        """POST /api/upload - multipart upload with MarkItDown conversion."""
         # 1. Check Content-Length ≤ 50MB
         cl_str = self.headers.get("Content-Length", "0")
         content_length = int(cl_str) if cl_str.isdigit() else 0
@@ -1541,7 +2654,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         })
 
     def _api_delete_file(self):
-        """POST /api/delete-file — cascade-delete a file and all its wiki pages/objects/edges."""
+        """POST /api/delete-file - cascade-delete a file and all its wiki pages/objects/edges."""
         global _ingest_running
         if _ingest_running:
             self._send_json(503, {"error": "ingest_in_progress",
@@ -1554,7 +2667,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             _ingest_running = False
 
     def _do_delete_file(self):
-        """Internal delete — called with _ingest_running lock held."""
+        """Internal delete - called with _ingest_running lock held."""
         try:
             cl = int(self.headers.get("Content-Length", 0))
             if cl > 1_000_000:
@@ -1598,7 +2711,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         removed = [rel_path] + cascade_result["deleted_files"]
         removed_edges = len(cascade_result["deleted_ids"])
 
-        # — Log —
+        # - Log -
         log_path = os.path.join(VAULT, "log.md")
         try:
             from datetime import datetime
@@ -1608,7 +2721,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         except OSError:
             pass
 
-        # — Regenerate index —
+        # - Regenerate index -
         try:
             self._regenerate_index(subject)
         except OSError:
@@ -1691,7 +2804,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         })
 
     def _api_status(self):
-        """GET /api/status — current server state (ingest lock, queue, last result)."""
+        """GET /api/status - current server state (ingest lock, queue, last result)."""
         global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_total_pending
         global _ingest_initial_wiki_count, _ingest_initial_total
         # If ingest is running, compute live progress from filesystem
@@ -1699,7 +2812,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         if _ingest_running and _ingest_current_subject:
             remaining = len(_get_remaining_ingest(_ingest_current_subject))
             _ingest_total_pending = remaining
-            # Count current wiki/ .md files — gives progress even if .ingested.json is not updated per-file
+            # Count current wiki/ .md files - gives progress even if .ingested.json is not updated per-file
             wiki_dir = os.path.join(VAULT, "subjects", _ingest_current_subject, "wiki")
             if os.path.isdir(wiki_dir):
                 current_wiki_count = sum(
@@ -1708,15 +2821,16 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 )
                 wiki_pages_created = max(0, current_wiki_count - _ingest_initial_wiki_count)
         self._send_json(200, {
-            "ingest_running": _ingest_running,
-            "pending_total": _ingest_total_pending,
-            "initial_total": _ingest_initial_total,
-            "wiki_pages_created": wiki_pages_created,
-            "queue_length": 0,
-            "result": _ingest_result,
+        "ingest_running": _ingest_running,
+        "ingest_subject": _ingest_current_subject,
+        "pending_total": _ingest_total_pending,
+        "initial_total": _ingest_initial_total,
+        "wiki_pages_created": wiki_pages_created,
+        "queue_length": len(_ingest_queue),
+        "result": _ingest_result,
         })
     def _api_original(self, params):
-        """GET /api/original?path=X — serve original uploaded file."""
+        """GET /api/original?path=X - serve original uploaded file."""
         rel_path = params.get("path", [None])[0]
         if not rel_path:
             self._send_json(400, {"error": "missing_path", "detail": "path parameter is required"})
@@ -1762,12 +2876,14 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _api_pending_state(self, params):
-        """GET /api/pending-state?subject=X — return ingested + pending delete state."""
+        """GET /api/pending-state?subject=X - return ingested + pending delete state."""
         subject = params.get("subject", [None])[0]
         if not subject:
             self._send_json(400, {"error": "missing_subject", "detail": "subject parameter required"})
             return
         ingested = _read_ingested(subject)
+        # Normalize: strip "raw/" prefix so frontend can compare with plain filenames
+        ingested = sorted(f.replace("raw/", "", 1) if f.startswith("raw/") else f for f in ingested)
         pending = _read_pending_deletes(subject)
         raw_dir = os.path.join(VAULT, "subjects", subject, "raw")
         raw_files = []
@@ -1782,7 +2898,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         })
 
     def _api_mark_file(self):
-        """POST /api/mark-file — mark/unmark a raw file for deletion."""
+        """POST /api/mark-file - mark/unmark a raw file for deletion."""
         try:
             cl = int(self.headers.get("Content-Length", 0))
             if cl > 1_000_000:
@@ -1817,7 +2933,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid_json"})
 
     def _api_update_wiki(self):
-        """POST /api/update-wiki — cascade delete sync, LLM ingest async."""
+        """POST /api/update-wiki - cascade delete sync, LLM ingest async."""
         global _ingest_running, _ingest_result, _ingest_current_subject
         if _ingest_running:
             self._send_json(503, {"error": "ingest_in_progress", "detail": "Wait for current operation to finish"})
@@ -1858,16 +2974,18 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             # Step 3: Count files pending ingest and spawn LLM thread (async)
             # Re-read ingested state (cascade_delete may have modified it)
             ingested = _read_ingested(subject)
+            # Normalize: strip "raw/" prefix from ingested entries for comparison
+            ingested_normalized = {f.replace("raw/", "", 1) if f.startswith("raw/") else f for f in ingested}
             if os.path.isdir(raw_dir):
                 uningested = [f for f in os.listdir(raw_dir)
-                              if f.endswith(".md") and f != ".ingested.json" and f not in ingested]
+                              if f.endswith(".md") and f != ".ingested.json" and f not in ingested_normalized]
             else:
                 uningested = []
             global _ingest_total_pending, _ingest_current_subject, _ingest_initial_wiki_count, _ingest_initial_total
             _ingest_total_pending = len(uningested)
-            _ingest_initial_total = len(uningested) # save initial total so frontend can compute fraction
+            _ingest_initial_total = len(uningested)  # save initial total so frontend can compute fraction
             _ingest_current_subject = subject
-            # Count existing wiki/ .md files BEFORE ingest — used for live progress tracking
+            # Count existing wiki/ .md files BEFORE ingest - used for live progress tracking
             wiki_dir = os.path.join(VAULT, "subjects", subject, "wiki")
             if os.path.isdir(wiki_dir):
                 _ingest_initial_wiki_count = sum(
@@ -1879,7 +2997,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             _ingest_running = True
             _ingest_result = None
             t = threading.Thread(target=_run_llm_ingest_thread,
-                                 args=(subject,), daemon=True)
+                             args=(subject,), daemon=True)
             t.start()
 
             self._send_json(202, {
@@ -1909,9 +3027,14 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             params = urllib.parse.parse_qs(parsed.query)
 
             if path == "/":
-                self._send_file(os.path.join(STUDY_DIR, "index.html"), "text/html; charset=utf-8", cache_control="no-cache, no-store, must-revalidate")
+                self._send_file(os.path.join(STUDY_DIR, "index.html"), "text/html; charset=utf-8")
             elif path == "/api/health":
                 self._send_json(200, {"status": "ok", "vault": VAULT})
+            elif path == "/api/model":
+                self._send_json(200, {"model": _LLM_MODEL, "available_models": [
+                    {"id": "deepseek-ai/deepseek-v4-flash", "label": "DeepSeek V4 Flash"},
+                    {"id": "z-ai/glm-5.1", "label": "GLM 5.1"},
+                ]})
             elif path == "/api/subjects":
                 self._api_subjects()
             elif path == "/api/files":
@@ -1937,17 +3060,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             elif path == "/api/pending-state":
                 self._api_pending_state(params)
             elif path == "/api/chat-load":
-                handle_chat_load(self, params)
-            elif path == "/api/model":
-                self._send_json(200, {"available_models": AVAILABLE_MODELS, "model": AVAILABLE_MODELS[0]})
-            elif path.startswith("/static/"):
-                static_path = os.path.join(STUDY_DIR, path.lstrip("/"))
-                if path.endswith(".css"):
-                    self._send_file(static_path, "text/css; charset=utf-8", cache_control="no-cache, no-store, must-revalidate")
-                elif path.endswith(".js"):
-                    self._send_file(static_path, "application/javascript; charset=utf-8", cache_control="no-cache, no-store, must-revalidate")
-                else:
-                    self._send_json(404, {"error": "not_found"})
+                self._api_chat_load(params)
             else:
                 self._send_json(404, {"error": "not_found", "detail": f"Route not found: {path}"})
         except Exception as e:
@@ -1968,14 +3081,14 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 self._api_mark_file()
             elif path == "/api/update-wiki":
                 self._api_update_wiki()
+            elif path == "/api/chat":
+                self._api_chat()
+            elif path == "/api/chat-stream":
+                self._api_chat_stream()
+            elif path == "/api/chat-save":
+                self._api_chat_save()
             elif path == "/api/regenerate-index":
                 self._api_regenerate_index(params=None)
-            elif path == "/api/chat-start":
-                handle_chat_start(self)
-            elif path == "/api/chat-stream":
-                handle_chat_stream(self)
-            elif path == "/api/chat-save":
-                handle_chat_save(self)
             else:
                 self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
         except Exception as e:
@@ -1989,6 +3102,6 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
     socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer((HOST, PORT), StudyHandler) as httpd:
-        print(f"Study server on {HOST}:{PORT}")
+    with socketserver.ThreadingTCPServer(("", PORT), StudyHandler) as httpd:
+        print(f"Study server on :{PORT}", flush=True)
         httpd.serve_forever()

@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>study</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
-<link rel="stylesheet" href="/static/chat-ui.css?v=9">
-<script defer src="/static/chat-ui.js?v=9"></script>
 <style>
 /* ── Reset ── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -21,8 +19,6 @@
  --accent:#6366f1;
  --accent-dim:#4345b0;
  --violet:#8b5cf6;
- --blue:#3b82f6;
- --blue-dim:#2563eb;
  --text:#c0c0d0;
  --text-dim:#505068;
  --text-bright:#e8e8f0;
@@ -69,13 +65,9 @@ a:hover{color:var(--text-bright)}
 #header select{background:var(--surface-2);color:var(--text);
  border:1px solid var(--border);border-radius:var(--radius-sm);
  padding:2px var(--space-2);font-size:var(--font-size-sm);
- font-family:var(--font-sans);max-width:180px}
+ font-family:var(--font-sans);margin-left:auto;max-width:180px}
 #btn-toggle-left,#btn-toggle-right{background:transparent;
- font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1);
- display:flex;align-items:center;justify-content:center;height:28px;width:28px;
- color:var(--text-dim);cursor:pointer;border:none;border-radius:var(--radius-sm);
- transition:color .15s}
-#btn-toggle-left:hover,#btn-toggle-right:hover{color:var(--text)}
+ font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1)}
 #labels-toggle{
   background:transparent;border:1px solid var(--border);color:var(--text-dim);
   font-size:11px;font-weight:700;cursor:pointer;border-radius:var(--radius-sm);
@@ -85,38 +77,19 @@ a:hover{color:var(--text-bright)}
 }
 #labels-toggle:hover{color:var(--text);border-color:var(--accent)}
 #labels-toggle.active{color:var(--accent);border-color:var(--accent)}
-#glow-mode-btn{
- background:transparent;border:1px solid var(--border);color:var(--text-dim);
- font-size:10px;font-weight:600;cursor:pointer;border-radius:var(--radius-sm);
- height:24px;padding:0 6px;display:none;align-items:center;
- font-family:var(--font-sans);transition:all .15s;
- vertical-align:middle;line-height:1;margin-left:4px;white-space:nowrap;
-}
-#glow-mode-btn:hover{color:var(--text);border-color:var(--accent)}
-#fit-graph-btn{
- background:transparent;border:1px solid var(--border);color:var(--text-dim);
- font-size:10px;font-weight:600;cursor:pointer;border-radius:var(--radius-sm);
- height:24px;padding:0 6px;display:none;align-items:center;
- font-family:var(--font-sans);transition:all .15s;
- vertical-align:middle;line-height:1;margin-left:auto;white-space:nowrap;
-}
-#fit-graph-btn:hover{color:var(--text);border-color:var(--accent)}
 
 /* ── App Layout ── */
 #app{
  display:flex;
- height:calc(100dvh - 40px - 36px); /* header - search bar */
+ height:calc(100vh - 40px - 36px); /* header - search bar */
  position:relative}
-@media (not (height: 100dvh)){
- #app{height:calc(100vh - 40px - 36px)}
-}
 
 /* ── Sidebars ── */
 aside{
  background:var(--surface);
  border:1px solid var(--border);
  overflow:hidden;
- transition:width .12s ease;
+ transition:width .2s ease;
  flex-shrink:0;
  display:flex;flex-direction:column}
 aside[data-collapsed="true"]{border-color:transparent}
@@ -202,12 +175,8 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
  text-overflow:ellipsis;white-space:nowrap;padding:1px 4px;border-radius:3px}
 .tree-item-name:hover{color:var(--text-bright)}
 .tree-item-name.graph-highlighted{
- color:var(--accent);font-weight:600}
-.tree-item-search-match{
- position:relative;background:rgba(139,92,246,.12);border-radius:var(--radius-sm)}
-.tree-item-search-match::after{
- content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);
- width:6px;height:6px;border-radius:50%;background:#8b5cf6}
+ background:var(--accent);color:#fff;font-weight:600;
+ box-shadow:0 0 8px var(--accent-dim)}
 .tree-item-action{background:none;border:none;cursor:pointer;
  color:var(--text-dim);font-size:var(--font-size-sm);
  padding:0 2px;transition:color .15s;text-decoration:none}
@@ -293,9 +262,9 @@ pre:hover .copy-btn{opacity:1}
  width:100%;height:100%}
 #main-area .placeholder span{font-size:32px;display:block;margin-bottom:var(--space-3)}
 #main-area .placeholder p{font-size:var(--font-size-base)}
-#graph-canvas{display:none;width:100%;height:100%;cursor:grab;position:absolute;top:0;left:0;z-index:1;touch-action:none}
+#graph-canvas{display:none;width:100%;height:100%;cursor:grab;position:absolute;top:0;left:0;z-index:1}
 #graph-canvas.dragging{cursor:grabbing}
-#object-frame{display:none;width:100%;height:100%;border:none;background:#fff;z-index:10;position:absolute;top:0;left:0}
+#object-frame{display:none;width:100%;height:100%;border:none;background:#fff;z-index:10}
 
 /* ── Graph Wrap (canvas + overlay container) ── */
 #graph-wrap{position:relative;width:100%;height:100%;z-index:1}
@@ -381,7 +350,7 @@ pre:hover .copy-btn{opacity:1}
  display:flex;align-items:center;gap:var(--space-2);
  height:36px;padding:0 var(--space-3);
  background:var(--surface);border-top:1px solid var(--border);
- position:relative}
+ position:relative;z-index:var(--z-sidebar)}
 #search-input{
  flex:1;
  background:var(--surface-2);border:1px solid var(--border);
@@ -400,7 +369,7 @@ pre:hover .copy-btn{opacity:1}
  background:var(--surface);border:1px solid var(--border);
  border-radius:var(--radius-md) var(--radius-md) 0 0;
  max-height:300px;overflow-y:auto;box-shadow:var(--shadow-lg);
- display:none;z-index:var(--z-overlay)}
+ display:none}
 
 /* ── Search Results ── */
 .search-result-item{
@@ -413,7 +382,6 @@ pre:hover .copy-btn{opacity:1}
 .search-result-snippet{font-size:var(--font-size-sm);line-height:1.4;
  color:var(--text);margin-bottom:2px}
 .search-result-snippet strong{color:var(--accent)}
-.search-result-snippet .wiki-link-inline{color:#8b5cf6;font-weight:500}
 .search-result-meta{display:flex;justify-content:space-between;
  align-items:center;font-size:var(--font-size-xs);color:var(--text-dim)}
 .search-result-path{overflow:hidden;text-overflow:ellipsis;
@@ -441,136 +409,36 @@ pre:hover .copy-btn{opacity:1}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
-
-/* ── Mobile: Responsive Design ── */
-@media (max-width: 768px) {
- /* Sidebars are absolute overlays on mobile, never in flex flow */
- #sidebar-left, #sidebar-right {
-  position: absolute !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  z-index: 20 !important;
-  transition: width .2s ease;
- }
- #sidebar-left { left: 0 !important; border-left: none; }
- #sidebar-right { right: 0 !important; border-right: none; }
-
- /* Sidebars closed by default (no !important — JS inline style on desktop may set width) */
- #sidebar-left, #sidebar-right { width: 0; }
-
- /* Remove resize handles on mobile */
- #resize-handle-left, #resize-handle-right { display: none !important; }
-
- /* Sidebar overlay: visible + shadow on mobile */
- #sidebar-left.sidebar-overlay, #sidebar-right.sidebar-overlay {
-  width: 280px;
-  box-shadow: var(--shadow-lg);
- }
-
- /* Back button bigger on mobile */
- #object-back-btn{
-  font-size:var(--font-size-base);
-  padding:var(--space-2) var(--space-4);
-  top:var(--space-2);left:var(--space-2);
-  z-index:100;
- }
-
- /* Search bar full width, minimal */
- #search-bar{height:auto;padding:var(--space-2)}
- #search-subject-filter{max-width:120px}
- #search-results{left:var(--space-2);right:var(--space-2)}
- #search-input{font-size:var(--font-size-base)}
-
- /* Smaller, bottom toast */
- #toast-container{
-  bottom:var(--space-3);right:var(--space-2);
-  left:var(--space-2);gap:var(--space-1)
- }
- .toast{font-size:var(--font-size-xs);padding:var(--space-1) var(--space-3)}
-
- /* Toggle buttons always clickable */
- #btn-toggle-left,#btn-toggle-right{z-index:30;font-size:20px;padding:0 var(--space-2)}
-}
 </style>
 </head>
 <body>
 
 <!-- ── Header ── -->
 <header id="header">
- <button id="btn-toggle-left">
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
- </button>
+ <button id="btn-toggle-left">☰</button>
  <span class="logo">study</span>
- <button id="labels-toggle" title="Toggle all node labels">Aa</button>
- <button id="fit-graph-btn" title="Fit graph to view">⊞</button>
- <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
- <span style="flex:1"></span>
  <select id="subject-select">
- <option value="">— Select subject —</option>
+   <option value="">— Select subject —</option>
  </select>
- <button id="btn-toggle-right">
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
- </button>
+ <button id="labels-toggle" title="Toggle all node labels">Aa</button>
+ <button id="btn-toggle-right">≡</button>
 </header>
 
 <!-- ── App ── -->
 <div id="app">
 
  <!-- Left Sidebar — Objects -->
- <aside id="sidebar-left" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
-   <div id="objects-section" class="sidebar-section grow">
-     <h3>Study Objects</h3>
-     <div id="objects-tree">
-       <p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>
-     </div>
-   </div>
-   <!-- Chat Resize Handle -->
-   <div id="chat-resize-handle"><div class="grip"><span></span><span></span><span></span></div></div>
-   <!-- Chat Section -->
-   <div id="chat-section">
-     <div id="chat-header">
-       <div class="left">
-         <span class="chat-title">Chat :)</span>
-         <span class="chat-subject-badge" id="chat-subject-badge"></span>
-       </div>
-       <div class="chat-actions">
-         <button class="chat-action-btn" id="chat-clear-btn" title="Clear conversation">🗑️</button>
-       </div>
-     </div>
-     <div id="chat-messages">
-       <div class="chat-placeholder" id="chat-placeholder">
-         <div class="icon">💡</div>
-         <div>Select a subject to start chatting</div>
-         <div class="sub">Click a node on the graph or pick one from the header</div>
-       </div>
-     </div>
-     <div id="chat-model-bar">
-       <span class="model-label">Model</span>
-       <span class="model-select-wrap">
-         <select id="chat-model-select" title="Select AI model">
-         <option value="z-ai/glm-5.1">GLM-5.1</option>
-         <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4</option>
-         </select>
-         </span>
-         </div>
-     <div id="chat-input-area">
-       <textarea id="chat-input" placeholder="Ask about this subject..." rows="1"></textarea>
-       <button id="chat-stop-btn" aria-label="Stop generation">
-         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-           <rect x="6" y="6" width="12" height="12" rx="2" fill="white"/>
-         </svg>
-       </button>
-       <button id="chat-send-btn" disabled aria-label="Send message">
-         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-           <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-         </svg>
-       </button>
-     </div>
-   </div>
+ <aside id="sidebar-left" style="width:240px" data-expanded-width="240" data-collapsed="false">
+ <div class="sidebar-section">
+ <h3>Study Objects</h3>
+ <div id="objects-tree">
+ <p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>
+ </div>
+ </div>
  </aside>
 
  <!-- Left Resize Handle -->
- <div id="resize-handle-left" class="resize-handle" style="display:none"></div>
+ <div id="resize-handle-left" class="resize-handle"></div>
 
  <!-- Main Area — Graph / Object Viewer -->
  <main id="main-area">
@@ -592,11 +460,11 @@ pre:hover .copy-btn{opacity:1}
 </main>
 
  <!-- Right Resize Handle -->
- <div id="resize-handle-right" class="resize-handle" style="display:none"></div>
+ <div id="resize-handle-right" class="resize-handle"></div>
 
  <!-- Right Sidebar — Upload, Files, Preview -->
-  <aside id="sidebar-right" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
-  <!-- Upload (top) -->
+ <aside id="sidebar-right" style="width:240px" data-expanded-width="240" data-collapsed="false">
+ <!-- Upload (top) -->
  <div class="sidebar-section">
  <h3>Upload</h3>
  <div id="upload-zone">
@@ -719,7 +587,6 @@ async function loadSubjects() {
      await reloadAll(data.subjects[0].name);
    }
  populateSearchFilter();
- fitSubjectSelect();
  } catch (e) {
  showToast('\u2717 Failed to load subjects', 'danger');
  }
@@ -757,49 +624,28 @@ async function reloadObjectTree(subject) {
 function showObject(path) {
  stopGraphLoop();
  document.getElementById('graph-canvas').style.display = 'none';
- document.getElementById('graph-wrap').style.display = 'none';
  document.getElementById('main-placeholder').style.display = 'none';
  
+ const sidebarLeft = document.getElementById('sidebar-left');
+ const sidebarRight = document.getElementById('sidebar-right');
  const handleLeft = document.getElementById('resize-handle-left');
  const handleRight = document.getElementById('resize-handle-right');
- // On mobile, sidebars are always absolute — don't touch overlay state
- if (window.innerWidth > 768) {
-  // Don't remove overlay — keep sidebars position:absolute so graph never resizes
-  // Hide handles in object view
-  handleLeft.style.display = 'none';
-  handleRight.style.display = 'none';
- }
+ sidebarLeft.classList.remove('sidebar-overlay');
+ sidebarRight.classList.remove('sidebar-overlay');
+ handleLeft.classList.remove('sidebar-overlay');
+ handleRight.classList.remove('sidebar-overlay');
 
  const frame = document.getElementById('object-frame');
  frame.style.display = 'block';
  frame.src = '/api/object-content?path=' + encodeURIComponent(path);
- 
- // Position iframe to account for sidebar overlays
- const sl = document.getElementById('sidebar-left');
- const sr = document.getElementById('sidebar-right');
- const slW = (sl.dataset.collapsed === 'true') ? 0 : (parseInt(sl.style.width) || 240);
- const srW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || 240);
- frame.style.left = slW + 'px';
- frame.style.width = 'calc(100% - ' + (slW + srW) + 'px)';
- 
- // Offset back button by left sidebar width
- const backBtn = document.getElementById('object-back-btn');
- backBtn.style.display = 'flex';
- backBtn.style.left = (slW + 12) + 'px';
+ document.getElementById('object-back-btn').style.display = 'flex';
  document.getElementById('labels-toggle').style.display = 'none';
-}
+ }
 
 function hideObject() {
  document.getElementById('object-frame').style.display = 'none';
  document.getElementById('object-frame').src = '';
- document.getElementById('object-frame').style.left = '';
- document.getElementById('object-frame').style.width = '';
- const backBtn = document.getElementById('object-back-btn');
- backBtn.style.display = 'none';
- backBtn.style.left = ''; // reset to CSS default
- 
- // Restore graph-wrap
- document.getElementById('graph-wrap').style.display = '';
+ document.getElementById('object-back-btn').style.display = 'none';
  
  const sidebarLeft = document.getElementById('sidebar-left');
  const sidebarRight = document.getElementById('sidebar-right');
@@ -807,29 +653,23 @@ function hideObject() {
  const handleRight = document.getElementById('resize-handle-right');
  
  if (currentSubject) {
- // On mobile, sidebars are always absolute — only manage overlay on desktop
- if (window.innerWidth > 768) {
- sidebarLeft.classList.add('sidebar-overlay');
- sidebarRight.classList.add('sidebar-overlay');
- handleLeft.classList.add('sidebar-overlay');
- handleRight.classList.add('sidebar-overlay');
- }
- 
- syncOverlayHandles();
- 
- const canvas = document.getElementById('graph-canvas');
- canvas.style.display = 'block';
- resizeGraphCanvas();
- // Restore graph controls that were hidden in object view
- document.getElementById('labels-toggle').style.display = 'inline-flex';
- document.getElementById('glow-mode-btn').style.display = 'inline-flex';
- document.getElementById('fit-graph-btn').style.display = graphNodes.length > 0 ? 'inline-flex' : 'none';
- } else {
- // Keep overlay — sidebars stay position:absolute
- handleLeft.style.display = 'none';
- handleRight.style.display = 'none';
- 
- document.getElementById('main-placeholder').style.display = 'flex';
+  sidebarLeft.classList.add('sidebar-overlay');
+  sidebarRight.classList.add('sidebar-overlay');
+  handleLeft.classList.add('sidebar-overlay');
+  handleRight.classList.add('sidebar-overlay');
+  
+  syncOverlayHandles();
+  
+  const canvas = document.getElementById('graph-canvas');
+  canvas.style.display = 'block';
+  resizeGraphCanvas();
+  } else {
+  sidebarLeft.classList.remove('sidebar-overlay');
+  sidebarRight.classList.remove('sidebar-overlay');
+  handleLeft.classList.remove('sidebar-overlay');
+  handleRight.classList.remove('sidebar-overlay');
+  
+  document.getElementById('main-placeholder').style.display = 'flex';
  }
  resumeGraphLoop();
 }
@@ -935,78 +775,21 @@ function toggleFolder(el) {
 }
 
 // ── File Preview ──
-async function showFilePreview(path, searchQuery) {
- const preview = document.getElementById('file-preview');
+async function showFilePreview(path) {
  try {
  const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
  const data = await res.json();
  if (!res.ok) {
- showToast('✗ ' + (data.error || 'Failed to load'), 'danger');
+ showToast('\u2717 ' + (data.error || 'Failed to load'), 'danger');
  return;
  }
  currentPreviewPath = path;
  document.getElementById('preview-placeholder').style.display = 'none';
+ const preview = document.getElementById('file-preview');
  preview.style.display = 'flex';
- const contentEl = document.getElementById('file-preview-content');
- renderMarkdown(contentEl, data.content);
- 
- // If called from search, highlight query terms and scroll
- if (searchQuery && searchQuery.length >= 2) {
- highlightSearchInPreview(contentEl, searchQuery);
- scrollToFirstMatch(contentEl);
- }
+ renderMarkdown(document.getElementById('file-preview-content'), data.content);
  } catch (e) {
- showToast('✗ Failed to load preview', 'danger');
- } finally {
- if (!preview.style.display || preview.style.display === 'none') {
- preview.style.display = 'flex';
- }
- }
-}
-
-function highlightSearchInPreview(container, query) {
- const qLower = query.toLowerCase();
- // Collect all text nodes first
- const textNodes = [];
- const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
- while (walker.nextNode()) {
- textNodes.push(walker.currentNode);
- }
- // Process each text node — walk in reverse so earlier replacements don't affect positions
- for (let i = textNodes.length - 1; i >= 0; i--) {
- const node = textNodes[i];
- const text = node.textContent;
- let hasMatch = false;
- const lower = text.toLowerCase();
- let idx = lower.indexOf(qLower, 0);
- if (idx === -1) continue;
- // Build a fragment replacing all occurrences
- const fragment = document.createDocumentFragment();
- let pos = 0;
- while (idx !== -1) {
- hasMatch = true;
- fragment.appendChild(document.createTextNode(text.slice(pos, idx)));
- const mark = document.createElement('mark');
- mark.style.background = '#8b5cf644';
- mark.style.color = 'inherit';
- mark.style.borderRadius = '2px';
- mark.style.padding = '0 1px';
- mark.textContent = text.slice(idx, idx + query.length);
- fragment.appendChild(mark);
- pos = idx + query.length;
- idx = lower.indexOf(qLower, pos);
- }
- if (hasMatch) {
- fragment.appendChild(document.createTextNode(text.slice(pos)));
- node.parentNode.replaceChild(fragment, node);
- }
- }
-}
-
-function scrollToFirstMatch(container) {
- const firstMark = container.querySelector('mark');
- if (firstMark) {
- firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+ showToast('\u2717 Failed to load preview', 'danger');
  }
 }
 
@@ -1348,10 +1131,6 @@ function closeWikiResults() {
 // ── reloadAll: Refresh Everything ──
 async function reloadAll(subject) {
   currentSubject = subject;
-  // Update chat subject
-  if (window.setChatSubject) {
-    window.setChatSubject(subject);
-  }
   await reloadObjectTree(subject);
   await reloadFileTree(subject);
 
@@ -1372,34 +1151,24 @@ async function reloadAll(subject) {
   placeholder.style.display = 'none';
   canvas.style.display = 'block';
   
-  // On mobile, sidebars are always absolute (CSS media query) — only manage overlay on desktop
-  if (window.innerWidth > 768) {
   sidebarLeft.classList.add('sidebar-overlay');
   sidebarRight.classList.add('sidebar-overlay');
   handleLeft.classList.add('sidebar-overlay');
   handleRight.classList.add('sidebar-overlay');
-  // Restore sidebar widths on desktop
-  sidebarLeft.style.width = (parseInt(sidebarLeft.dataset.expandedWidth) || 240) + 'px';
-  sidebarLeft.dataset.collapsed = 'false';
-  sidebarRight.style.width = (parseInt(sidebarRight.dataset.expandedWidth) || 240) + 'px';
-  sidebarRight.dataset.collapsed = 'false';
-  // Show resize handles (sidebars are open on desktop)
-  handleLeft.style.display = '';
-  handleRight.style.display = '';
-  }
   
   syncOverlayHandles();
   
   reloadGraph(subject);
  } else {
- placeholder.style.display = 'flex';
- canvas.style.display = 'none';
- 
- // Keep overlay — sidebars stay position:absolute
- handleLeft.style.display = 'none';
- handleRight.style.display = 'none';
- 
- stopGraphLoop();
+  placeholder.style.display = 'flex';
+  canvas.style.display = 'none';
+  
+  sidebarLeft.classList.remove('sidebar-overlay');
+  sidebarRight.classList.remove('sidebar-overlay');
+  handleLeft.classList.remove('sidebar-overlay');
+  handleRight.classList.remove('sidebar-overlay');
+  
+  stopGraphLoop();
  }
 }
 
@@ -1409,19 +1178,13 @@ function syncOverlayHandles() {
  const sr = document.getElementById('sidebar-right');
  const hl = document.getElementById('resize-handle-left');
  const hr = document.getElementById('resize-handle-right');
- // Left handle
  if (sl.classList.contains('sidebar-overlay')) {
- const w = sl.dataset.collapsed === 'true' ? 0 : (parseInt(sl.style.width) || 240);
- hl.style.left = w + 'px';
- // Hide handle when sidebar collapsed, show when open
- hl.style.display = sl.dataset.collapsed === 'true' ? 'none' : '';
+  const w = sl.dataset.collapsed === 'true' ? 0 : (parseInt(sl.style.width) || 240);
+  hl.style.left = w + 'px';
  }
- // Right handle
  if (sr.classList.contains('sidebar-overlay')) {
- const w = sr.dataset.collapsed === 'true' ? 0 : (parseInt(sr.style.width) || 240);
- hr.style.right = w + 'px';
- // Hide handle when sidebar collapsed, show when open
- hr.style.display = sr.dataset.collapsed === 'true' ? 'none' : '';
+  const w = sr.dataset.collapsed === 'true' ? 0 : (parseInt(sr.style.width) || 240);
+  hr.style.right = w + 'px';
  }
 }
 
@@ -1429,62 +1192,15 @@ function syncOverlayHandles() {
 function toggleSidebar(id) {
  const s = document.getElementById(id);
  const collapsed = s.dataset.collapsed === 'true';
- const isMobile = window.innerWidth <= 768;
- 
- // Get handle ID
- const isLeft = id === 'sidebar-left';
- const handle = document.getElementById(isLeft ? 'resize-handle-left' : 'resize-handle-right');
- 
  if (collapsed) {
- // Open
- s.dataset.collapsed = 'false';
- handle.style.display = ''; // restore resize handle
- if (isMobile) {
- // Mobile: CSS controls width via .sidebar-overlay class.
- // Remove any inline width so the CSS class selector takes effect.
- s.style.width = '';
- s.classList.add('sidebar-overlay');
+  s.style.width = s.dataset.expandedWidth + 'px';
+  s.dataset.collapsed = 'false';
  } else {
- // Desktop: add overlay FIRST (position:absolute, out of flex flow),
- // THEN set width — avoids squishing the graph during transition
- const w = parseInt(s.dataset.expandedWidth) || 240;
- s.classList.add('sidebar-overlay');
- handle.classList.add('sidebar-overlay');
- s.style.width = w + 'px';
- s.dataset.expandedWidth = w;
- }
- } else {
- // Close
- s.dataset.collapsed = 'true';
- handle.style.display = 'none'; // hide resize handle when sidebar closed
- if (isMobile) {
- // Mobile: CSS handles width. Remove overlay class → CSS `width: 0` applies.
- s.classList.remove('sidebar-overlay');
- } else {
- // Desktop: set width to 0 but KEEP overlay (position:absolute) to avoid squishing graph.
- s.dataset.expandedWidth = parseInt(s.style.width) || 240;
- s.style.width = '0px';
- // Keep overlay on desktop always — sidebars stay position:absolute so graph never resizes
- }
+  s.dataset.expandedWidth = parseInt(s.style.width) || 240;
+  s.style.width = '0px';
+  s.dataset.collapsed = 'true';
  }
  syncOverlayHandles();
- syncObjectFrame();
-}
-
-// ── Sync Object Frame position with sidebar widths ──
-function syncObjectFrame() {
- const frame = document.getElementById('object-frame');
- if (frame.style.display === 'none') return;
- const sl = document.getElementById('sidebar-left');
- const sr = document.getElementById('sidebar-right');
- const slW = (sl.dataset.collapsed === 'true') ? 0 : (parseInt(sl.style.width) || 240);
- const srW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || 240);
- frame.style.left = slW + 'px';
- frame.style.width = 'calc(100% - ' + (slW + srW) + 'px)';
- const backBtn = document.getElementById('object-back-btn');
- if (backBtn.style.display !== 'none') {
-  backBtn.style.left = (slW + 12) + 'px';
- }
 }
 
 // ── Sidebar Resize ──
@@ -1507,12 +1223,11 @@ function initResize(handleId, sidebarId, isLeft) {
   if (frame.style.display !== 'none') frame.style.pointerEvents = 'none';
 
   const onPointerMove = (me) => {
-  const delta = isLeft ? me.clientX - startX : startX - me.clientX;
-  const maxW = window.innerWidth * 0.5;
-  const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
-  sidebar.style.width = newWidth + 'px';
-  syncOverlayHandles();
-  syncObjectFrame();
+   const delta = isLeft ? me.clientX - startX : startX - me.clientX;
+   const maxW = window.innerWidth * 0.5;
+   const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
+   sidebar.style.width = newWidth + 'px';
+   syncOverlayHandles();
   };
 
   const onPointerUp = () => {
@@ -1583,7 +1298,6 @@ document.addEventListener('drop', async (e) => {
 // Subject selector change
 document.getElementById('subject-select').addEventListener('change', (e) => {
  reloadAll(e.target.value);
- fitSubjectSelect();
 });
 
 // Sidebar toggle buttons
@@ -1652,110 +1366,12 @@ document.getElementById('btn-copy-preview').addEventListener('click', async () =
  document.removeEventListener('mouseup', onUp);
  };
  document.addEventListener('mousemove', onMove);
-         document.addEventListener('mouseup', onUp);
-     });
- })();
-
- // ── Chat Resize Handle (mirrors initPreviewResize pattern) ──
- (function initChatResize() {
-     const handle = document.getElementById('chat-resize-handle');
-     const chatSection = document.getElementById('chat-section');
-     const sidebar = document.getElementById('sidebar-left');
-     if (!handle || !chatSection || !sidebar) return;
-
-     const RATIO = 0.75;
-
-     // Set initial: 75% of sidebar
-     function setDefaultHeight() {
-         const sidebarH = sidebar.getBoundingClientRect().height;
-         if (sidebarH < 50) return;
-         chatSection.style.height = Math.round(sidebarH * RATIO) + 'px';
-     }
-
-     // Wait for layout
-     setTimeout(setDefaultHeight, 50);
-
-     // Recalc on window resize
-     let resizeTimer;
-     window.addEventListener('resize', () => {
-         clearTimeout(resizeTimer);
-         resizeTimer = setTimeout(setDefaultHeight, 100);
-     });
-
-     // Recalc on sidebar toggle
-     const sidebarObserver = new MutationObserver(() => setTimeout(setDefaultHeight, 50));
-     sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['data-collapsed', 'style'] });
-
-     // Drag — pixel based, same exact pattern as preview-resize-handle
-     handle.addEventListener('mousedown', (e) => {
-         e.preventDefault();
-         const startY = e.clientY;
-         const startH = chatSection.getBoundingClientRect().height;
-         handle.classList.add('active');
-         const sidebarH = sidebar.getBoundingClientRect().height;
-         const maxH = sidebarH * RATIO;
-         const minH = 80;
-         document.body.style.cursor = 'ns-resize';
-         document.body.style.userSelect = 'none';
-
-         const onMove = (me) => {
-             const delta = startY - me.clientY; // drag up = grow
-             const newH = Math.max(minH, Math.min(maxH, startH + delta));
-             chatSection.style.height = newH + 'px';
-             chatSection.style.maxHeight = 'none';
-         };
-         const onUp = () => {
-             handle.classList.remove('active');
-             document.body.style.cursor = '';
-             document.body.style.userSelect = '';
-             chatSection.style.maxHeight = '';
-             document.removeEventListener('mousemove', onMove);
-             document.removeEventListener('mouseup', onUp);
-         };
-         document.addEventListener('mousemove', onMove);
-         document.addEventListener('mouseup', onUp);
-     });
-
-     // Touch support
-     handle.addEventListener('touchstart', (e) => {
-         e.preventDefault();
-         const touch = e.touches[0];
-         const startY = touch.clientY;
-         const startH = chatSection.getBoundingClientRect().height;
-         handle.classList.add('active');
-         const sidebarH = sidebar.getBoundingClientRect().height;
-         const maxH = sidebarH * RATIO;
-         const minH = 80;
-
-         const onMove = (te) => {
-             const t = te.touches[0];
-             const delta = startY - t.clientY;
-             const newH = Math.max(minH, Math.min(maxH, startH + delta));
-             chatSection.style.height = newH + 'px';
-             chatSection.style.maxHeight = 'none';
-         };
-         const onEnd = () => {
-             handle.classList.remove('active');
-             chatSection.style.maxHeight = '';
-             document.removeEventListener('touchmove', onMove);
-             document.removeEventListener('touchend', onEnd);
-         };
-         document.addEventListener('touchmove', onMove, { passive: false });
-         document.addEventListener('touchend', onEnd);
-     }, { passive: false });
- })();
+ document.addEventListener('mouseup', onUp);
+ });
+})();
 
 // ── Search Functions ──
 let searchTimeout = null;
-let lastSearchQuery = '';
-
-function formatSnippet(s) {
- // Convert **bold** to <strong>
- s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
- // Convert [[wikilinks]] to styled spans
- s = s.replace(/\[\[([^\]]+)\]\]/g, '<span class="wiki-link-inline">$1</span>');
- return s;
-}
 
 function performSearch() {
  const q = document.getElementById('search-input').value.trim();
@@ -1764,13 +1380,8 @@ function performSearch() {
 
  if (q.length < 2) {
  resultsContainer.style.display = 'none';
- clearSearchHighlights();
  return;
  }
-
- // Clear previous search highlights in tree and graph
- clearSearchHighlights();
- lastSearchQuery = q;
 
  fetch('/api/search?q=' + encodeURIComponent(q) + '&subject=' + encodeURIComponent(subject))
  .then(r => r.json())
@@ -1781,8 +1392,8 @@ function performSearch() {
  return;
  }
  resultsContainer.innerHTML = data.results.map(r =>
- '<div class="search-result-item" data-path="' + r.path + '" data-query="' + q.replace(/"/g, '&quot;') + '" onclick="openSearchResult(this)">' +
- '<div class="search-result-snippet">' + formatSnippet(r.snippet) + '</div>' +
+ '<div class="search-result-item" data-path="' + r.path + '" onclick="openSearchResult(this)">' +
+ '<div class="search-result-snippet">' + r.snippet + '</div>' +
  '<div class="search-result-meta">' +
  '<span class="search-result-path">' + r.path + '</span>' +
  '<span class="search-result-count">' + r.match_count + ' match' + (r.match_count > 1 ? 'es' : '') + '</span>' +
@@ -1790,11 +1401,6 @@ function performSearch() {
  '</div>'
  ).join('');
  resultsContainer.style.display = 'block';
- 
- // Highlight matching tree items
- highlightSearchInTree(data.results);
- // Highlight matching graph nodes
- highlightSearchInGraph(q, data.results);
  })
  .catch(() => {
  resultsContainer.innerHTML = '<div style="padding:var(--space-3);color:var(--text-dim)">Search failed</div>';
@@ -1802,64 +1408,11 @@ function performSearch() {
  });
 }
 
-function clearSearchHighlights() {
- document.querySelectorAll('.tree-item-search-match').forEach(el => {
- el.classList.remove('tree-item-search-match');
- });
- // Clear graph search highlights
- if (window.searchHighlightedNodes) {
- window.searchHighlightedNodes = null;
- }
-}
-
-function highlightSearchInTree(results) {
- const treeContainer = document.getElementById('files-tree');
- const names = treeContainer.querySelectorAll('.tree-item-name');
- for (const el of names) {
- // Get the onclick attribute to extract the path
- const match = el.getAttribute('onclick')?.match(/'([^']+)'/);
- if (!match) continue;
- const filePath = match[1];
- // Check if this path is in the search results
- const found = results.some(r => r.path === filePath);
- if (found) {
- el.classList.add('tree-item-search-match');
- // Expand parent folders so the highlighted item is visible
- let parent = el.closest('.tree-children');
- while (parent) {
- parent.style.display = 'block';
- const toggle = parent.previousElementSibling;
- if (toggle && toggle.classList.contains('tree-folder-toggle')) {
- toggle.textContent = toggle.textContent.replace(/^.\S*/, '📂');
- }
- parent = parent.parentElement?.closest('.tree-children');
- }
- // Scroll first match into view
- el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
- }
- }
-}
-
-function highlightSearchInGraph(q, results) {
- if (!graphNodes || graphNodes.length === 0) return;
- const qLower = q.toLowerCase();
- // Find nodes whose title or label matches the search
- const matched = [];
- for (const node of graphNodes) {
- const label = (node.title || node.label || '').toLowerCase();
- if (label.includes(qLower)) {
- matched.push(node.id);
- }
- }
- window.searchHighlightedNodes = matched;
-}
-
 function openSearchResult(el) {
  const path = el.dataset.path;
- const query = el.dataset.query || '';
  document.getElementById('search-results').style.display = 'none';
- // Keep highlights and search input visible after selection
- showFilePreview(path, query);
+ document.getElementById('search-input').value = '';
+ showFilePreview(path);
 }
 
 // Close search results on click outside
@@ -1935,56 +1488,27 @@ let labelsVisible = false;        // Toggle all labels on/off
 let settleFrameCount = 0;         // Frames since all nodes settled
 let hasZoomedToFit = false;       // Whether we've auto-fitted once
 
-// Physics constants (balanced Obsidian-style spread)
-const REPULSION = 25000;
-const SPRING_LENGTH = 240;
-const SPRING_K = 0.003;
-const CENTER_GRAVITY = 0.0015;
-const DAMPING = 0.85;
-const MIN_VELOCITY = 0.005;
-const COLLISION_RADIUS = 1.4;
-const SETTLE_VELOCITY = 0.1;
-const SETTLE_FRAMES = 120;
+// Physics constants (Obsidian-style — gentler, wider, smoother)
+const REPULSION = 12000;           // Increased for better spread
+const SPRING_LENGTH = 160;         // Longer edges for clarity
+const SPRING_K = 0.006;            // Softer springs
+const CENTER_GRAVITY = 0.002;      // Looser center pull
+const DAMPING = 0.92;              // Smoother settle
+const MIN_VELOCITY = 0.005;        // Lower threshold for settling
+const COLLISION_RADIUS = 1.6;      // Collision buffer multiplier
+const SETTLE_VELOCITY = 0.1;       // Below this → considered settled
+const SETTLE_FRAMES = 60;          // Consecutive settled frames before zoom-to-fit
 
 // Type → halo color map (concept=blue, definition=green, formula=orange, exercise=purple, ghost=dim)
 const TYPE_HALOS = {
-  concept:   { halo: 'rgba(99,102,241,0.50)',  glow: 'rgba(99,102,241,0.25)' },
-  definition:{ halo: 'rgba(34,197,94,0.50)',   glow: 'rgba(34,197,94,0.25)' },
-  formula:   { halo: 'rgba(249,115,22,0.50)',  glow: 'rgba(249,115,22,0.25)' },
-  exercise:  { halo: 'rgba(168,85,247,0.50)',  glow: 'rgba(168,85,247,0.25)' },
-  wiki_page: { halo: 'rgba(99,102,241,0.40)',  glow: 'rgba(99,102,241,0.16)' },
-  ghost:     { halo: 'rgba(100,100,120,0.28)', glow: 'rgba(100,100,120,0.10)' },
-  note:      { halo: 'rgba(34,211,238,0.40)',  glow: 'rgba(34,211,238,0.16)' },
+  concept:   { halo: 'rgba(99,102,241,0.15)',  glow: 'rgba(99,102,241,0.06)' },
+  definition:{ halo: 'rgba(34,197,94,0.15)',   glow: 'rgba(34,197,94,0.06)' },
+  formula:   { halo: 'rgba(249,115,22,0.15)',  glow: 'rgba(249,115,22,0.06)' },
+  exercise:  { halo: 'rgba(168,85,247,0.15)',  glow: 'rgba(168,85,247,0.06)' },
+  wiki_page: { halo: 'rgba(99,102,241,0.12)',  glow: 'rgba(99,102,241,0.04)' },
+  ghost:     { halo: 'rgba(100,100,120,0.08)', glow: 'rgba(100,100,120,0.03)' },
+  note:      { halo: 'rgba(34,211,238,0.12)',  glow: 'rgba(34,211,238,0.04)' },
 };
-
-// ── Glow mode state ──
-let glowMode = 'source'; // 'type' | 'topic' | 'source'
-
-// ── Deterministic string → HSL color (consistent hue per tag/source) ──
-function strToColor(str, alphaHalo = 0.50, alphaGlow = 0.25) {
-  if (!str) return null;
-  let hash = 0;
-  for (let i = 0; i < str.length; i++)
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  const hue = ((hash % 360) + 360) % 360;
-  return {
-    halo:  `hsla(${hue}, 55%, 55%, ${alphaHalo})`,
-    glow:  `hsla(${hue}, 55%, 55%, ${alphaGlow})`,
-  };
-}
-
-// ── Resolve halo colors based on current glow mode ──
-function getHaloForNode(node) {
-  if (glowMode === 'topic') {
-    const tag = (node.tags && node.tags.length > 0) ? node.tags[0] : null;
-    if (tag) return strToColor(tag);
-  }
-  if (glowMode === 'source') {
-    if (node.source_url) return strToColor(node.source_url);
-  }
-  // Fallback: type-based
-  return TYPE_HALOS[node.type] || TYPE_HALOS.note;
-}
 
 // ── Graph: Resize Canvas ──
 function resizeGraphCanvas() {
@@ -2022,8 +1546,8 @@ function initGraph(data) {
     return {
       ...n,
       // Start at center for smooth ease-out animation
-      x: cx + (Math.random() - 0.5) * w * 0.6,
-      y: cy + (Math.random() - 0.5) * h * 0.6,
+      x: cx + (Math.random() - 0.5) * w * 0.15,
+      y: cy + (Math.random() - 0.5) * h * 0.15,
       vx: 0,
       vy: 0,
       radius: r,
@@ -2034,28 +1558,19 @@ function initGraph(data) {
   graphEdges = data.edges || [];
   selectedNode = null;
   hoveredNode = null;
-
-  // Initial zoom proportional to node count: more nodes = zoomed out
-  const nodeCount = graphNodes.length;
-  const idealZoom = nodeCount <= 5 ? 1.2 : nodeCount <= 15 ? 1.0 : nodeCount <= 30 ? 0.75 : 0.5;
-  graphZoom = Math.min(idealZoom, 1.5);
-  // Center the view on the spawn area (nodes start near cx,cy)
-  graphPanX = w / 2 * (1 - graphZoom);
-  graphPanY = h / 2 * (1 - graphZoom);
+  graphZoom = 1.0;
+  graphPanX = 0;
+  graphPanY = 0;
   lastInteraction = Date.now();
   useThrottle = false;
   settleFrameCount = 0;
   hasZoomedToFit = false;
 
   simulationStep();
-  // Show labels toggle and glow mode button only when graph has nodes
+  // Show labels toggle only when graph has nodes
   document.getElementById('labels-toggle').style.display =
     graphNodes.length > 0 ? 'inline-flex' : 'none';
-  document.getElementById('glow-mode-btn').style.display =
-  graphNodes.length > 0 ? 'inline-flex' : 'none';
-  document.getElementById('fit-graph-btn').style.display =
-  graphNodes.length > 0 ? 'inline-flex' : 'none';
-  }
+}
 
 // ── Graph: Stop Loop ──
 function stopGraphLoop() {
@@ -2092,9 +1607,8 @@ function simulationStep() {
       let dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1) dist = 1;
 
-      // Size-proportional Coulomb repulsion (clamped to prevent nuke-and-oscillate)
-      const repMag = REPULSION * (a.radius + b.radius) / 30;
-      const force = Math.min(repMag / (dist * dist), 50);
+      // Coulomb repulsion
+      const force = REPULSION / (dist * dist);
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       if (!a.pinned) { a.vx -= fx; a.vy -= fy; }
@@ -2150,13 +1664,15 @@ function simulationStep() {
     if (speed > maxSpeed) maxSpeed = speed;
   }
 
-  // ── Auto zoom-to-fit after 2s ──
-  if (!hasZoomedToFit && !selectedNode && n > 20) {
+  // ── Settle tracking → zoom-to-fit ──
+  if (maxSpeed < SETTLE_VELOCITY && n > 0) {
     settleFrameCount++;
-    if (settleFrameCount >= SETTLE_FRAMES) {
+    if (settleFrameCount >= SETTLE_FRAMES && !hasZoomedToFit && !selectedNode) {
       zoomToFit();
       hasZoomedToFit = true;
     }
+  } else {
+    settleFrameCount = 0;
   }
 
   // ── Draw ──
@@ -2164,10 +1680,10 @@ function simulationStep() {
 
   // ── Throttle check ──
   const elapsed = Date.now() - lastInteraction;
-  if (elapsed > 60000 && !useThrottle) {
+  if (elapsed > 3000 && !useThrottle) {
     useThrottle = true;
   }
-  if (elapsed < 60000 && useThrottle) {
+  if (elapsed < 3000 && useThrottle) {
     useThrottle = false;
   }
 
@@ -2204,7 +1720,7 @@ function drawGraph() {
 
     // Edge weight: combined link density of source + target
     const weight = ((src.link_count || 0) + (tgt.link_count || 0)) / 2;
-    const alpha = Math.min(0.6, Math.max(0.18, weight / maxLinks));
+    const alpha = Math.min(0.7, Math.max(0.15, weight / maxLinks));
 
     ctx.beginPath();
     ctx.moveTo(src.x, src.y);
@@ -2216,14 +1732,14 @@ function drawGraph() {
       ctx.strokeStyle = `rgba(26,26,46,0.3)`;
       ctx.lineWidth = 0.5 / graphZoom;
     } else {
-      ctx.strokeStyle = `rgba(90,100,150,${alpha})`;
+      ctx.strokeStyle = `rgba(37,37,64,${alpha})`;
       ctx.lineWidth = Math.max(0.8, 1.2 * alpha) / graphZoom;
     }
     ctx.stroke();
 
     // Arrowhead
     const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
-    const arrowLen = 6 / graphZoom;
+    const arrowLen = 8 / graphZoom;
     const arrowW = Math.PI / 7;
     const tipX = tgt.x - Math.cos(angle) * (tgt.radius + 2);
     const tipY = tgt.y - Math.sin(angle) * (tgt.radius + 2);
@@ -2232,7 +1748,7 @@ function drawGraph() {
     ctx.lineTo(tipX - arrowLen * Math.cos(angle - arrowW), tipY - arrowLen * Math.sin(angle - arrowW));
     ctx.lineTo(tipX - arrowLen * Math.cos(angle + arrowW), tipY - arrowLen * Math.sin(angle + arrowW));
     ctx.closePath();
-    ctx.fillStyle = isHighlighted ? 'rgba(99,102,241,0.85)' : isDimmed ? 'rgba(26,26,46,0.3)' : `rgba(90,100,150,${alpha})`;
+    ctx.fillStyle = isHighlighted ? 'rgba(99,102,241,0.85)' : isDimmed ? 'rgba(26,26,46,0.3)' : `rgba(37,37,64,${alpha})`;
     ctx.fill();
   }
 
@@ -2251,8 +1767,8 @@ function drawGraph() {
     const theme = subjectThemes[node.subject] || {};
     const fillColor = theme.primary || '#6366f1';
 
-    // Type/topic/source-based gradient halo (feathered edge)
-    const typeHalo = getHaloForNode(node);
+    // Type-based gradient halo (feathered edge)
+    const typeHalo = TYPE_HALOS[node.type] || TYPE_HALOS.note;
     const haloSize = node.radius * 3.5;
     const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, haloSize);
     gradient.addColorStop(0, isDimmed ? 'rgba(26,26,46,0.08)' : typeHalo.halo);
@@ -2267,14 +1783,6 @@ function drawGraph() {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
       ctx.fillStyle = isSelected ? fillColor + '30' : typeHalo.glow;
-      ctx.fill();
-    }
-    // Search highlight glow
-    if (!hovered && !isSelected && window.searchHighlightedNodes &&
-        window.searchHighlightedNodes.includes(node.id)) {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
-      ctx.fillStyle = '#8b5cf640';
       ctx.fill();
     }
 
@@ -2329,7 +1837,7 @@ function drawGraph() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = isDimmed ? '#505068' : '#e8e8f0';
-      ctx.fillText(node.title || node.label, node.x, node.y + node.radius + 14 / graphZoom);
+      ctx.fillText(node.label, node.x, node.y + node.radius + 14 / graphZoom);
     }
   }
 
@@ -2442,19 +1950,6 @@ document.getElementById('labels-toggle').addEventListener('click', () => {
   document.getElementById('labels-toggle').classList.toggle('active', labelsVisible);
 });
 
-// ── Graph: Glow Mode Toggle ──
-document.getElementById('glow-mode-btn').addEventListener('click', () => {
- const modes = ['type', 'topic', 'source'];
- const labels = { type: '⊙ Type', topic: '⊙ Topic', source: '⊙ Source' };
- const idx = modes.indexOf(glowMode);
- glowMode = modes[(idx + 1) % modes.length];
- document.getElementById('glow-mode-btn').textContent = labels[glowMode];
-});
-
-document.getElementById('fit-graph-btn').addEventListener('click', () => {
- if (typeof zoomToFit === 'function') zoomToFit();
-});
-
 // ── Graph: Mouse Down ──
 graphCanvas.addEventListener('mousedown', (e) => {
  const rect = graphCanvas.getBoundingClientRect();
@@ -2507,10 +2002,17 @@ graphCanvas.addEventListener('mousemove', (e) => {
  graphPanY = panStartPanY + (e.clientY - panStartY);
  lastInteraction = Date.now();
  } else {
-   // Track hovered node for inline label display
-   const node = findNodeAt(world.x, world.y);
-   hoveredNode = node;
-   // No floating tooltip card — inline label renders below node
+ // Tooltip on hover + hoveredNode tracking for label
+ const node = findNodeAt(world.x, world.y);
+ hoveredNode = node;
+ if (node) {
+   graphTooltip.style.display = 'block';
+   graphTooltip.style.left = (sx + 14) + 'px';
+   graphTooltip.style.top = (sy - 10) + 'px';
+   graphTooltip.innerHTML = `<strong>${node.label}</strong>`;
+ } else {
+ graphTooltip.style.display = 'none';
+ }
  }
  });
 
@@ -2545,123 +2047,6 @@ graphCanvas.addEventListener('mouseup', (e) => {
  mouseDownPos = null;
  lastInteraction = Date.now();
 });
-
-// ── Graph: Touch Events (Mobile) ──
-graphCanvas.addEventListener('touchstart', (e) => {
- e.preventDefault();
- if (e.touches.length === 2) {
-  // Pinch-to-zoom start — store initial distance only
-  const t = e.touches;
-  graphCanvas._pinchDist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-  return;
- }
- const rect = graphCanvas.getBoundingClientRect();
- const touch = e.touches[0];
- const sx = touch.clientX - rect.left;
- const sy = touch.clientY - rect.top;
- const world = screenToWorld(sx, sy);
-
- mouseDownPos = { x: touch.clientX, y: touch.clientY };
- hasDragged = false;
-
- const node = findNodeAt(world.x, world.y);
- if (node) {
-  dragNode = node;
-  dragNode._tempPinned = !node.pinned;
-  node.pinned = true;
- } else {
-  isPanning = true;
-  panStartX = touch.clientX;
-  panStartY = touch.clientY;
-  panStartPanX = graphPanX;
-  panStartPanY = graphPanY;
- }
- lastInteraction = Date.now();
-}, { passive: false });
-
-graphCanvas.addEventListener('touchmove', (e) => {
- e.preventDefault();
- const rect = graphCanvas.getBoundingClientRect();
-
- // Pinch-to-zoom (two fingers)
- if (e.touches.length === 2) {
-  const rect = graphCanvas.getBoundingClientRect();
-  const t = e.touches;
-  const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-  const midX = (t[0].clientX + t[1].clientX) / 2 - rect.left;
-  const midY = (t[0].clientY + t[1].clientY) / 2 - rect.top;
-
-  // Pan by midpoint movement (move while pinching)
-  if (graphCanvas._pinchPrevMid) {
-    graphPanX += midX - graphCanvas._pinchPrevMid.x;
-    graphPanY += midY - graphCanvas._pinchPrevMid.y;
-  }
-
-  if (graphCanvas._pinchDist) {
-   const ratio = dist / graphCanvas._pinchDist;
-   const newZoom = Math.max(0.08, Math.min(3.0, graphZoom * ratio));
-   // Zoom towards midpoint — delta-based like the wheel handler
-   graphPanX = midX - (midX - graphPanX) * (newZoom / graphZoom);
-   graphPanY = midY - (midY - graphPanY) * (newZoom / graphZoom);
-   graphZoom = newZoom;
-  }
-  graphCanvas._pinchDist = dist;
-  graphCanvas._pinchPrevMid = { x: midX, y: midY };
-  lastInteraction = Date.now();
-  return;
- }
- const touch = e.touches[0];
- const sx = touch.clientX - rect.left;
- const sy = touch.clientY - rect.top;
- const world = screenToWorld(sx, sy);
-
- if (dragNode) {
-  if (mouseDownPos) {
-   const dx = touch.clientX - mouseDownPos.x;
-   const dy = touch.clientY - mouseDownPos.y;
-   if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasDragged = true;
-  }
-  dragNode.x = world.x;
-  dragNode.y = world.y;
-  dragNode.vx = 0;
-  dragNode.vy = 0;
-  lastInteraction = Date.now();
- } else if (isPanning) {
-  graphPanX = panStartPanX + (touch.clientX - panStartX);
-  graphPanY = panStartPanY + (touch.clientY - panStartY);
-  lastInteraction = Date.now();
- }
-}, { passive: false });
-
-graphCanvas.addEventListener('touchend', (e) => {
- e.preventDefault();
- // Handle pinch-zoom end — reset touch tracking
- graphCanvas._pinchDist = null;
- graphCanvas._pinchPrevMid = null;
- if (dragNode) {
-  if (!hasDragged) {
-   if (selectedNode && selectedNode.id === dragNode.id) {
-    selectedNode = null;
-    highlightFileInTree(null);
-   } else {
-    selectedNode = dragNode;
-    highlightFileInTree(dragNode);
-   }
-  }
-  if (dragNode._tempPinned) {
-   dragNode.pinned = false;
-   delete dragNode._tempPinned;
-  }
- } else if (!hasDragged && e.changedTouches.length === 1) {
-  // Tap on empty space → deselect
-  selectedNode = null;
-  highlightFileInTree(null);
- }
- dragNode = null;
- isPanning = false;
- mouseDownPos = null;
- lastInteraction = Date.now();
-}, { passive: false });
 
 // ── Graph: Click on empty space — deselect ──
 graphCanvas.addEventListener('click', (e) => {
@@ -2700,7 +2085,7 @@ graphCanvas.addEventListener('wheel', (e) => {
  const sy = e.clientY - rect.top;
 
  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
- const newZoom = Math.max(0.08, Math.min(3.0, graphZoom * zoomFactor));
+ const newZoom = Math.max(0.3, Math.min(3.0, graphZoom * zoomFactor));
 
  // Zoom towards cursor
  graphPanX = sx - (sx - graphPanX) * (newZoom / graphZoom);
@@ -2710,26 +2095,6 @@ graphCanvas.addEventListener('wheel', (e) => {
  lastInteraction = Date.now();
 }, { passive: false });
 
-// ── Mobile: Tap outside sidebar to close ──
-function closeSidebarsIfMobile(e) {
- if (window.innerWidth > 768) return;
- const left = document.getElementById('sidebar-left');
- const right = document.getElementById('sidebar-right');
- const btnLeft = document.getElementById('btn-toggle-left');
- const btnRight = document.getElementById('btn-toggle-right');
- if (left.contains(e.target) || right.contains(e.target)) return;
- if (e.target === btnLeft || e.target === btnRight) return;
- if (left.dataset.collapsed === 'false') toggleSidebar('sidebar-left');
- if (right.dataset.collapsed === 'false') toggleSidebar('sidebar-right');
-}
-document.addEventListener('click', closeSidebarsIfMobile);
-document.addEventListener('touchstart', (e) => {
- if (window.innerWidth > 768) return;
- // Only close on touch outside — not on interactive elements
- if (e.target.closest('button, select, input, a, .resize-handle')) return;
- closeSidebarsIfMobile(e);
-}, { passive: true });
-
 // ── Graph: Window resize ──
 window.addEventListener('resize', () => {
  if (graphCanvas.style.display !== 'none') {
@@ -2737,39 +2102,8 @@ window.addEventListener('resize', () => {
  }
 });
 
-// ── Subject Select: dynamic width ──
-function fitSubjectSelect() {
- const sel = document.getElementById('subject-select');
- if (!sel) return;
- // Measure the width of the currently selected option text
- const canvas = document.createElement('canvas').getContext('2d');
- canvas.font = getComputedStyle(sel).font;
- const text = sel.options[sel.selectedIndex]?.textContent || '';
- const pad = 32; // padding + dropdown arrow
- const measured = Math.ceil(canvas.measureText(text).width) + pad;
- sel.style.width = Math.max(100, Math.min(measured, 240)) + 'px';
-}
-
 // ── Initialise ──
 loadSubjects();
-// initChat may already be defined (defer script ran) or not yet — handle both
-if (typeof initChat === 'function') initChat();
-else document.addEventListener('DOMContentLoaded', initChat);
-
-// On mobile, collapse sidebars initially
-if (window.innerWidth <= 768) {
-  ['sidebar-left', 'sidebar-right'].forEach(id => {
-    const s = document.getElementById(id);
-    if (s) {
-      s.dataset.expandedWidth = 240;
-      s.dataset.collapsed = 'true';
-      // On mobile, CSS controls width (0 for closed, 280px when .sidebar-overlay).
-      // Don't set inline style.width — it would conflict with the CSS class selector.
-      // Just ensure overlay class is removed so they start hidden.
-      s.classList.remove('sidebar-overlay');
-    }
-  });
-}
 
 // ── Ingest Status Polling ──
 let ingestPollTimer = null;

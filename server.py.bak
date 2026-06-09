@@ -11,33 +11,17 @@ import socketserver
 import subprocess
 import threading
 import time
-import unicodedata
 import urllib.parse
 import yaml
-from chat import handle_chat_start, handle_chat_stream, handle_chat_save, handle_chat_load, AVAILABLE_MODELS
+
 VAULT = os.path.expanduser("~/study-vault")
 STUDY_DIR = os.path.expanduser("~/study")
 PORT = 8081
-HOST = "0.0.0.0"
-NIM_API_KEY = ""
-NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
-# Load config.yaml if present
-_CFG_PATH = os.path.join(STUDY_DIR, "config.yaml")
-if os.path.isfile(_CFG_PATH):
-    try:
-        with open(_CFG_PATH) as _f:
-            _cfg = yaml.safe_load(_f) or {}
-        VAULT = os.path.expanduser(_cfg.get("vault_path", VAULT))
-        PORT = _cfg.get("port", PORT)
-        HOST = _cfg.get("host", HOST)
-        NIM_API_KEY = _cfg.get("nim_api_key", NIM_API_KEY)
-        NIM_BASE_URL = _cfg.get("nim_base_url", NIM_BASE_URL)
-    except Exception as e:
-        print(f"Warning: config.yaml load failed: {e}")
 # Ingest state (single-threaded server, so no threading lock needed)
 _ingest_running = False
-_ingest_result = None # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
+_ingest_queue = []  # list of tasks waiting for ingest
+_ingest_result = None  # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
 _ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
 _ingest_current_subject = None # subject currently being ingested (used for live progress)
 _ingest_initial_wiki_count = 0 # wiki/ .md file count BEFORE ingest started (for progress tracking)
@@ -63,9 +47,8 @@ def _resolve_vault_path(rel_path):
 
 
 def slugify(text):
-    """Slugify a filename: lowercase, normalize unicode, strip special chars, spaces to hyphens."""
-    text = unicodedata.normalize('NFD', text.lower().strip())
-    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    """Slugify a filename: lowercase, strip special chars, spaces to hyphens."""
+    text = text.lower().strip()
     text = re.sub(r'[^\w\s-]', '', text)
     text = re.sub(r'[\s_]+', '-', text)
     text = re.sub(r'-+', '-', text)
@@ -153,7 +136,7 @@ def _read_node_meta(subject, node_id):
             continue
         with open(fpath, encoding="utf-8") as f:
             content = f.read()
-        meta = {"type": default_type, "created": None, "tags": [], "source_url": None, "title": None}
+        meta = {"type": default_type, "created": None, "tags": []}
         if not content.startswith("---\n"):
             return meta
         end = content.find("\n---\n", 4)
@@ -170,21 +153,17 @@ def _read_node_meta(subject, node_id):
                     meta["tags"] = [t.strip(" \"'") for t in raw[1:-1].split(",") if t.strip()]
                 elif raw:
                     meta["tags"] = [raw]
-            elif line.startswith("title:"):
-                meta["title"] = line.split(":", 1)[1].strip().strip("\"'")
-            elif line.startswith("source_url:"):
-                meta["source_url"] = line.split(":", 1)[1].strip().strip("\"'")
         return meta
     # Fallback to legacy dirs
     legacy_dirs = [("concepts", "concept"), ("definitions", "definition"),
                    ("formulas", "formula"), ("exercises", "exercise")]
     for d, default_type in legacy_dirs:
-        dpath = os.path.join(VAULT, "subjects", subject, d, f"{node_id}.md")
-        if not os.path.isfile(dpath):
+        fpath = os.path.join(VAULT, "subjects", subject, d, f"{node_id}.md")
+        if not os.path.isfile(fpath):
             continue
-        with open(dpath, encoding="utf-8") as f:
+        with open(fpath, encoding="utf-8") as f:
             content = f.read()
-        meta = {"type": default_type, "created": None, "tags": [], "source_url": None, "title": None}
+        meta = {"type": default_type, "created": None, "tags": []}
         if not content.startswith("---\n"):
             return meta
         end = content.find("\n---\n", 4)
@@ -201,12 +180,8 @@ def _read_node_meta(subject, node_id):
                     meta["tags"] = [t.strip(" \"'") for t in raw[1:-1].split(",") if t.strip()]
                 elif raw:
                     meta["tags"] = [raw]
-            elif line.startswith("title:"):
-                meta["title"] = line.split(":", 1)[1].strip().strip("\"'")
-            elif line.startswith("source_url:"):
-                meta["source_url"] = line.split(":", 1)[1].strip().strip("\"'")
         return meta
-    return {"type": "note", "created": None, "tags": [], "source_url": None, "title": None}
+    return {"type": "note", "created": None, "tags": []}
 
 
 def _parse_relationships(subject):
@@ -257,13 +232,11 @@ def _parse_relationships(subject):
         obj = {
             "id": node_id,
             "label": node_id,
-            "title": meta.get("title") or node_id,
             "subject": subject,
             "link_count": 0,
             "type": meta["type"],
             "created": meta["created"],
             "tags": meta["tags"],
-            "source_url": meta.get("source_url"),
             "file_count": name_counts[node_id],
         }
         nodes.append(obj)
@@ -331,7 +304,7 @@ def _parse_relationships(subject):
         edges.append({"source": src, "target": tgt})
         backlink_map.setdefault(tgt, set()).add(src)
 
-    def _resolve_target(target, source_id):
+    def _resolve(target, source_id):
         """Resolve a [[link]] to a node id (port of vaultParser.js §8.3)."""
         t = target.strip()
         if t in node_map:
@@ -380,7 +353,7 @@ def _parse_relationships(subject):
             for m in WIKILINK_RE.finditer(body):
                 link_part = m.group(1).split("|")[0]  # discard display alias
                 target = link_part.split("#")[0].strip()  # discard heading
-                resolved = _resolve_target(target, source_id)
+                resolved = _resolve(target, source_id)
                 if resolved:
                     _add_edge(source_id, resolved)
                 else:
@@ -468,18 +441,11 @@ def _count_objects(subject):
 
 # Object type detection
 OBJECT_TYPE_PREFIXES = {
- "mock-": "mock",
- "cheat-": "cheat",
- "mindmap-": "mindmap",
- "formula-": "formula",
- "flash-": "flash",
-}
-
-OBJECT_TYPE_KEYWORDS = {
- "examen": "mock", "practica": "mock",
- "summary": "cheat", "mapa": "mindmap",
- "concept": "cheat", "calculus": "formula",
- "flashcard": "flash", "card": "flash",
+    "mock-": "mock",
+    "cheat-": "cheat",
+    "mindmap-": "mindmap",
+    "formula-": "formula",
+    "flash-": "flash",
 }
 
 TITLE_SUFFIX_RE = re.compile(r'-v\d+\.html$')
@@ -488,11 +454,6 @@ TITLE_SUFFIX_RE = re.compile(r'-v\d+\.html$')
 def _infer_object_type(filename):
     for prefix, obj_type in OBJECT_TYPE_PREFIXES.items():
         if filename.startswith(prefix):
-            return obj_type
-    # Content-based fallback
-    lower = filename.lower()
-    for keyword, obj_type in OBJECT_TYPE_KEYWORDS.items():
-        if keyword in lower:
             return obj_type
     return "unknown"
 
@@ -849,10 +810,8 @@ STEP 1 — Read SCHEMA.md at ~/study-vault/subjects/{subject}/SCHEMA.md if it ex
 Follow its page format, frontmatter, and interlinking rules. If SCHEMA.md says to "discuss" or "ask the user", SKIP that step — this is automated.
 
 If SCHEMA.md does NOT exist, use these defaults:
-- Page format: markdown with YAML frontmatter (title, created, type, tags, source_url)
+- Page format: markdown with YAML frontmatter (title, created, type, tags)
 - Frontmatter type: one of source_summary, concept, formula, definition, exercise
-- `tags`: exactly ONE topic tag per page (e.g., `tags: [arrays]`). Pick the single most specific topic.
-- `source_url`: path to the raw file this page derives from (e.g., `source_url: raw/2026-cd-tp6.md`)
 - Source summaries: name them `src-{{base-name}}` (e.g., `src-2026-cd-tp6.md`) — never reuse raw/ filenames
 - Create BOTH a source summary page per raw file AND concept pages for each distinct concept
 - Use [[wikilinks]] with exact lowercase-hyphen filenames (e.g., `[[cable-coaxial]]`, not `[[Cable Coaxial]]`)
@@ -1090,7 +1049,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, abs_path, content_type, cache_control=None):
+    def _send_file(self, abs_path, content_type):
         if not os.path.isfile(abs_path):
             self._send_json(404, {"error": "not_found", "detail": "File not found"})
             return
@@ -1098,8 +1057,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             body = f.read()
         self.send_response(200)
         self._set_cors()
-        if cache_control:
-            self.send_header("Cache-Control", cache_control)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -1654,14 +1611,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 if count == 0:
                     continue
 
-                # Find all match positions (line numbers)
-                lines = content.splitlines(keepends=True)
-                match_positions = []
-                search_idx = 0
-                for line_no, line in enumerate(lines, 1):
-                    if q_lower in line.lower():
-                        match_positions.append(line_no)
-                
                 idx = content.lower().find(q_lower)
                 start = max(0, idx - 75)
                 end = min(len(content), idx + 75)
@@ -1680,7 +1629,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                     "subject": subj,
                     "snippet": snippet,
                     "match_count": count,
-                    "match_positions": match_positions,
                 })
 
         results.sort(key=lambda r: r["match_count"], reverse=True)
@@ -1712,7 +1660,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             "pending_total": _ingest_total_pending,
             "initial_total": _ingest_initial_total,
             "wiki_pages_created": wiki_pages_created,
-            "queue_length": 0,
+            "queue_length": len(_ingest_queue),
             "result": _ingest_result,
         })
     def _api_original(self, params):
@@ -1909,7 +1857,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             params = urllib.parse.parse_qs(parsed.query)
 
             if path == "/":
-                self._send_file(os.path.join(STUDY_DIR, "index.html"), "text/html; charset=utf-8", cache_control="no-cache, no-store, must-revalidate")
+                self._send_file(os.path.join(STUDY_DIR, "index.html"), "text/html; charset=utf-8")
             elif path == "/api/health":
                 self._send_json(200, {"status": "ok", "vault": VAULT})
             elif path == "/api/subjects":
@@ -1936,18 +1884,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 self._api_original(params)
             elif path == "/api/pending-state":
                 self._api_pending_state(params)
-            elif path == "/api/chat-load":
-                handle_chat_load(self, params)
-            elif path == "/api/model":
-                self._send_json(200, {"available_models": AVAILABLE_MODELS, "model": AVAILABLE_MODELS[0]})
-            elif path.startswith("/static/"):
-                static_path = os.path.join(STUDY_DIR, path.lstrip("/"))
-                if path.endswith(".css"):
-                    self._send_file(static_path, "text/css; charset=utf-8", cache_control="no-cache, no-store, must-revalidate")
-                elif path.endswith(".js"):
-                    self._send_file(static_path, "application/javascript; charset=utf-8", cache_control="no-cache, no-store, must-revalidate")
-                else:
-                    self._send_json(404, {"error": "not_found"})
             else:
                 self._send_json(404, {"error": "not_found", "detail": f"Route not found: {path}"})
         except Exception as e:
@@ -1970,12 +1906,6 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 self._api_update_wiki()
             elif path == "/api/regenerate-index":
                 self._api_regenerate_index(params=None)
-            elif path == "/api/chat-start":
-                handle_chat_start(self)
-            elif path == "/api/chat-stream":
-                handle_chat_stream(self)
-            elif path == "/api/chat-save":
-                handle_chat_save(self)
             else:
                 self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
         except Exception as e:
@@ -1985,10 +1915,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    import sys
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer((HOST, PORT), StudyHandler) as httpd:
-        print(f"Study server on {HOST}:{PORT}")
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("", PORT), StudyHandler) as httpd:
+        print(f"Study server on :{PORT}")
         httpd.serve_forever()
