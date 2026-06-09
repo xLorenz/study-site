@@ -73,6 +73,33 @@ def start_background_task(subject, user_message, conversation, model):
     return task_id
 
 
+def _normalize_conversation(conversation):
+    """Normalize tool_calls in conversation messages to the OpenAI API format."""
+    normalized = []
+    for msg in conversation:
+        entry = {"role": msg["role"], "content": msg.get("content", "")}
+        if msg["role"] == "assistant" and "tool_calls" in msg and msg["tool_calls"]:
+            normalized_tcs = []
+            for tc in msg["tool_calls"]:
+                if isinstance(tc, dict):
+                    tc_id = tc.get("id") or f"tc_{uuid.uuid4().hex[:8]}"
+                    # Handle both stored format {name, arguments} and OpenAI format {id, type, function}
+                    fn = tc.get("function", {})
+                    tc_name = tc.get("name", fn.get("name", "unknown"))
+                    raw_args = tc.get("arguments", fn.get("arguments", "{}"))
+                    if isinstance(raw_args, dict):
+                        raw_args = json.dumps(raw_args)
+                    normalized_tcs.append({
+                        "id": tc_id,
+                        "type": "function",
+                        "function": {"name": tc_name, "arguments": raw_args}
+                    })
+            if normalized_tcs:
+                entry["tool_calls"] = normalized_tcs
+        normalized.append(entry)
+    return normalized
+
+
 def _run_task(task_id, task, subject, user_message, conversation, model):
     """Run the full stream_chat generator, writing events to task.buffer."""
     from .prompt import build_chat_system_prompt
@@ -82,7 +109,7 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         system_prompt = build_chat_system_prompt(subject)
 
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(conversation)
+        messages.extend(_normalize_conversation(conversation))
         messages.append({"role": "user", "content": user_message})
 
         assistant_content = ""

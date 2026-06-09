@@ -1,6 +1,7 @@
 """SSE HTTP handlers for the study chat system."""
 
 import json
+import time
 
 from . import state
 from .types import CHATS_DIR, MAX_BODY_SIZE
@@ -68,7 +69,16 @@ def handle_chat_stream(handler):
 
     try:
         while True:
-            event = task.buffer.get()
+            try:
+                event = task.buffer.get(timeout=15)
+            except Exception:
+                # Queue empty for 15s — send keepalive comment
+                try:
+                    handler.wfile.write(b": keepalive\n\n")
+                    handler.wfile.flush()
+                except Exception:
+                    pass
+                continue
             if event["type"] == "_task_done":
                 break
 

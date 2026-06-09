@@ -1224,18 +1224,23 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         obj_dir = os.path.join(VAULT, "objects", subject)
         objects = []
         if os.path.isdir(obj_dir):
-            for fname in sorted(os.listdir(obj_dir)):
+            for fname in os.listdir(obj_dir):
                 if fname.startswith(".") or not fname.endswith(".html"):
                     continue
                 fpath = os.path.join(obj_dir, fname)
                 size = os.path.getsize(fpath)
+                mtime = os.path.getmtime(fpath)
                 objects.append({
                     "name": fname,
                     "path": f"objects/{subject}/{fname}",
                     "type": _infer_object_type(fname),
                     "title": _infer_object_title(fname),
                     "size_bytes": size,
+                    "mtime": mtime,
                 })
+            objects.sort(key=lambda o: o["mtime"], reverse=True)
+            for o in objects:
+                del o["mtime"]
 
         self._send_json(200, {"subject": subject, "objects": objects})
 

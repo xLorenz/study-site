@@ -3,6 +3,7 @@
 import json
 import os
 import time
+import uuid
 from collections import namedtuple
 
 from openai import OpenAI
@@ -35,7 +36,7 @@ def get_llm_client():
     _client = OpenAI(
         base_url=NIM_BASE_URL,
         api_key=api_key,
-        timeout=300,
+        timeout=900,
         max_retries=2,
     )
     return _client
@@ -98,12 +99,23 @@ def stream_chat(messages, model, subject):
                 if idx not in tool_calls_buffer:
                     tool_calls_buffer[idx] = ToolCall(index=idx)
                 buf = tool_calls_buffer[idx]
-                if tc_chunk.id:
-                    buf = buf._replace(id=buf.id + tc_chunk.id)
-                if tc_chunk.function and tc_chunk.function.name:
-                    buf = buf._replace(name=buf.name + tc_chunk.function.name)
-                if tc_chunk.function and tc_chunk.function.arguments:
-                    buf = buf._replace(arguments=buf.arguments + tc_chunk.function.arguments)
+                # Handle both standard (tc_chunk.function.name) and non-standard (tc_chunk.name) formats
+                chunk_id = tc_chunk.id or ""
+                chunk_name = ""
+                chunk_args = ""
+                if hasattr(tc_chunk, 'function') and tc_chunk.function:
+                    chunk_name = tc_chunk.function.name or ""
+                    chunk_args = tc_chunk.function.arguments or ""
+                else:
+                    # Non-standard: name/arguments at top level
+                    chunk_name = getattr(tc_chunk, 'name', '') or ""
+                    chunk_args = getattr(tc_chunk, 'arguments', '') or ""
+                if chunk_id:
+                    buf = buf._replace(id=buf.id + chunk_id)
+                if chunk_name:
+                    buf = buf._replace(name=buf.name + chunk_name)
+                if chunk_args:
+                    buf = buf._replace(arguments=buf.arguments + chunk_args)
                 tool_calls_buffer[idx] = buf
 
             if chunk.choices[0].finish_reason:
@@ -112,6 +124,10 @@ def stream_chat(messages, model, subject):
         if finish_reason == "tool_calls" and tool_calls_buffer:
             # Build assistant message with tool calls
             sorted_calls = sorted(tool_calls_buffer.values(), key=lambda x: x.index)
+            # Ensure every tool call has a valid id (some models don't provide one)
+            for i, tc in enumerate(sorted_calls):
+                if not tc.id or not tc.id.strip():
+                    sorted_calls[i] = tc._replace(id=f"tc_{uuid.uuid4().hex[:8]}")
             assistant_msg = {
                 "role": "assistant",
                 "content": full_content or None,
@@ -140,6 +156,18 @@ def stream_chat(messages, model, subject):
 
             round_num += 1
             continue
+
+        # Fallback: finish_reason == "tool_calls" but buffer is empty or tool names missing
+        # This happens with some NIM-wrapped models that return tool calls differently.
+        # Treat the content as a regular response and stop.
+        if finish_reason == "tool_calls":
+            # Log the problem — the model said it wanted tool calls but didn't provide them.
+            # Just yield what we have as text content and stop.
+            import sys
+            print(f"[DEBUG] tool_calls_buffer: {tool_calls_buffer}", file=sys.stderr)
+            print(f"[DEBUG] full_content: {repr(full_content)}", file=sys.stderr)
+            if full_content:
+                yield {"type": "token", "content": full_content}
 
         # finish_reason is stop, length, or no tool calls
         break
