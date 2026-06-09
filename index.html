@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>study</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
-<link rel="stylesheet" href="/static/chat-ui.css?v=9">
-<script defer src="/static/chat-ui.js?v=9"></script>
+<link rel="stylesheet" href="/static/chat-ui.css?v=10">
+<script defer src="/static/chat-ui.js?v=10"></script>
 <style>
 /* ── Reset ── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -2751,10 +2751,11 @@ function fitSubjectSelect() {
 }
 
 // ── Initialise ──
-loadSubjects();
-// initChat may already be defined (defer script ran) or not yet — handle both
-if (typeof initChat === 'function') initChat();
-else document.addEventListener('DOMContentLoaded', initChat);
+// Wait for DOMContentLoaded so defer scripts (chat-ui.js) have executed first
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof initChat === 'function') initChat();
+  loadSubjects();
+});
 
 // On mobile, collapse sidebars initially
 if (window.innerWidth <= 768) {

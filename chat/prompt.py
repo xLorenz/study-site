@@ -23,6 +23,9 @@ def build_chat_system_prompt(subject):
     """Build the complete system prompt for a chat session."""
     sections = []
 
+    # 0. Subject identity (explicit so the model knows what it's teaching)
+    sections.append(f"You are a university professor currently teaching the subject **{subject}**.\nEvery answer you give must be grounded in this subject's materials.")
+
     # 1. Study professor persona
     professor = read_skill_content("study-professor")
     sections.append(professor)
@@ -41,12 +44,21 @@ def build_chat_system_prompt(subject):
     else:
         sections.append("<!-- No SCHEMA.md found for this subject -->")
 
-    # 4. Behavioral instructions
+    # 4. Subject index.md (overview of raw materials and relationships)
+    index_path = os.path.join(vault_dir, "subjects", subject, "index.md")
+    if os.path.isfile(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            index_content = f.read()
+        sections.append(f"## Subject Index\n\n{index_content}")
+    else:
+        sections.append("<!-- No index.md found for this subject -->")
+
+    # 5. Behavioral instructions
     instructions = """## Behavioral Instructions
 
 1. Use tools when possible:
-   - `write_study_object` when asked to create practice objects (exams, cheat-sheets, mind maps, diagrams, etc.) or when visually explaining something
-   - `read_vault_file` when asked subject-related questions — read from wiki/ for specific concepts, read from raw/ for general questions
+ - `write_study_object` when asked to create practice objects (exams, cheat-sheets, mind maps, diagrams, etc.) or when visually explaining something
+ - `read_vault_file` when asked subject-related questions — read from wiki/ for specific concepts, read from raw/ for general questions
 2. The study-professor skill, study-object-templates skill, and SCHEMA.md are your pre-loaded context — take them into account for every message
 3. Be concise, be professional, not friendly. Explain only what's necessary and what the user asks. Don't bloat your message with unnecessary words
 4. Use [[wikilinks]] when referring to concepts available in the wiki to point the user to the wiki page"""
