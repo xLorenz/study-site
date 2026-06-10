@@ -10,5 +10,9 @@ NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 SKILL_DIR = os.path.expanduser("~/.hermes/skills/study")
 VAULT_DIR = os.path.expanduser("~/study-vault")
 CHATS_DIR = os.path.join(VAULT_DIR, "chats")
+MANIM_DIR = os.path.join(VAULT_DIR, "..", "study", ".manim-tmp")
+
+# Manim render quality: use "ql" (480p15 draft) for speed, "qm" (720p30 medium) for decent, "qh" (1080p60) for production
+MANIM_RENDER_QUALITY = "ql"
 
 os.makedirs(CHATS_DIR, exist_ok=True)

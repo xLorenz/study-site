@@ -1,10 +1,15 @@
 """Tool definitions and execution for the study chat system."""
 
+import base64
+import glob
 import json
 import os
 import re
+import subprocess
+import sys
+import textwrap
 
-from .types import VAULT_DIR
+from .types import VAULT_DIR, MANIM_DIR, MANIM_RENDER_QUALITY
 
 
 def get_tool_definitions():
@@ -48,6 +53,38 @@ def get_tool_definitions():
                         }
                     },
                     "required": ["filename", "html_content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_study_video",
+                "description": "Create an animated manim video explaining a concept. "
+                               "Use this when asked for animated explanations, math/algorithm visualizations, "
+                               "step-by-step concept walkthroughs, or visual tutorials. "
+                               "Produces a self-contained HTML file with embedded video.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Desired filename (e.g. 'sorting-algorithms', 'chain-rule'). Extension will be enforced to .html"
+                        },
+                        "script": {
+                            "type": "string",
+                            "description": "Full Python manim script using Slide from manim_slides. "
+                                           "Must import: from manim import *, from manim_slides import Slide. "
+                                           "Each scene is a class extending Slide. Use self.pause() between slides. "
+                                           "Use DEFAULT_BG_COLOR constant for background. "
+                                           "NO self.camera.background_color assignment."
+                        },
+                        "scene_name": {
+                            "type": "string",
+                            "description": "The class name of the scene to render (must match a Slide subclass in the script)."
+                        }
+                    },
+                    "required": ["filename", "script", "scene_name"]
                 }
             }
         }
@@ -136,6 +173,129 @@ def write_study_object(subject, filename, html_content):
     }
 
 
+def write_study_video(subject, filename, script, scene_name):
+    """Render a manim script and save as a self-contained HTML with embedded video."""
+
+    filename = _normalize_filename(filename)
+    if not filename.endswith(".html"):
+        filename += ".html"
+
+    objects_dir = os.path.join(VAULT_DIR, "objects", subject)
+    os.makedirs(objects_dir, exist_ok=True)
+
+    real_objects_dir = os.path.realpath(objects_dir)
+    target_path = os.path.join(objects_dir, filename)
+    real_target = os.path.realpath(target_path)
+    if not real_target.startswith(real_objects_dir + os.sep):
+        return {"error": "Path traversal prevented"}
+
+    # Versioned collision handling
+    if os.path.exists(real_target):
+        base, ext = os.path.splitext(filename)
+        version = 2
+        while os.path.exists(os.path.join(objects_dir, f"{base}-v{version}{ext}")):
+            version += 1
+        target_path = os.path.join(objects_dir, f"{base}-v{version}{ext}")
+        real_target = os.path.realpath(target_path)
+
+    # Prepare manim directory
+    manim_dir = os.path.realpath(MANIM_DIR)
+    os.makedirs(manim_dir, exist_ok=True)
+
+    # Write script to file
+    script_path = os.path.join(manim_dir, f"{scene_name}.py")
+    with open(script_path, "w", encoding="utf-8") as f:
+        f.write(textwrap.dedent(script))
+
+    quality_flag = f"-{MANIM_RENDER_QUALITY}"
+
+    try:
+        # Step 1: Render with manim
+        render_result = subprocess.run(
+            [sys.executable, "-m", "manim", "render", quality_flag, script_path, scene_name],
+            capture_output=True, text=True, timeout=600, cwd=manim_dir
+        )
+        if render_result.returncode != 0:
+            error_msg = render_result.stderr[-1500:] if render_result.stderr else render_result.stdout[-1500:]
+            return {"error": f"Manim render failed: {error_msg}"}
+
+        # Step 2: Find the rendered MP4
+        quality_name = f"{MANIM_RENDER_QUALITY}p15"
+        mp4_path = os.path.join(
+            manim_dir, "media", "videos", scene_name, quality_name, f"{scene_name}.mp4"
+        )
+        if not os.path.isfile(mp4_path):
+            # Try alternate quality name (without p15 suffix)
+            mp4_path = os.path.join(
+                manim_dir, "media", "videos", scene_name, MANIM_RENDER_QUALITY, f"{scene_name}.mp4"
+            )
+        if not os.path.isfile(mp4_path):
+            # Fallback: search for any mp4
+            found = sorted(glob.glob(os.path.join(manim_dir, "media", "videos", scene_name, "**", f"{scene_name}.mp4"), recursive=True), key=os.path.getmtime, reverse=True)
+            if found:
+                mp4_path = found[0]
+            else:
+                return {"error": "Render completed but output MP4 not found"}
+
+        # Step 3: Read MP4 and encode as base64
+        with open(mp4_path, "rb") as f:
+            video_b64 = base64.b64encode(f.read()).decode("ascii")
+
+        subject_title = subject.replace("-", " ").title()
+        scene_title = scene_name.replace("_", " ").replace("-", " ").title()
+
+        # Step 4: Generate a simple, self-contained HTML with embedded video
+        html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{scene_title} — {subject_title}</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    background: #0f0f14; display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: system-ui, -apple-system, sans-serif;
+  }}
+  .container {{ max-width: 100%; padding: 8px; }}
+  video {{
+    display: block; max-width: 100%; max-height: 90vh; width: 100%;
+    border-radius: 12px; box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+    background: #000;
+  }}
+  .label {{
+    text-align: center; padding: 12px 0 4px;
+    color: #888; font-size: 13px; letter-spacing: 0.3px;
+  }}
+</style>
+</head>
+<body>
+<div class="container">
+  <video autoplay muted loop playsinline controls src="data:video/mp4;base64,{video_b64}"></video>
+  <div class="label">{scene_title}</div>
+</div>
+</body>
+</html>"""
+
+        with open(real_target, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        if not os.path.isfile(real_target):
+            return {"error": "Failed to write output HTML"}
+
+    except subprocess.TimeoutExpired:
+        return {"error": "Manim render timed out (600s)"}
+    except Exception as e:
+        return {"error": f"Manim pipeline error: {e}"}
+
+    return {
+        "path": os.path.relpath(real_target, VAULT_DIR),
+        "filename": os.path.basename(real_target),
+        "subject": subject,
+        "size_bytes": os.path.getsize(real_target),
+    }
+
+
 def execute_tool(subject, tool_call_name, args_json_str):
     """Execute a tool by name with parsed JSON arguments."""
     try:
@@ -155,6 +315,14 @@ def execute_tool(subject, tool_call_name, args_json_str):
         if not filename or not html_content:
             return {"error": "Missing 'filename' or 'html_content' argument"}
         return write_study_object(subject, filename, html_content)
+
+    elif tool_call_name == "write_study_video":
+        filename = args.get("filename", "")
+        script = args.get("script", "")
+        scene_name = args.get("scene_name", "")
+        if not filename or not script or not scene_name:
+            return {"error": "Missing 'filename', 'script', or 'scene_name' argument"}
+        return write_study_video(subject, filename, script, scene_name)
 
     else:
         return {"error": f"Unknown tool: {tool_call_name}"}

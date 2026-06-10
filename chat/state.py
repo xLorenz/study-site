@@ -159,6 +159,8 @@ def _tool_label(name, arguments_raw):
         return args.get("path", "file")
     elif name == "write_study_object":
         return args.get("filename", "object")
+    elif name == "write_study_video":
+        return args.get("filename", "video")
     return name
 
 

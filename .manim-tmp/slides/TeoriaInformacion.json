@@ -1,0 +1,23 @@
+{
+  "slides": [
+    {
+      "loop": false,
+      "auto_next": false,
+      "playback_rate": 1.0,
+      "reversed_playback_rate": 1.0,
+      "notes": "",
+      "dedent_notes": true,
+      "skip_animations": false,
+      "src": null,
+      "type": "video",
+      "direction": "horizontal",
+      "file": "slides/files/TeoriaInformacion/d6b7fb613aa3478dd07365951e1c14bc39fd50788eddaf96de24914c32738c87.mp4",
+      "rev_file": "slides/files/TeoriaInformacion/d6b7fb613aa3478dd07365951e1c14bc39fd50788eddaf96de24914c32738c87_reversed.mp4"
+    }
+  ],
+  "resolution": [
+    854,
+    480
+  ],
+  "background_color": "black"
+}
