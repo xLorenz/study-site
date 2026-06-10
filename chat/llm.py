@@ -49,6 +49,33 @@ def get_extra_body(model):
     return {}
 
 
+def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries=3):
+    """Call the LLM API with retry logic for transient errors (5xx, timeouts)."""
+    last_exception = None
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                stream=True,
+                extra_body=extra_body,
+                temperature=1,
+                top_p=0.95,
+                max_tokens=16384,
+            )
+        except Exception as e:
+            last_exception = e
+            status = getattr(e, 'status_code', 0) or getattr(e, 'code', 0)
+            is_timeout = status == 0 or 'timeout' in str(e).lower() or '504' in str(e)
+            if (status >= 500 or is_timeout) and attempt < max_retries - 1:
+                time.sleep(1 * (2 ** attempt))
+                continue
+            break
+    raise last_exception
+
+
 def stream_chat(messages, model, subject):
     """Multi-round tool-calling generator. Yields event dicts."""
     client = get_llm_client()
@@ -57,16 +84,9 @@ def stream_chat(messages, model, subject):
 
     while round_num < MAX_TOOL_ROUNDS:
         try:
-            stream = client.chat.completions.create(
-                model=model,
-                messages=current_messages,
-                tools=get_tool_definitions(),
-                tool_choice="auto",
-                stream=True,
-                extra_body=get_extra_body(model),
-                temperature=1,
-                top_p=0.95,
-                max_tokens=16384,
+            stream = _api_call_with_retry(
+                client, model, current_messages,
+                get_tool_definitions(), get_extra_body(model)
             )
         except Exception as e:
             yield {"type": "error", "message": f"LLM API error: {e}"}
