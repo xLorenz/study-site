@@ -192,4 +192,9 @@ def stream_chat(messages, model, subject):
         # finish_reason is stop, length, or no tool calls
         break
 
+    # Edge case: model produced reasoning but zero visible content
+    # (common with deep-thinking models that spend all tokens reasoning)
+    if not full_content and full_reasoning:
+        full_content = f"(Modelo solo produjo razonamiento — {len(full_reasoning)} caracteres sin respuesta visible)"
+
     yield {"type": "done", "model": model, "content": full_content, "reasoning": full_reasoning}

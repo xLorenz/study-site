@@ -117,8 +117,9 @@
         addUserMessage(text);
         chat.messages.push({ role: 'user', content: text });
 
-        // Keep last 19 messages for context
-        var history = chat.messages.slice(-19);
+        // Keep last 19 messages for context (don't include the current message
+        // — the backend adds it back via its 'message' field)
+        var history = chat.messages.slice(-20, -1);
 
         // Step 1: Start background task
         fetch('/api/chat-start', {
@@ -298,20 +299,27 @@
             break;
 
             case 'done':
-            if (event.content) {
-            chat.currentFullContent = event.content;
-            if (chat.currentBodyDiv) {
-            renderContent(chat.currentFullContent, chat.currentBodyDiv);
+            // If content is empty but we have reasoning, show that the model only reasoned
+            if (!event.content && chat.currentFullContent) {
+                // keep what we have
+            } else if (event.content) {
+                chat.currentFullContent = event.content;
+                if (chat.currentBodyDiv) {
+                    renderContent(chat.currentFullContent, chat.currentBodyDiv);
+                }
             }
-            }
+            // Even if content is empty, still save the assistant message so it's not lost
             if (chat.currentReasoningDiv) {
-            chat.currentReasoningDiv.classList.remove('active');
+                chat.currentReasoningDiv.classList.remove('active');
             }
             if (chat.currentAssistantMsg) {
-            chat.currentAssistantMsg.classList.remove('streaming');
+                chat.currentAssistantMsg.classList.remove('streaming');
             }
             highlightWikilinks(chat.currentBodyDiv);
-            var doneMsg = { role: 'assistant', content: chat.currentFullContent };
+            var doneMsg = {
+                role: 'assistant',
+                content: chat.currentFullContent || event.content || '(solo razonamiento)'
+            };
             if (chat.currentToolCalls.length > 0) doneMsg.tool_calls = chat.currentToolCalls;
             chat.messages.push(doneMsg);
             setChatEnabled(true);
@@ -657,7 +665,6 @@
     function clearChat() {
         if (chat.streaming) return;
         if (!chat.currentSubject) return;
-        if (chat.messages.length === 0) return;
 
         chat.messages = [];
         chat.currentFullContent = '';
@@ -673,20 +680,20 @@
             var ph = document.createElement('div');
             ph.className = 'chat-placeholder';
             ph.id = 'chat-placeholder';
-            ph.innerHTML = '<div class="icon">\uD83D\uDCDD</div><div class="main-text">Ask a question about <strong>' + escapeHtml(chat.currentSubject) + '</strong></div><div class="sub-text">Chat has been cleared</div>';
+            ph.innerHTML = '<div class="icon">🗑️</div><div class="main-text">Conversation cleared for <strong>' + escapeHtml(chat.currentSubject) + '</strong></div><div class="sub-text">The chat history file has been deleted</div>';
             container.appendChild(ph);
         }
 
-        fetch('/api/chat-save', {
+        // Actually delete the chat file instead of saving empty messages
+        fetch('/api/chat-delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                subject: chat.currentSubject,
-                messages: []
+                subject: chat.currentSubject
             })
         })['catch'](function() {});
 
-        showToast('Chat cleared', 'info');
+        showToast('Conversation deleted', 'info');
     }
 
     // ===========================

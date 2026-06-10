@@ -14,7 +14,7 @@ import time
 import unicodedata
 import urllib.parse
 import yaml
-from chat import handle_chat_start, handle_chat_stream, handle_chat_save, handle_chat_load, AVAILABLE_MODELS
+from chat import handle_chat_start, handle_chat_stream, handle_chat_save, handle_chat_load, delete_chat_file
 VAULT = os.path.expanduser("~/study-vault")
 STUDY_DIR = os.path.expanduser("~/study")
 PORT = 8081
@@ -1981,6 +1981,24 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 handle_chat_stream(self)
             elif path == "/api/chat-save":
                 handle_chat_save(self)
+            elif path == "/api/chat-delete":
+                length = int(self.headers.get("Content-Length", 0))
+                if length > 0:
+                    raw = self.rfile.read(length)
+                    try:
+                        data = json.loads(raw)
+                    except json.JSONDecodeError:
+                        self._send_json(400, {"error": "Invalid JSON body"})
+                        return
+                else:
+                    self._send_json(400, {"error": "subject is required"})
+                    return
+                subject = data.get("subject", "")
+                if not subject:
+                    self._send_json(400, {"error": "subject is required"})
+                    return
+                deleted = delete_chat_file(subject)
+                self._send_json(200, {"deleted": deleted, "subject": subject})
             else:
                 self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
         except Exception as e:

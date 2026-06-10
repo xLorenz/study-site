@@ -36,17 +36,28 @@ def load_chat(subject):
 
 
 def save_chat(subject, messages):
-    """Save chat history to disk, trimmed to MAX_HISTORY_MESSAGES."""
+    """Save chat history to disk, trimmed to MAX_HISTORY_MESSAGES.
+
+    Tool calls are stored WITHOUT their 'result' fields to keep history
+    lightweight — results bloat the file to 100K+ with wiki content that
+    gets resent on every retry, causing 400 BadRequest from the LLM API.
+    """
     path = os.path.join(CHATS_DIR, f"{subject}.json")
-    # Keep only user and assistant messages, trimmed
-    # Preserve tool_calls data on assistant messages
     trimmed = []
     for m in messages:
         if m["role"] == "assistant":
             entry = {"role": "assistant", "content": m["content"]}
             if "tool_calls" in m and m["tool_calls"]:
-                entry["tool_calls"] = m["tool_calls"]
+                # Strip 'result' from each tool call to avoid 181KB bloat
+                trimmed_tcs = []
+                for tc in m["tool_calls"]:
+                    clean = {k: v for k, v in tc.items() if k != "result"}
+                    trimmed_tcs.append(clean)
+                entry["tool_calls"] = trimmed_tcs
             trimmed.append(entry)
+        elif m["role"] == "tool":
+            # Keep tool role messages — they carry tool_call_id + content
+            trimmed.append({k: v for k, v in m.items() if k != "result"})
         elif m["role"] == "user":
             trimmed.append({"role": "user", "content": m["content"]})
     if len(trimmed) > MAX_HISTORY_MESSAGES:
@@ -56,6 +67,19 @@ def save_chat(subject, messages):
             json.dump({"messages": trimmed}, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Error saving chat for {subject}: {e}")
+
+
+def delete_chat_file(subject):
+    """Delete the chat history file for a subject."""
+    path = os.path.join(CHATS_DIR, f"{subject}.json")
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            return True
+        return False
+    except Exception as e:
+        print(f"Error deleting chat for {subject}: {e}")
+        return False
 
 
 def start_background_task(subject, user_message, conversation, model):
@@ -74,7 +98,14 @@ def start_background_task(subject, user_message, conversation, model):
 
 
 def _normalize_conversation(conversation):
-    """Normalize tool_calls in conversation messages to the OpenAI API format."""
+    """Normalize tool_calls in conversation messages to the OpenAI API format.
+
+    Extracts tool results stored inside assistant message tool_calls into
+    proper ``role: "tool"`` messages with matching ``tool_call_id``.
+    This is required by the OpenAI-compatible NIM API — without it the
+    API returns ``400 Unterminated string`` because it expects tool messages
+    alongside assistant tool_call messages.
+    """
     normalized = []
     for msg in conversation:
         entry = {"role": msg["role"], "content": msg.get("content", "")}
@@ -83,7 +114,6 @@ def _normalize_conversation(conversation):
             for tc in msg["tool_calls"]:
                 if isinstance(tc, dict):
                     tc_id = tc.get("id") or f"tc_{uuid.uuid4().hex[:8]}"
-                    # Handle both stored format {name, arguments} and OpenAI format {id, type, function}
                     fn = tc.get("function", {})
                     tc_name = tc.get("name", fn.get("name", "unknown"))
                     raw_args = tc.get("arguments", fn.get("arguments", "{}"))
@@ -94,6 +124,15 @@ def _normalize_conversation(conversation):
                         "type": "function",
                         "function": {"name": tc_name, "arguments": raw_args}
                     })
+                    # If this tool call has a result, emit a role:tool message right after
+                    result = tc.get("result")
+                    if result is not None:
+                        result_str = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+                        normalized.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": result_str
+                        })
             if normalized_tcs:
                 entry["tool_calls"] = normalized_tcs
         normalized.append(entry)
