@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <link rel="stylesheet" href="/static/chat-ui.css?v=12">
+<link rel="stylesheet" href="/static/study-ui.css?v=4">
 <script defer src="/static/chat-ui.js?v=13"></script>
 <style>
 /* ── Reset ── */
@@ -109,10 +110,10 @@ a:hover{color:var(--text-bright)}
 /* ── App Layout ── */
 #app{
  display:flex;
- height:calc(100dvh - 40px - 36px); /* header - search bar */
+ height:calc(100dvh - 40px); /* header height */
  position:relative}
 @media (not (height: 100dvh)){
- #app{height:calc(100vh - 40px - 36px)}
+ #app{height:calc(100vh - 40px)}
 }
 
 /* ── Sidebars ── */
@@ -380,32 +381,6 @@ pre:hover .copy-btn{opacity:1}
  font-size:10px;font-weight:600;
  background:var(--primary);color:var(--surface)}
 
-/* ── Search Bar ── */
-#search-bar{
- display:flex;align-items:center;gap:var(--space-2);
- height:36px;padding:0 var(--space-3);
- background:var(--surface);border-top:1px solid var(--border);
- position:relative}
-#search-input{
- flex:1;
- background:var(--surface-2);border:1px solid var(--border);
- border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);
- color:var(--text);font-size:var(--font-size-sm);
- font-family:var(--font-sans);outline:none;
- transition:border-color .15s}
-#search-input:focus{border-color:var(--accent)}
-#search-subject-filter{
- background:var(--surface-2);color:var(--text);
- border:1px solid var(--border);border-radius:var(--radius-sm);
- padding:2px var(--space-2);font-size:var(--font-size-sm);
- font-family:var(--font-sans)}
-#search-results{
- position:absolute;bottom:100%;left:var(--space-3);right:var(--space-3);
- background:var(--surface);border:1px solid var(--border);
- border-radius:var(--radius-md) var(--radius-md) 0 0;
- max-height:300px;overflow-y:auto;box-shadow:var(--shadow-lg);
- display:none;z-index:var(--z-overlay)}
-
 /* ── Search Results ── */
 .search-result-item{
  padding:var(--space-2) var(--space-3);
@@ -479,11 +454,8 @@ pre:hover .copy-btn{opacity:1}
   z-index:100;
  }
 
- /* Search bar full width, minimal */
- #search-bar{height:auto;padding:var(--space-2)}
- #search-subject-filter{max-width:120px}
+ /* Search results full width */
  #search-results{left:var(--space-2);right:var(--space-2)}
- #search-input{font-size:var(--font-size-base)}
 
  /* Smaller, bottom toast */
  #toast-container{
@@ -505,10 +477,15 @@ pre:hover .copy-btn{opacity:1}
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
  </button>
  <span class="logo">study</span>
+ <span style="flex:1"></span>
+ <div id="header-search">
+   <input type="text" id="search-input" placeholder="🔎 Search...">
+   <div id="search-results"></div>
+ </div>
+ <span style="flex:1"></span>
  <button id="labels-toggle" title="Toggle all node labels">Aa</button>
  <button id="fit-graph-btn" title="Fit graph to view">⊞</button>
  <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
- <span style="flex:1"></span>
  <select id="subject-select">
  <option value="">— Select subject —</option>
  </select>
@@ -646,15 +623,6 @@ pre:hover .copy-btn{opacity:1}
  </aside>
 </div>
 
-<!-- ── Search Bar ── -->
-<div id="search-bar">
- <input type="text" id="search-input" placeholder="🔎 Search notes...">
- <select id="search-subject-filter">
- <option value="">All subjects</option>
- </select>
- <div id="search-results"></div>
-</div>
-
 <!-- ── Toast Container ── -->
 <div id="toast-container"></div>
 
@@ -722,7 +690,6 @@ async function loadSubjects() {
      select.value = data.subjects[0].name;
      await reloadAll(data.subjects[0].name);
    }
- populateSearchFilter();
  fitSubjectSelect();
  } catch (e) {
  showToast('\u2717 Failed to load subjects', 'danger');
@@ -1754,6 +1721,8 @@ let searchTimeout = null;
 let lastSearchQuery = '';
 
 function formatSnippet(s) {
+ // Convert §§§highlight§§§ to <mark> (search match highlight)
+ s = s.replace(/§§§([^§]+)§§§/g, '<mark>$1</mark>');
  // Convert **bold** to <strong>
  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
  // Convert [[wikilinks]] to styled spans
@@ -1763,7 +1732,7 @@ function formatSnippet(s) {
 
 function performSearch() {
  const q = document.getElementById('search-input').value.trim();
- const subject = document.getElementById('search-subject-filter').value;
+ const subject = currentSubject;
  const resultsContainer = document.getElementById('search-results');
 
  if (q.length < 2) {
@@ -1784,15 +1753,25 @@ function performSearch() {
  resultsContainer.style.display = 'block';
  return;
  }
- resultsContainer.innerHTML = data.results.map(r =>
- '<div class="search-result-item" data-path="' + r.path + '" data-query="' + q.replace(/"/g, '&quot;') + '" onclick="openSearchResult(this)">' +
+ resultsContainer.innerHTML = data.results.map(r => {
+ const parts = r.path.split('/');
+ // Shortened path: strip "subjects/<subject>/"
+ const shortPath = parts.length > 2 && parts[0] === 'subjects'
+   ? parts.slice(2).join('/') : r.path;
+ // Formatted title from filename
+ const fileName = parts[parts.length - 1].replace(/\.md$/, '');
+ const title = fileName
+   .replace(/[-_]/g, ' ')
+   .replace(/\b\w/g, c => c.toUpperCase());
+ return '<div class="search-result-item" data-path="' + r.path + '" data-query="' + q.replace(/"/g, '&quot;') + '" onclick="openSearchResult(this)">' +
+ '<div class="search-result-title">' + title + '</div>' +
  '<div class="search-result-snippet">' + formatSnippet(r.snippet) + '</div>' +
  '<div class="search-result-meta">' +
- '<span class="search-result-path">' + r.path + '</span>' +
+ '<span class="search-result-path">' + shortPath + '</span>' +
  '<span class="search-result-count">' + r.match_count + ' match' + (r.match_count > 1 ? 'es' : '') + '</span>' +
  '</div>' +
- '</div>'
- ).join('');
+ '</div>';
+ }).join('');
  resultsContainer.style.display = 'block';
  
  // Highlight matching tree items
@@ -1870,8 +1849,7 @@ function openSearchResult(el) {
 document.addEventListener('click', (e) => {
  const results = document.getElementById('search-results');
  const input = document.getElementById('search-input');
- const filter = document.getElementById('search-subject-filter');
- if (!results.contains(e.target) && e.target !== input && e.target !== filter) {
+ if (!results.contains(e.target) && e.target !== input) {
  results.style.display = 'none';
  }
 });
@@ -1881,29 +1859,6 @@ document.getElementById('search-input').addEventListener('input', () => {
  clearTimeout(searchTimeout);
  searchTimeout = setTimeout(performSearch, 300);
 });
-
-// Search filter change triggers immediate re-search
-document.getElementById('search-subject-filter').addEventListener('change', () => {
- clearTimeout(searchTimeout);
- performSearch();
-});
-
-// Populate search filter from subjects
-function populateSearchFilter() {
- const select = document.getElementById('subject-select');
- const filter = document.getElementById('search-subject-filter');
- const currentVal = filter.value;
- filter.innerHTML = '<option value="">All subjects</option>';
- for (const opt of select.options) {
- if (opt.value) {
- const fopt = document.createElement('option');
- fopt.value = opt.value;
- fopt.textContent = opt.textContent;
- filter.appendChild(fopt);
- }
- }
- filter.value = currentVal;
-}
 
 // ══════════════════════════════════════════════════
 // ── PHASE 5: FORCE-DIRECTED KNOWLEDGE GRAPH ──

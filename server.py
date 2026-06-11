@@ -42,6 +42,7 @@ _ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
 _ingest_current_subject = None # subject currently being ingested (used for live progress)
 _ingest_initial_wiki_count = 0 # wiki/ .md file count BEFORE ingest started (for progress tracking)
 _ingest_initial_total = 0 # initial count of files to ingest (saved so frontend can compute fraction)
+_ingest_last_created_name = None # name of most recently created wiki page (for live progress text)
 _upload_in_progress = False # separate lock for upload (sync, fast — not LLM ingest)
 
 with open(os.path.join(STUDY_DIR, "subject_themes.json")) as f:
@@ -805,7 +806,7 @@ def _run_llm_ingest_thread(subject):
     writes a result file. This thread waits for the agent to finish, then loads
     the result into `_ingest_result` and clears `_ingest_running`.
     """
-    global _ingest_running, _ingest_result, _ingest_current_subject
+    global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_last_created_name
     result_path = "/tmp/study_ingest_result.json"
     # Clean any prior result
     try:
@@ -1644,9 +1645,14 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
         results = []
         q_lower = q.lower()
+        # Strip accents for accent-insensitive matching
+        q_plain = ''.join(c for c in unicodedata.normalize('NFD', q_lower)
+                          if not unicodedata.combining(c))
         for dirpath, _, filenames in os.walk(root):
             for fn in filenames:
                 if not fn.endswith(".md") or fn.startswith("."):
+                    continue
+                if fn in ("index.md", "log.md"):
                     continue
                 path = os.path.join(dirpath, fn)
                 try:
@@ -1655,27 +1661,45 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 except OSError:
                     continue
 
-                count = content.lower().count(q_lower)
+                content_plain = ''.join(
+                    c for c in unicodedata.normalize('NFD', content.lower())
+                    if not unicodedata.combining(c))
+
+                count = content_plain.count(q_plain)
                 if count == 0:
                     continue
 
-                # Find all match positions (line numbers)
+                # Find all match positions (line numbers) using accent-insensitive check
                 lines = content.splitlines(keepends=True)
                 match_positions = []
-                search_idx = 0
                 for line_no, line in enumerate(lines, 1):
-                    if q_lower in line.lower():
+                    line_plain = ''.join(
+                        c for c in unicodedata.normalize('NFD', line.lower())
+                        if not unicodedata.combining(c))
+                    if q_plain in line_plain:
                         match_positions.append(line_no)
-                
-                idx = content.lower().find(q_lower)
+
+                # Find first match position in original content for snippet
+                idx = -1
+                for i in range(len(content)):
+                    chunk = content[i:i + len(q)]
+                    chunk_plain = ''.join(
+                        c for c in unicodedata.normalize('NFD', chunk.lower())
+                        if not unicodedata.combining(c))
+                    if chunk_plain == q_plain:
+                        idx = i
+                        break
+
+                if idx < 0:
+                    continue  # safety: shouldn't happen after count>0
+
                 start = max(0, idx - 75)
-                end = min(len(content), idx + 75)
+                end = min(len(content), idx + len(q) + 75)
                 snippet = content[start:end]
 
-                # Bold the query term in the snippet
-                # Use the case from content, not q
+                # Highlight the query term in the snippet using §§§ (safe, no md conflict)
                 actual_match = content[idx:idx + len(q)]
-                snippet = snippet.replace(actual_match, f"**{actual_match}**", 1)
+                snippet = snippet.replace(actual_match, f"§§§{actual_match}§§§", 1)
 
                 rel = os.path.relpath(path, VAULT)
                 subj = rel.split(os.sep)[1] if rel.startswith("subjects") else ""
@@ -1688,7 +1712,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                     "match_positions": match_positions,
                 })
 
-        results.sort(key=lambda r: r["match_count"], reverse=True)
+        results.sort(key=lambda r: r["match_count"], reverse=False)
         self._send_json(200, {
             "query": q,
             "subject_filter": subject_filter,
@@ -1698,7 +1722,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
     def _api_status(self):
         """GET /api/status — current server state (ingest lock, queue, last result)."""
         global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_total_pending
-        global _ingest_initial_wiki_count, _ingest_initial_total
+        global _ingest_initial_wiki_count, _ingest_initial_total, _ingest_last_created_name
         # If ingest is running, compute live progress from filesystem
         wiki_pages_created = 0
         if _ingest_running and _ingest_current_subject:
@@ -1717,6 +1741,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
             "pending_total": _ingest_total_pending,
             "initial_total": _ingest_initial_total,
             "wiki_pages_created": wiki_pages_created,
+            "last_created_name": _ingest_last_created_name,
             "queue_length": 0,
             "result": _ingest_result,
         })
@@ -1823,7 +1848,7 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
 
     def _api_update_wiki(self):
         """POST /api/update-wiki — cascade delete sync, LLM ingest async."""
-        global _ingest_running, _ingest_result, _ingest_current_subject
+        global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_last_created_name
         if _ingest_running:
             self._send_json(503, {"error": "ingest_in_progress", "detail": "Wait for current operation to finish"})
             return

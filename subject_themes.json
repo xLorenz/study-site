@@ -28,5 +28,11 @@
     "secondary": "#93f161",
     "accent": "#abf161",
     "icon": "\ud83d\udcda"
+  },
+  "fisica-ii": {
+    "primary": "#64f161",
+    "secondary": "#61f18e",
+    "accent": "#61f176",
+    "icon": "\ud83d\udcda"
   }
 }

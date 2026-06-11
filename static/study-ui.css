@@ -1,0 +1,50 @@
+/* ── Study UI — Phase 1: Foundation ── */
+
+/* ── Header Search ── */
+#header-search{
+  position:relative;
+  z-index:30;
+  display:flex;
+  align-items:center;
+  height:24px;
+  flex:0 0 auto;
+  width:25%;
+  min-width:120px;
+  max-width:400px}
+#header-search #search-input{
+  width:100%;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  padding:2px var(--space-2);
+  color:var(--text);
+  font-size:var(--font-size-sm);
+  font-family:var(--font-sans);
+  outline:none;
+  transition:border-color .15s;
+  height:22px}
+#header-search #search-input:focus{border-color:var(--accent)}
+#header-search #search-results{
+  position:absolute;
+  top:100%;left:0;right:0;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:0 0 var(--radius-md) var(--radius-md);
+  max-height:300px;overflow-y:auto;
+  box-shadow:var(--shadow-lg);
+  display:none;z-index:var(--z-overlay)}
+
+.search-result-title{
+  font-size:var(--font-size-sm);
+  color:var(--text-bright);
+  font-weight:600;
+  margin-bottom:2px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis}
+
+.search-result-snippet mark{
+  background:#a78bfa44;
+  color:var(--text-bright);
+  border-radius:2px;
+  padding:0 1px}
