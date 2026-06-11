@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <link rel="stylesheet" href="/static/chat-ui.css?v=12">
-<link rel="stylesheet" href="/static/study-ui.css?v=4">
+<link rel="stylesheet" href="/static/study-ui.css?v=5">
 <script defer src="/static/chat-ui.js?v=14"></script>
 <script defer src="/static/study-ui.js?v=1"></script>
 <style>
@@ -82,31 +82,7 @@ a:hover{color:var(--text-bright)}
  color:var(--text-dim);cursor:pointer;border:none;border-radius:var(--radius-sm);
  transition:color .15s}
 #btn-toggle-left:hover,#btn-toggle-right:hover{color:var(--text)}
-#labels-toggle{
-  background:transparent;border:1px solid var(--border);color:var(--text-dim);
-  font-size:11px;font-weight:700;cursor:pointer;border-radius:var(--radius-sm);
-  height:24px;width:28px;padding:0;display:none;align-items:center;
-  justify-content:center;font-family:var(--font-sans);transition:all .15s;
-  vertical-align:middle;line-height:1;margin-left:6px;
-}
-#labels-toggle:hover{color:var(--text);border-color:var(--accent)}
-#labels-toggle.active{color:var(--accent);border-color:var(--accent)}
-#glow-mode-btn{
- background:transparent;border:1px solid var(--border);color:var(--text-dim);
- font-size:10px;font-weight:600;cursor:pointer;border-radius:var(--radius-sm);
- height:24px;padding:0 6px;display:none;align-items:center;
- font-family:var(--font-sans);transition:all .15s;
- vertical-align:middle;line-height:1;margin-left:4px;white-space:nowrap;
-}
-#glow-mode-btn:hover{color:var(--text);border-color:var(--accent)}
-#fit-graph-btn{
- background:transparent;border:1px solid var(--border);color:var(--text-dim);
- font-size:10px;font-weight:600;cursor:pointer;border-radius:var(--radius-sm);
- height:24px;padding:0 6px;display:none;align-items:center;
- font-family:var(--font-sans);transition:all .15s;
- vertical-align:middle;line-height:1;margin-left:auto;white-space:nowrap;
-}
-#fit-graph-btn:hover{color:var(--text);border-color:var(--accent)}
+/* Graph controls moved to #graph-controls in study-ui.css */
 
 /* ── App Layout ── */
 #app{
@@ -484,9 +460,6 @@ pre:hover .copy-btn{opacity:1}
    <div id="search-results"></div>
  </div>
  <span style="flex:1"></span>
- <button id="labels-toggle" title="Toggle all node labels">Aa</button>
- <button id="fit-graph-btn" title="Fit graph to view">⊞</button>
- <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
  <select id="subject-select">
  <option value="">— Select subject —</option>
  </select>
@@ -561,6 +534,11 @@ pre:hover .copy-btn{opacity:1}
   <div id="ingest-overlay" class="ingest-overlay hidden">
    <div class="ingest-spinner"></div>
    <div class="ingest-text">Ingesting…</div>
+  </div>
+  <div id="graph-controls" style="display:none">
+    <button id="labels-toggle" title="Toggle all node labels">Aa Labels</button>
+    <button id="fit-graph-btn" title="Fit graph to view">⊞ Fit</button>
+    <button id="glow-mode-btn" title="Switch glow mode">⊙ Source</button>
   </div>
   </div>
  <iframe id="object-frame" sandbox="allow-scripts allow-same-origin" allow="autoplay; media-autoplay"></iframe>
@@ -759,6 +737,11 @@ function showObject(path) {
  backBtn.style.display = 'flex';
  backBtn.style.left = (slW + 12) + 'px';
  document.getElementById('labels-toggle').style.display = 'none';
+ document.getElementById('glow-mode-btn').style.display = 'none';
+ document.getElementById('fit-graph-btn').style.display = 'none';
+ // Hide the controls container too
+ const gc = document.getElementById('graph-controls');
+ if (gc) gc.style.display = 'none';
 }
 
 function hideObject() {
@@ -796,6 +779,10 @@ function hideObject() {
  document.getElementById('labels-toggle').style.display = 'inline-flex';
  document.getElementById('glow-mode-btn').style.display = 'inline-flex';
  document.getElementById('fit-graph-btn').style.display = graphNodes.length > 0 ? 'inline-flex' : 'none';
+ // Show the controls container if graph has nodes
+ const gc = document.getElementById('graph-controls');
+ if (gc) gc.style.display = graphNodes.length > 0 ? 'flex' : 'none';
+ positionGraphControls();
  } else {
  // Keep overlay — sidebars stay position:absolute
  handleLeft.style.display = 'none';
@@ -1441,6 +1428,16 @@ function toggleSidebar(id) {
  }
  syncOverlayHandles();
  syncObjectFrame();
+ positionGraphControls();
+}
+
+// ── Position graph controls relative to right sidebar ──
+function positionGraphControls() {
+ const gc = document.getElementById('graph-controls');
+ if (!gc || gc.style.display === 'none') return;
+ const sr = document.getElementById('sidebar-right');
+ const rightW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || 0);
+ gc.style.right = (rightW + 8) + 'px';
 }
 
 // ── Sync Object Frame position with sidebar widths ──
@@ -1479,13 +1476,14 @@ function initResize(handleId, sidebarId, isLeft) {
   if (frame.style.display !== 'none') frame.style.pointerEvents = 'none';
 
   const onPointerMove = (me) => {
-  const delta = isLeft ? me.clientX - startX : startX - me.clientX;
-  const maxW = window.innerWidth * 0.5;
-  const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
-  sidebar.style.width = newWidth + 'px';
-  syncOverlayHandles();
-  syncObjectFrame();
-  };
+   const delta = isLeft ? me.clientX - startX : startX - me.clientX;
+   const maxW = window.innerWidth * 0.5;
+   const newWidth = Math.max(120, Math.min(maxW, startWidth + delta));
+   sidebar.style.width = newWidth + 'px';
+   syncOverlayHandles();
+   syncObjectFrame();
+   positionGraphControls();
+   };
 
   const onPointerUp = () => {
    handle.removeEventListener('pointermove', onPointerMove);
@@ -2015,6 +2013,10 @@ function initGraph(data) {
   graphNodes.length > 0 ? 'inline-flex' : 'none';
   document.getElementById('fit-graph-btn').style.display =
   graphNodes.length > 0 ? 'inline-flex' : 'none';
+  // Show/hide graph controls container
+  const gc = document.getElementById('graph-controls');
+  if (gc) gc.style.display = graphNodes.length > 0 ? 'flex' : 'none';
+  positionGraphControls();
   }
 
 // ── Graph: Stop Loop ──
@@ -2152,7 +2154,45 @@ function drawGraph() {
   // Compute max link_count for edge weight normalization
   const maxLinks = Math.max(1, ...graphNodes.map(n => n.link_count || 0));
 
-  // ── Draw edges (with opacity based on connection strength) ──
+  // ── 1. Draw halos (faded radial gradients, behind everything) ──
+  for (const node of graphNodes) {
+    const isSelected = selectedNode && selectedNode.id === node.id;
+    const hovered = node === hoveredNode;
+    const connected = selectedNode && graphEdges.some(e =>
+      (e.source === selectedNode.id && e.target === node.id) ||
+      (e.target === selectedNode.id && e.source === node.id)
+    );
+    const isDimmed = selectedNode && !isSelected && !connected;
+    const theme = subjectThemes[node.subject] || {};
+    const fillColor = theme.primary || '#6366f1';
+    const typeHalo = getHaloForNode(node);
+    const haloSize = node.radius * 3.5;
+    const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, haloSize);
+    gradient.addColorStop(0, isDimmed ? 'rgba(26,26,46,0.08)' : typeHalo.halo);
+    gradient.addColorStop(1, 'transparent');
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, haloSize, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Outer glow for hover/selected
+    if (hovered || isSelected) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
+      ctx.fillStyle = isSelected ? fillColor + '30' : typeHalo.glow;
+      ctx.fill();
+    }
+    // Search highlight glow
+    if (!hovered && !isSelected && window.searchHighlightedNodes &&
+        window.searchHighlightedNodes.includes(node.id)) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
+      ctx.fillStyle = '#8b5cf640';
+      ctx.fill();
+    }
+  }
+
+  // ── 2. Draw edges ──
   for (const edge of graphEdges) {
     const src = graphNodes.find(n => n.id === edge.source);
     const tgt = graphNodes.find(n => n.id === edge.target);
@@ -2211,33 +2251,6 @@ function drawGraph() {
     const theme = subjectThemes[node.subject] || {};
     const fillColor = theme.primary || '#6366f1';
 
-    // Type/topic/source-based gradient halo (feathered edge)
-    const typeHalo = getHaloForNode(node);
-    const haloSize = node.radius * 3.5;
-    const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, haloSize);
-    gradient.addColorStop(0, isDimmed ? 'rgba(26,26,46,0.08)' : typeHalo.halo);
-    gradient.addColorStop(1, 'transparent');
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, haloSize, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
-    ctx.fill();
-
-    // Outer glow for hover/selected
-    if (hovered || isSelected) {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? fillColor + '30' : typeHalo.glow;
-      ctx.fill();
-    }
-    // Search highlight glow
-    if (!hovered && !isSelected && window.searchHighlightedNodes &&
-        window.searchHighlightedNodes.includes(node.id)) {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
-      ctx.fillStyle = '#8b5cf640';
-      ctx.fill();
-    }
-
     // Node circle
     ctx.beginPath();
     ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
@@ -2281,19 +2294,60 @@ function drawGraph() {
       ctx.fillStyle = '#f59e0b';
       ctx.fill();
     }
+  }
+
+  // Labels on top (second pass)
+  drawNodeLabels(ctx);
+  ctx.restore();
+}
+
+// ── Draw node labels (always on top, second pass) ──
+function drawNodeLabels(ctx) {
+  for (const node of graphNodes) {
+    const isSelected = selectedNode && selectedNode.id === node.id;
+    const hovered = node === hoveredNode;
+    const connected = selectedNode && graphEdges.some(e =>
+      (e.source === selectedNode.id && e.target === node.id) ||
+      (e.target === selectedNode.id && e.source === node.id)
+    );
+    const isDimmed = selectedNode && !isSelected && !connected;
 
     // Label — show if hovered/selected, or labelsVisible is toggled on
     if (hovered || isSelected || labelsVisible) {
-      const fontSize = Math.max(10, 12) / graphZoom;
+      const fontSize = Math.max(8, 10) / graphZoom;
       ctx.font = `600 ${fontSize}px 'Inter','Segoe UI',system-ui,sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      // Text shadow for readability over edges/nodes
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 4 / graphZoom;
       ctx.fillStyle = isDimmed ? '#505068' : '#e8e8f0';
-      ctx.fillText(node.title || node.label, node.x, node.y + node.radius + 14 / graphZoom);
+      // Multi-line label: wrap to max 2 lines
+      const displayText = node.title || node.label;
+      const maxWidth = 100 / graphZoom;
+      const lines = [];
+      const words = displayText.split(' ');
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+          if (lines.length >= 2) break;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (lines.length < 2) lines.push(currentLine);
+      const lineHeight = fontSize + 2;
+      const startY = node.y + node.radius + 8 / graphZoom;
+      lines.forEach((line, i) => {
+        ctx.fillText(line, node.x, startY + i * lineHeight);
+      });
+      ctx.shadowBlur = 0;
     }
   }
-
-  ctx.restore();
 }
 
 // ── Graph: Zoom to Fit ──
@@ -2301,6 +2355,13 @@ function zoomToFit(padding = 0.15) {
   if (graphNodes.length === 0) return;
   const w = graphCanvas.width;
   const h = graphCanvas.height;
+  // Account for sidebar overlays so graph fits in visible area
+  const sl = document.getElementById('sidebar-left');
+  const sr = document.getElementById('sidebar-right');
+  const leftW = (sl.dataset.collapsed === 'true') ? 0 : (parseInt(sl.style.width) || 0);
+  const rightW = (sr.dataset.collapsed === 'true') ? 0 : (parseInt(sr.style.width) || 0);
+  const effectiveW = w - leftW - rightW;
+  const effectiveCenterX = leftW + effectiveW / 2;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of graphNodes) {
     if (n.x < minX) minX = n.x;
@@ -2310,7 +2371,7 @@ function zoomToFit(padding = 0.15) {
   }
   const graphW = maxX - minX || 1;
   const graphH = maxY - minY || 1;
-  const scaleX = (w * (1 - padding)) / graphW;
+  const scaleX = (effectiveW * (1 - padding)) / graphW;
   const scaleY = (h * (1 - padding)) / graphH;
   const zoom = Math.min(scaleX, scaleY, 1.5);
 
@@ -2321,7 +2382,7 @@ function zoomToFit(padding = 0.15) {
   const startZoom = graphZoom;
   const startPanX = graphPanX;
   const startPanY = graphPanY;
-  const targetPanX = (w / 2) - midX * zoom;
+  const targetPanX = effectiveCenterX - midX * zoom;
   const targetPanY = (h / 2) - midY * zoom;
   const duration = 500;
   const startTime = performance.now();
@@ -2413,6 +2474,10 @@ document.getElementById('glow-mode-btn').addEventListener('click', () => {
 
 document.getElementById('fit-graph-btn').addEventListener('click', () => {
  if (typeof zoomToFit === 'function') zoomToFit();
+ // Wake the graph so the zoom animation is visible and interaction throttle resets
+ lastInteraction = Date.now();
+ useThrottle = false;
+ if (typeof resumeGraphLoop === 'function') resumeGraphLoop();
 });
 
 // ── Graph: Mouse Down ──
@@ -2695,6 +2760,7 @@ window.addEventListener('resize', () => {
  if (graphCanvas.style.display !== 'none') {
  resizeGraphCanvas();
  }
+ positionGraphControls();
 });
 
 // ── Subject Select: dynamic width ──
