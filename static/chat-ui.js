@@ -604,11 +604,12 @@
     }
 
     function openWikilink(name) {
-        var slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
-        if (window.selectNodeBySlug) {
-            window.selectNodeBySlug(slug);
-        }
-        showToast('Searching: ' + name, 'info');
+    var slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
+    if (window.selectNodeBySlug) {
+    window.selectNodeBySlug(slug);
+    } else {
+    showToast('Navigating to ' + name + '...', 'info');
+    }
     }
 
     function setChatEnabled(enabled) {
