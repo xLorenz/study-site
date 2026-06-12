@@ -271,7 +271,7 @@ def write_study_video(subject, filename, script, scene_name):
 </head>
 <body>
 <div class="container">
-  <video autoplay muted loop playsinline controls src="data:video/mp4;base64,{video_b64}"></video>
+  <video muted loop controls playsinline src="data:video/mp4;base64,{video_b64}"></video>
   <div class="label">{scene_title}</div>
 </div>
 </body>

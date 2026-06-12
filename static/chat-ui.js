@@ -292,7 +292,12 @@
             }
             // Auto-refresh objects tab when a study object or video is created
             if ((event.name === 'write_study_object' || event.name === 'write_study_video') && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
-            window.reloadObjectTree(chat.currentSubject);
+            const path = event.result && event.result.path;
+            window.reloadObjectTree(chat.currentSubject, path);
+            // Auto-open the created object in the main area
+            if (path && typeof window.showObject === 'function') {
+            window.showObject(path);
+            }
             }
             }
             smartScroll();

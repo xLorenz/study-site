@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <link rel="stylesheet" href="/static/chat-ui.css?v=12">
-<link rel="stylesheet" href="/static/study-ui.css?v=5">
+<link rel="stylesheet" href="/static/study-ui.css?v=9">
 <script defer src="/static/chat-ui.js?v=14"></script>
 <script defer src="/static/study-ui.js?v=1"></script>
 <style>
@@ -474,7 +474,7 @@ pre:hover .copy-btn{opacity:1}
  <!-- Left Sidebar — Objects -->
  <aside id="sidebar-left" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
    <div id="objects-section" class="sidebar-section grow">
-     <h3>Study Objects</h3>
+     <h3>Study Objects<span class="help-icon" data-tip="Ask the AI to create&#10;visual study aids:&#10;&#10;• Mock exams&#10;• Cheat sheets&#10;• Mind maps&#10;• Animations&#10;• Flash cards">?</span></h3>
      <div id="objects-tree">
        <p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>
      </div>
@@ -620,6 +620,7 @@ const TYPE_BADGES = {
  flash: { label: 'FLASH', color: '#22c55e' },
  unknown: { label: '?', color: '#505068' },
 };
+let _activeTreeItem = null; // Currently highlighted object tree element
 
 // ── Toast ──
 function showToast(message, type = 'info') {
@@ -676,7 +677,7 @@ async function loadSubjects() {
 }
 
 // ── Object Tree (Left Sidebar) ──
-async function reloadObjectTree(subject) {
+async function reloadObjectTree(subject, highlightPath) {
  const container = document.getElementById('objects-tree');
  if (!subject) {
  container.innerHTML = '<p class="placeholder-text">No subject selected</p>';
@@ -689,19 +690,67 @@ async function reloadObjectTree(subject) {
  container.innerHTML = '<p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>';
  return;
  }
- container.innerHTML = data.objects.map(obj => {
- const badge = TYPE_BADGES[obj.type] || TYPE_BADGES.unknown;
- const path = encodeURIComponent(obj.path);
- return '<div class="tree-item" onclick="showObject(\'' + obj.path + '\')">' +
- '<span class="type-badge" style="background:' + badge.color + '">' + badge.label + '</span>' +
- '<span class="tree-item-name" title="' + obj.title + '">' + obj.title + '</span>' +
- '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">\u2b07</a>' +
- '</div>';
+   container.innerHTML = data.objects.map(obj => {
+  let badge = TYPE_BADGES[obj.type];
+    if (!badge && obj.type) {
+    // Use deterministic color from type name
+    const c = strToColor(obj.type, 0.8, 0.4);
+    badge = { label: (obj.type || '?').toUpperCase(), color: c ? c.halo : '#505068' };
+    } else if (!badge) {
+    badge = TYPE_BADGES.unknown;
+    }
+    const path = encodeURIComponent(obj.path);
+    return '<div class="tree-item" onclick="onObjectClick(\'' + obj.path + '\', this)">' +
+    '<span class="type-badge" style="background:' + badge.color + '">' + badge.label + '</span>' +
+    '<span class="tree-item-name" title="' + (obj.title || '') + '">' + (obj.title || obj.name) + '</span>' +
+    '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">⬇</a>' +
+    '</div>';
  }).join('');
+   // Highlight after DOM is updated
+   if (highlightPath) _highlightTreeItemByPath(highlightPath);
  } catch (e) {
- container.innerHTML = '<p class="placeholder-text">\u2717 Failed to load objects</p>';
+ container.innerHTML = '<p class="placeholder-text">✗ Failed to load objects</p>';
  }
 }
+
+// ── Object tree click handler (highlights on click, stays while open) ──
+function onObjectClick(path, el) {
+  // Remove previous highlight
+  if (_activeTreeItem) _activeTreeItem.classList.remove('tree-item-highlight');
+  // Highlight this item
+  el.classList.add('tree-item-highlight');
+  _activeTreeItem = el;
+  showObject(path);
+}
+
+// Find and highlight tree item by path (for auto-open from AI creation)
+function _highlightTreeItemByPath(path) {
+  if (_activeTreeItem) _activeTreeItem.classList.remove('tree-item-highlight');
+  _activeTreeItem = null;
+  const items = document.querySelectorAll('#objects-tree .tree-item');
+  for (const item of items) {
+    if (item.getAttribute('onclick') && item.getAttribute('onclick').includes("'" + path + "'")) {
+      item.classList.add('tree-item-highlight');
+      _activeTreeItem = item;
+      break;
+    }
+  }
+}
+
+// ── Help tooltip (fixed position, escapes sidebar overflow) ──
+document.querySelectorAll('.help-icon').forEach(icon => {
+ icon.addEventListener('mouseenter', function() {
+   const tip = document.getElementById('help-tooltip');
+   tip.textContent = this.getAttribute('data-tip');
+   const rect = this.getBoundingClientRect();
+   tip.style.left = (rect.right + 10) + 'px';
+   tip.style.top = rect.top + 'px';
+   tip.style.display = 'block';
+ });
+ icon.addEventListener('mouseleave', function() {
+   document.getElementById('help-tooltip').style.display = 'none';
+ });
+});
 
 // ── Show Object in Main Area ──
 function showObject(path) {
@@ -745,6 +794,11 @@ function showObject(path) {
 }
 
 function hideObject() {
+ // Clear active tree item highlight
+ if (_activeTreeItem) {
+ _activeTreeItem.classList.remove('tree-item-highlight');
+ _activeTreeItem = null;
+ }
  document.getElementById('object-frame').style.display = 'none';
  document.getElementById('object-frame').src = '';
  document.getElementById('object-frame').style.left = '';
@@ -2848,5 +2902,6 @@ reloadGraph = function(subject) {
 
 console.log('Study UI — Phase 5: Force-Directed Graph');
 </script>
+<div id="help-tooltip" class="help-tooltip"></div>
 </body>
 </html>
