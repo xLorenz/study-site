@@ -51,4 +51,25 @@
   };
 
   console.log('Study UI — Phase 2: selectNodeBySlug loaded');
+
+  /**
+   * highlightNodeFromFile — When a file tree item is clicked, highlight
+   * the corresponding node in the graph. Bidirectional counterpart to
+   * highlightFileInTree (which goes graph→tree).
+   */
+  window.highlightNodeFromFile = function(path) {
+    if (typeof graphNodes === 'undefined' || !graphNodes) return;
+    const fileName = path.split('/').pop().replace(/\.md$/i, '').toLowerCase();
+    const node = graphNodes.find(n =>
+      (n.label || '').toLowerCase() === fileName ||
+      (n.title || '').toLowerCase() === fileName ||
+      n.id.toLowerCase() === fileName
+    );
+    if (!node) return;
+    if (typeof selectedNode !== 'undefined') selectedNode = node;
+    if (typeof highlightFileInTree === 'function') highlightFileInTree(node);
+    if (typeof resumeGraphLoop === 'function') resumeGraphLoop();
+  };
+
+  console.log('Study UI — Phase 5: highlightNodeFromFile loaded');
 })();

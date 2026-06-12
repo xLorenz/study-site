@@ -87,6 +87,50 @@ def get_tool_definitions():
                     "required": ["filename", "script", "scene_name"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_wiki_page",
+                "description": "Write or update a wiki markdown page in the subject's wiki/ directory. "
+                               "Use this to create source summaries, concept pages, or any wiki documentation. "
+                               "The content must include YAML frontmatter (title, created, type, tags, source_url). "
+                               "Use [[wikilinks]] to cross-reference other wiki pages. "
+                               "Can also write to wiki/index.md and wiki/log.md for index/log updates.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Filename for the wiki page (e.g. 'src-tp1-intro', 'cable-coaxial', 'index', 'log'). .md extension will be added if missing."
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Full markdown content of the wiki page. Must include YAML frontmatter (title, created, type, tags, source_url) for new pages. May omit it for wiki/index.md and wiki/log.md updates."
+                        }
+                    },
+                    "required": ["filename", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "mark_file_ingested",
+                "description": "Mark a raw file as having been fully processed (ingested). "
+                               "Call this AFTER you have created all wiki pages derived from this raw file. "
+                               "Updates the .ingested.json tracker so the file won't be processed again.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "The raw filename (e.g. 'tp1-intro.md'). Must match exactly the filename in the raw/ directory."
+                        }
+                    },
+                    "required": ["filename"]
+                }
+            }
         }
     ]
 
@@ -173,7 +217,79 @@ def write_study_object(subject, filename, html_content):
     }
 
 
-def write_study_video(subject, filename, script, scene_name):
+def write_wiki_page(subject, filename, content):
+    """Write a wiki markdown page with path traversal protection."""
+    # Normalize: strip .md if present, normalize base, add .md back
+    base = filename
+    if base.endswith(".md"):
+        base = base[:-3]
+    base = _normalize_filename(base)
+    filename = base + ".md"
+
+    wiki_dir = os.path.join(VAULT_DIR, "subjects", subject, "wiki")
+    os.makedirs(wiki_dir, exist_ok=True)
+
+    target_path = os.path.join(wiki_dir, filename)
+    real_wiki_dir = os.path.realpath(wiki_dir)
+    real_target = os.path.realpath(target_path)
+
+    # Path traversal protection
+    if not real_target.startswith(real_wiki_dir + os.sep):
+        return {"error": "Path traversal prevented"}
+
+    # Preserve wiki/index.md and wiki/log.md — append for log, overwrite for index
+    if filename == "log.md" and os.path.isfile(real_target):
+        with open(real_target, "r", encoding="utf-8") as f:
+            existing = f.read()
+        content = existing.rstrip() + "\\n" + content.lstrip()
+
+    with open(real_target, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return {
+        "path": os.path.relpath(real_target, VAULT_DIR),
+        "filename": filename,
+        "subject": subject,
+        "size_bytes": os.path.getsize(real_target),
+    }
+
+
+def mark_file_ingested(subject, filename):
+    """Mark a raw file as ingested in .ingested.json."""
+    if not filename.endswith(".md"):
+        filename += ".md"
+    raw_dir = os.path.join(VAULT_DIR, "subjects", subject, "raw")
+    raw_path = os.path.join(raw_dir, filename)
+
+    # Verify the file exists
+    if not os.path.isfile(raw_path):
+        return {"error": f"Raw file not found: raw/{filename}"}
+
+    # Read current ingested set
+    ingested_path = os.path.join(raw_dir, ".ingested.json")
+    ingested = set()
+    if os.path.isfile(ingested_path):
+        try:
+            with open(ingested_path, encoding="utf-8") as f:
+                data = json.load(f)
+            ingested = set(data.get("ingested", []))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    ingested.add(filename)
+
+    from datetime import datetime
+    with open(ingested_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "ingested": sorted(ingested),
+            "last_ingested": datetime.now().isoformat()
+        }, f, indent=1)
+
+    return {
+        "marked": filename,
+        "subject": subject,
+        "total_ingested": len(ingested),
+    }
     """Render a manim script and save as a self-contained HTML with embedded video."""
 
     filename = _normalize_filename(filename)
@@ -323,6 +439,19 @@ def execute_tool(subject, tool_call_name, args_json_str):
         if not filename or not script or not scene_name:
             return {"error": "Missing 'filename', 'script', or 'scene_name' argument"}
         return write_study_video(subject, filename, script, scene_name)
+
+    elif tool_call_name == "write_wiki_page":
+        filename = args.get("filename", "")
+        content = args.get("content", "")
+        if not filename or not content:
+            return {"error": "Missing 'filename' or 'content' argument"}
+        return write_wiki_page(subject, filename, content)
+
+    elif tool_call_name == "mark_file_ingested":
+        filename = args.get("filename", "")
+        if not filename:
+            return {"error": "Missing 'filename' argument"}
+        return mark_file_ingested(subject, filename)
 
     else:
         return {"error": f"Unknown tool: {tool_call_name}"}

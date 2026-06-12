@@ -10,9 +10,9 @@
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <link rel="stylesheet" href="/static/chat-ui.css?v=12">
-<link rel="stylesheet" href="/static/study-ui.css?v=9">
+<link rel="stylesheet" href="/static/study-ui.css?v=10">
 <script defer src="/static/chat-ui.js?v=14"></script>
-<script defer src="/static/study-ui.js?v=1"></script>
+<script defer src="/static/study-ui.js?v=2"></script>
 <style>
 /* ── Reset ── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -132,11 +132,6 @@ padding:var(--space-4);text-align:center;
 background:var(--surface-2);border-radius:var(--radius-md);
 border:1px dashed var(--border-2);margin:var(--space-2) 0}
 
-/* ── Update Wiki Button ── */
-.btn-update{width:100%;padding:var(--space-2) var(--space-3);font-size:var(--font-size-sm);font-weight:600;border:none;border-radius:var(--radius-md);cursor:pointer;background:#eab308;color:#1a1a2e;transition:opacity .2s}
-.btn-update:hover:not(:disabled){opacity:.85}
-.btn-update:disabled{opacity:.4;cursor:not-allowed;background:var(--surface-3);color:var(--text-dim)}
-
 /* ── Ingest Progress Bar ── */
 .ingest-progress-container{width:100%;padding:var(--space-2) var(--space-3)}
 .ingest-progress-track{width:100%;height:6px;background:var(--border-2);border-radius:3px;overflow:hidden;margin-bottom:var(--space-1)}
@@ -190,11 +185,6 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
 .tree-item-search-match::after{
  content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);
  width:6px;height:6px;border-radius:50%;background:#8b5cf6}
-.tree-item-action{background:none;border:none;cursor:pointer;
- color:var(--text-dim);font-size:var(--font-size-sm);
- padding:0 2px;transition:color .15s;text-decoration:none}
-.tree-item-action:hover{color:var(--text-bright)}
-.tree-item-action.delete-btn:hover{color:#f87171}
 
 /* ── Type Badges ── */
 .type-badge{display:inline-block;padding:1px 5px;
@@ -253,14 +243,6 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
  cursor:pointer;padding:2px 6px;border-radius:3px;
  font-size:var(--font-size-xs);opacity:0;transition:opacity .15s}
 pre:hover .copy-btn{opacity:1}
-
-/* ── Upload Zone ── */
-#upload-zone{padding:var(--space-3)}
-#upload-zone .btn{display:inline-block;padding:var(--space-2) var(--space-4);
- background:var(--accent);color:#fff;border-radius:var(--radius-sm);
- font-size:var(--font-size-sm);cursor:pointer;
- transition:opacity .15s}
-#upload-zone .btn:hover{opacity:0.85}
 
 /* ── Main Area ── */
 #main-area{
@@ -556,25 +538,25 @@ pre:hover .copy-btn{opacity:1}
 
  <!-- Right Sidebar — Upload, Files, Preview -->
   <aside id="sidebar-right" data-expanded-width="240" data-collapsed="true" class="sidebar-overlay">
-  <!-- Upload (top) -->
- <div class="sidebar-section">
+  <!-- Upload (top) — merged Choose Files + Update Wiki -->
+ <div class="sidebar-section" id="upload-section">
  <h3>Upload</h3>
  <div id="upload-zone">
- <p style="font-size:var(--font-size-sm);color:var(--text-dim);margin-bottom:var(--space-2)">Drop files here or choose</p>
- <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
- <label for="file-input" class="btn">Choose Files</label>
+  <div class="upload-btn-row">
+   <label for="file-input" class="btn-upload-primary">Choose Files</label>
+   <button id="update-wiki-btn" class="btn-upload-secondary" onclick="updateWiki()" disabled title="No pending changes">Update Wiki</button>
   </div>
+  <div id="ingest-progress" class="ingest-progress-container" style="display:none">
+   <div class="ingest-progress-track"><div id="ingest-progress-fill" class="ingest-progress-fill"></div></div>
+   <div id="ingest-progress-text" class="ingest-progress-text">Preparing…</div>
   </div>
-
-  <!-- Update Wiki Button / Progress Bar -->
-  <div class="sidebar-section" id="update-wiki-section">
-   <button id="update-wiki-btn" class="btn btn-update" onclick="updateWiki()" disabled title="No pending changes">&#9889; Update Wiki</button>
-   <div id="ingest-progress" class="ingest-progress-container" style="display:none">
-    <div class="ingest-progress-track"><div id="ingest-progress-fill" class="ingest-progress-fill"></div></div>
-    <div id="ingest-progress-text" class="ingest-progress-text">Preparing…</div>
-   </div>
-   <div id="update-wiki-summary" style="display:none"></div>
+  <div id="update-wiki-summary" style="display:none"></div>
+  <div class="upload-drop-zone" id="upload-drop-zone">
+   <input type="file" id="file-input" accept=".pdf,.pptx,.docx,.xlsx,.jpg,.png" multiple style="display:none">
+   <span class="upload-drop-text">Drop files here</span>
   </div>
+ </div>
+ </div>
 
   <!-- Files (middle, grows) -->
   <div class="sidebar-section grow">
@@ -593,8 +575,8 @@ pre:hover .copy-btn{opacity:1}
  </div>
  <div id="file-preview" style="display:none">
  <div id="preview-toolbar">
- <button class="preview-toolbar-btn" id="btn-copy-preview" title="Copy to clipboard">📋</button>
- <button class="preview-toolbar-btn" id="btn-close-preview" title="Close">✕</button>
+  <button class="preview-toolbar-btn" id="btn-copy-preview" title="Copy to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+  <button class="preview-toolbar-btn" id="btn-close-preview" title="Close">✕</button>
  </div>
  <div id="file-preview-content"></div>
  </div>
@@ -886,6 +868,7 @@ function renderFileTreeEntries(entries, subject, state) {
    const childrenHtml = e.children && e.children.length > 0
     ? renderFileTreeEntries(e.children, subject, state)
     : '';
+   const childCount = e.children ? e.children.length : 0;
    // Color the raw folder based on state
    const isRawFolder = e.name === 'raw';
    let folderClass = 'tree-folder';
@@ -894,7 +877,7 @@ function renderFileTreeEntries(entries, subject, state) {
    else if (isRawFolder && rawGreenCount > 0) folderClass += ' tree-folder-green';
    else if (isRawFolder && rawRedCount > 0) folderClass += ' tree-folder-red';
    return '<li class="' + folderClass + '">' +
-    '<span class="tree-folder-toggle" onclick="toggleFolder(this)">📁 ' + e.name + '</span>' +
+    '<span class="tree-folder-toggle" onclick="toggleFolder(this)">📁 ' + e.name + (childCount > 0 ? ' <span class="folder-count">' + childCount + '</span>' : '') + '</span>' +
     '<div class="tree-children" style="display:none">' + childrenHtml + '</div>' +
     '</li>';
   } else if (e.name.endsWith('.md')) {
@@ -908,27 +891,27 @@ function renderFileTreeEntries(entries, subject, state) {
    if (isRed) liClass += ' tree-item-red';
 
    const actions = [
-    '<span class="tree-item-name" onclick="showFilePreview(\'' + e.path + '\')">' + e.name + '</span>'
+    '<span class="tree-item-name" onclick="showFilePreview(\'' + e.path + '\'); window.highlightNodeFromFile && window.highlightNodeFromFile(\'' + e.path + '\')">' + e.name + '</span>'
    ];
    if (e.has_original && e.original_path) {
     actions.push(
      '<a href="/api/original?path=' + encodeURIComponent(e.original_path) +
-     '" class="tree-item-action" title="View original" target="_blank">📄</a>'
+     '" class="tree-item-action" title="View original" target="_blank"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>'
     );
    }
    actions.push(
-    '<button class="tree-item-action" onclick="copyFileContent(\'' + e.path + '\')" title="Copy to clipboard">📋</button>'
+    '<button class="tree-item-action" onclick="copyFileContent(\'' + e.path + '\')" title="Copy to clipboard"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
    );
    actions.push(
-    '<button class="tree-item-action" onclick="downloadFile(\'' + e.path + '\')" title="Download">⬇</button>'
+    '<button class="tree-item-action" onclick="downloadFile(\'' + e.path + '\')" title="Download"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>'
    );
    if (isRawFile && !isRed) {
     actions.push(
-     '<button class="tree-item-action delete-btn" onclick="markForDelete(\'' + e.path + '\',\'' + subject + '\')" title="Mark for deletion">🗑</button>'
+     '<button class="tree-item-action delete-btn" onclick="markForDelete(\'' + e.path + '\',\'' + subject + '\')" title="Mark for deletion"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>'
     );
    } else if (isRawFile && isRed) {
     actions.push(
-     '<button class="tree-item-action delete-btn undo-btn" onclick="undoDelete(\'' + e.path + '\',\'' + subject + '\')" title="Undo deletion">↩</button>'
+     '<button class="tree-item-action delete-btn undo-btn" onclick="undoDelete(\'' + e.path + '\',\'' + subject + '\')" title="Undo deletion"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>'
     );
    }
    return '<li class="' + liClass + '">' + actions.join('') + '</li>';
@@ -1185,7 +1168,7 @@ function finishIngestProgress(success) {
   setTimeout(() => {
     const btn = document.getElementById('update-wiki-btn');
     const bar = document.getElementById('ingest-progress');
-    if (btn) { btn.style.display = ''; btn.textContent = '⚡ Update Wiki'; }
+    if (btn) { btn.style.display = ''; btn.textContent = 'Update Wiki'; }
     if (bar) bar.style.display = 'none';
     if (fill) { fill.style.width = '0%'; fill.classList.remove('done', 'error'); }
     if (window._wikiState) refreshUpdateWikiButton(window._wikiState);
@@ -1578,10 +1561,12 @@ async function uploadFile(file, subject) {
  const data = await res.json();
  if (res.ok) {
  const msg = data.auto_ingested > 0
-  ? `\u2713 ${file.name} \u2014 ${data.auto_ingested} wiki pages created`
-  : `\u2713 ${file.name} uploaded`;
+  ? `✓ ${file.name} — ${data.auto_ingested} wiki pages created`
+  : `✓ ${file.name} uploaded`;
  showToast(msg, 'success');
- reloadFileTree(subject);
+ const openState = saveFolderState();
+ await reloadFileTree(subject);
+ restoreFolderState(openState);
  reloadGraph(subject);
  reloadObjectTree(subject);
  } else {
@@ -1593,12 +1578,23 @@ async function uploadFile(file, subject) {
 }
 
 // ── Full-page drag-and-drop upload ──
+const dropZone = document.getElementById('upload-drop-zone');
+document.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  if (dropZone) dropZone.classList.add('dragover');
+});
 document.addEventListener('dragover', (e) => {
  e.preventDefault();
  e.dataTransfer.dropEffect = 'copy';
 });
+document.addEventListener('dragleave', (e) => {
+  if (dropZone && !dropZone.contains(e.relatedTarget)) {
+    dropZone.classList.remove('dragover');
+  }
+});
 document.addEventListener('drop', async (e) => {
  e.preventDefault();
+ if (dropZone) dropZone.classList.remove('dragover');
  const subject = document.getElementById('subject-select').value;
  if (!subject) { showToast('Select a subject first', 'warning'); return; }
  for (const file of e.dataTransfer.files) await uploadFile(file, subject);

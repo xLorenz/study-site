@@ -96,6 +96,67 @@
 }
 
 /* '?' help icon with CSS tooltip on Study Objects h3 */
+/* ── Phase 5: Visual Refresh — Icons, Upload, File Tree ── */
+
+/* Updated .tree-item-action: 24px square button with standard glow */
+.tree-item-action{
+  background:transparent;border:none;cursor:pointer;
+  color:var(--text-dim);font-size:var(--font-size-sm);
+  width:24px;height:24px;display:inline-flex;align-items:center;
+  justify-content:center;padding:0;text-decoration:none;
+  border-radius:4px;transition:all .15s cubic-bezier(0.16,1,0.3,1);
+  line-height:1;flex-shrink:0}
+.tree-item-action:hover{
+  background:var(--surface-2);color:var(--text);
+  box-shadow:0 0 6px rgba(99,102,241,0.1)}
+.tree-item-action.delete-btn:hover{color:#f87171}
+.tree-item-action svg{display:block}
+
+/* Updated preview toolbar buttons with standard glow */
+.preview-toolbar-btn{
+  background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);border-radius:4px;cursor:pointer;
+  width:28px;height:28px;display:inline-flex;align-items:center;
+  justify-content:center;padding:0;line-height:1;
+  transition:all .15s cubic-bezier(0.16,1,0.3,1)}
+.preview-toolbar-btn:hover{
+  background:var(--surface-2);color:var(--text);
+  box-shadow:0 0 6px rgba(99,102,241,0.1)}
+
+/* ── Upload Section Merge ── */
+#upload-section .upload-btn-row{
+  display:flex;gap:6px;margin-bottom:var(--space-2)}
+.btn-upload-primary{
+  flex:1;padding:6px 12px;background:var(--accent);color:#fff;
+  border:none;border-radius:var(--radius-sm);font-size:var(--font-size-sm);
+  font-family:var(--font-sans);cursor:pointer;text-align:center;
+  transition:all .15s cubic-bezier(0.16,1,0.3,1)}
+.btn-upload-primary:hover{
+  background:var(--accent-dim);
+  box-shadow:0 0 8px rgba(99,102,241,0.2)}
+.btn-upload-secondary{
+  flex:1;padding:6px 12px;background:var(--surface-1);
+  border:1px solid var(--border);color:var(--text-dim);
+  border-radius:var(--radius-sm);font-size:var(--font-size-sm);
+  font-family:var(--font-sans);cursor:pointer;text-align:center;
+  transition:all .15s cubic-bezier(0.16,1,0.3,1)}
+.btn-upload-secondary:hover{
+  background:var(--surface-2);color:var(--text)}
+.btn-upload-secondary:disabled{
+  opacity:0.18;cursor:default;pointer-events:none}
+.upload-drop-zone{
+  border:1px dashed var(--border);border-radius:6px;
+  padding:12px;text-align:center;margin-top:var(--space-2);
+  transition:all .15s cubic-bezier(0.16,1,0.3,1)}
+.upload-drop-zone.dragover{
+  border-color:var(--accent);
+  box-shadow:0 0 8px rgba(99,102,241,0.15);
+  background:rgba(99,102,241,0.05)}
+.upload-drop-text{font-size:var(--font-size-xs);color:var(--text-dim)}
+
+/* ── Folder counts ── */
+.folder-count{color:var(--text-dim);font-size:var(--font-size-xs);margin-left:2px}
+
 .help-icon{
   display:inline-flex;
   align-items:center;

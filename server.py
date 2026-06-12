@@ -15,6 +15,7 @@ import unicodedata
 import urllib.parse
 import yaml
 from chat import handle_chat_start, handle_chat_stream, handle_chat_save, handle_chat_load, delete_chat_file
+from chat.ingest import run_ingest
 VAULT = os.path.expanduser("~/study-vault")
 STUDY_DIR = os.path.expanduser("~/study")
 PORT = 8081
@@ -798,170 +799,51 @@ def _log_action(subject, action, detail):
 
 
 def _run_llm_ingest_thread(subject):
-    """Background thread: spawns `hermes chat -q` to run LLM-powered wiki ingest.
+    """Background thread: runs the new chat.ingest.run_ingest() module.
 
-    The agent reads un-ingested raw files for `subject`, reads SCHEMA.md to
-    determine page format and conventions, runs the ingest
-    (creates wiki pages, updates .ingested.json, writes wikilinks for edges), then
-    writes a result file. This thread waits for the agent to finish, then loads
-    the result into `_ingest_result` and clears `_ingest_running`.
+    Uses the same NVIDIA NIM LLM client as the chat system, with tools
+    (read_vault_file, write_wiki_page, mark_file_ingested) instead of
+    spawning a full Hermes agent subprocess. Saves ~150-200MB RAM per run.
     """
     global _ingest_running, _ingest_result, _ingest_current_subject, _ingest_last_created_name
-    result_path = "/tmp/study_ingest_result.json"
-    # Clean any prior result
+
+    def _on_progress(event):
+        global _ingest_last_created_name
+        if event.get("event") == "page_created":
+            _ingest_last_created_name = event.get("filename", "?")
+        elif event.get("event") == "file_ingested":
+            _log_action(subject, "INGEST_PAGE",
+                        f"file ingested: {event.get('filename', '?')}")
+
     try:
-        os.remove(result_path)
-    except FileNotFoundError:
-        pass
-
-    # Find un-ingested files
-    raw_dir = os.path.join(VAULT, "subjects", subject, "raw")
-    ingested = _read_ingested(subject)
-    uningested = []
-    if os.path.isdir(raw_dir):
-        for f in sorted(os.listdir(raw_dir)):
-            if f.endswith(".md") and f != ".ingested.json" and f not in ingested:
-                uningested.append(f)
-
-    if not uningested:
-        # Nothing to ingest — return early
-        _ingest_result = {
-            "pages_created": 0,
-            "files_deleted": 0,
-            "tokens_used": 0,
-            "model": "no-op",
-            "message": "No new files to ingest",
-            "finished_at": _now_iso(),
-            "status": "complete",
-        }
-        _ingest_running = False
-        _ingest_current_subject = None
-        _ingest_total_pending = 0
-        _log_action(subject, "UPDATE_WIKI_INGEST", "no files to ingest")
-        return
-
-    file_list = "\n".join(f"- {f}" for f in uningested)
-    prompt = f"""This is a NON-INTERACTIVE automated wiki ingest for subject '{subject}'. Do NOT ask the user questions or wait for discussion — just do the work.
-
-Un-ingested raw files in ~/study-vault/subjects/{subject}/raw/:
-{file_list}
-
-STEP 1 — Read SCHEMA.md at ~/study-vault/subjects/{subject}/SCHEMA.md if it exists.
-Follow its page format, frontmatter, and interlinking rules. If SCHEMA.md says to "discuss" or "ask the user", SKIP that step — this is automated.
-
-If SCHEMA.md does NOT exist, use these defaults:
-- Page format: markdown with YAML frontmatter (title, created, type, tags, source_url)
-- Frontmatter type: one of source_summary, concept, formula, definition, exercise
-- `tags`: exactly ONE topic tag per page (e.g., `tags: [arrays]`). Pick the single most specific topic.
-- `source_url`: path to the raw file this page derives from (e.g., `source_url: raw/2026-cd-tp6.md`)
-- Source summaries: name them `src-{{base-name}}` (e.g., `src-2026-cd-tp6.md`) — never reuse raw/ filenames
-- Create BOTH a source summary page per raw file AND concept pages for each distinct concept
-- Use [[wikilinks]] with exact lowercase-hyphen filenames (e.g., `[[cable-coaxial]]`, not `[[Cable Coaxial]]`)
-- Every concept wikilinked MUST have its own page — no orphan wikilinks
-- End each concept page with a "## Related concepts" section
-- Page names: lowercase-with-hyphens.md
-
-STEP 2 — Follow the Ingest Workflow defined in SCHEMA.md:
-- For each un-ingested raw .md file, do exactly what SCHEMA.md says (source pages + concept pages)
-- After processing each file, **immediately** add its filename to the `ingested` array in raw/.ingested.json
-
-STEP 3 — After all files are processed:
-1. Update wiki/index.md with new pages and one-line descriptions
-2. Append an entry to wiki/log.md with the date, source name, and what changed
-
-RULES:
-- Preserve any existing wiki pages — never overwrite or delete files you did not create
-- Never modify anything in raw/
-- This is non-interactive — never ask the user questions or wait for input
-
-WHEN COMPLETE, write the result file at {result_path} with EXACTLY this JSON (no other text in the file):
-{{"pages_created": N, "tokens_used": N, "model": "<provider>/<model>", "status": "complete"}}
-
-- pages_created: total number of new wiki pages you created across all files
-- tokens_used: total tokens consumed (input + output) for the ingest
-- model: the model identifier (e.g., opencode-zen/minimax-m3-free)
-- status: "complete" on success, "error" on failure
-
-Use the terminal and file tools to read/write files. Be thorough — the wiki pages should be high quality with proper structure, examples, and cross-links."""
-
-    # Spawn hermes subprocess (one-shot, quiet, yolo for non-interactive tool use).
-    # No skills loaded — the agent follows SCHEMA.md for page format and conventions.
-    # No --provider/-m flags → Hermes uses the default model and falls through
-    # fallback_providers automatically if the default is unavailable.
-    # NOTE: No timeout — process only stops when the LLM completes or errors.
-    try:
-        proc = subprocess.run(
-            ["hermes", "chat", "-q", prompt,
-             "-Q", # quiet mode (no banner)
-             "--yolo", # auto-approve tool use
-             "--accept-hooks"],
-            cwd=os.path.expanduser("~"),
-            capture_output=True,
-            text=True,
-        )
-        agent_output = proc.stdout + "\n" + proc.stderr
+        result = run_ingest(subject, on_progress=_on_progress)
     except Exception as e:
-        agent_output = f"[error] {e}"
-
-    # Read result file written by agent
-    pages_created = 0
-    tokens_used = 0
-    model = "opencode-zen/minimax-m3-free"
-    status = "error"
-    if os.path.isfile(result_path):
-        try:
-            with open(result_path) as f:
-                data = json.load(f)
-            pages_created = int(data.get("pages_created", 0))
-            tokens_used = int(data.get("tokens_used", 0))
-            model = data.get("model", model)
-            status = data.get("status", "complete")
-        except (json.JSONDecodeError, ValueError) as e:
-            status = "error"
-
-    # If result file missing or tokens are zero, try fallback methods
-    if status != "complete" or (pages_created == 0 and tokens_used == 0):
-        # Fallback 1: parse agent output for token lines
-        for line in agent_output.splitlines():
-            if "API call #" in line and "total=" in line:
-                m = re.search(r"total=(\d+)", line)
-                if m:
-                    tokens_used += int(m.group(1))
-
-        # Fallback 2: read token counts from Hermes sessions DB
-        if tokens_used == 0:
-            try:
-                import sqlite3 as _sq3
-                _db = os.path.expanduser("~/.hermes/sessions.db")
-                if os.path.isfile(_db):
-                    _conn = _sq3.connect(_db)
-                    _cur = _conn.execute(
-                        "SELECT input_tokens + output_tokens + COALESCE(cache_read_tokens,0) + COALESCE(cache_write_tokens,0) + COALESCE(reasoning_tokens,0) "
-                        "FROM sessions WHERE started_at > ? ORDER BY started_at DESC LIMIT 1",
-                        (time.time() - 14400,)  # within last 4 hours (ingest can run long)
-                    )
-                    _row = _cur.fetchone()
-                    _conn.close()
-                    if _row and _row[0]:
-                        tokens_used = int(_row[0])
-            except Exception:
-                pass  # non-critical, keep tokens_used=0
+        result = {
+            "pages_created": 0,
+            "tokens_used": 0,
+            "model": "unknown",
+            "status": "error",
+            "message": f"Ingest thread crashed: {e}",
+            "finished_at": _now_iso(),
+        }
 
     _ingest_result = {
-        "pages_created": pages_created,
+        "pages_created": result.get("pages_created", 0),
         "files_deleted": 0,
-        "tokens_used": tokens_used,
-        "model": model,
-        "message": (f"LLM ingest complete: {pages_created} pages created, "
-                   f"{tokens_used} tokens used"),
-        "finished_at": _now_iso(),
-        "status": status,
+        "tokens_used": result.get("tokens_used", 0),
+        "model": result.get("model", "unknown"),
+        "message": result.get("message", ""),
+        "finished_at": result.get("finished_at", _now_iso()),
+        "status": result.get("status", "error"),
     }
     _ingest_running = False
     _ingest_current_subject = None
     _ingest_total_pending = 0
     _log_action(subject, "UPDATE_WIKI_INGEST",
-                f"{pages_created} pages, {tokens_used} tokens, model={model}")
+                f"{result.get('pages_created', 0)} pages, "
+                f"{result.get('tokens_used', 0)} tokens, "
+                f"model={result.get('model', '?')}, "
+                f"status={result.get('status', '?')}")
 
 
 def _now_iso():
