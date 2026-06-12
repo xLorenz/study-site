@@ -10,9 +10,9 @@
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <link rel="stylesheet" href="/static/chat-ui.css?v=12">
-<link rel="stylesheet" href="/static/study-ui.css?v=10">
+<link rel="stylesheet" href="/static/study-ui.css?v=15">
 <script defer src="/static/chat-ui.js?v=14"></script>
-<script defer src="/static/study-ui.js?v=2"></script>
+<script defer src="/static/study-ui.js?v=3"></script>
 <style>
 /* ── Reset ── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -192,57 +192,7 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
  color:#fff;letter-spacing:0.5px;flex-shrink:0;
  line-height:1.4}
 
-/* ── File Preview ── */
-#preview-section{display:flex;flex-direction:column;
- min-height:80px;max-height:60%;overflow:hidden;
- transition:height .05s}
-#preview-resize-handle{height:4px;cursor:row-resize;
- background:transparent;flex-shrink:0;
- position:relative;z-index:5;transition:background .15s;
- width:100%;touch-action:none}
-#preview-resize-handle::before{
- content:'';position:absolute;left:0;right:0;top:-14px;height:32px}
-#preview-resize-handle:hover,
-#preview-resize-handle.active{background:var(--accent)}
-#file-preview{flex:1;padding:var(--space-3);
- display:flex;flex-direction:column;overflow:hidden;
- min-height:0}
-#preview-toolbar{display:flex;justify-content:flex-end;
- align-items:center;gap:var(--space-2);
- margin-bottom:var(--space-2);flex-shrink:0}
-.preview-toolbar-btn{background:var(--surface-2);
- border:1px solid var(--border);color:var(--text-dim);
- border-radius:var(--radius-sm);cursor:pointer;
- width:28px;height:28px;display:flex;align-items:center;
- justify-content:center;font-size:var(--font-size-base);
- transition:all .15s;padding:0;line-height:1}
-.preview-toolbar-btn:hover{background:var(--border-2);
- color:var(--text-bright)}
-#file-preview-content{font-size:var(--font-size-sm);line-height:1.6;
- flex:1;overflow-y:auto;min-height:0}
-#file-preview-content h1{font-size:var(--font-size-md);color:var(--text-bright);
- margin-bottom:var(--space-2)}
-#file-preview-content h2{font-size:var(--font-size-base);color:var(--text-bright);
- margin-bottom:var(--space-2);margin-top:var(--space-3)}
-#file-preview-content h3{font-size:var(--font-size-sm);color:var(--text-bright);
- margin-bottom:var(--space-1);margin-top:var(--space-2)}
-#file-preview-content p{margin-bottom:var(--space-2)}
-#file-preview-content ul,#file-preview-content ol{padding-left:var(--space-5);
- margin-bottom:var(--space-2)}
-#file-preview-content code{background:var(--surface-2);
- padding:1px 4px;border-radius:3px;font-family:var(--font-mono);
- font-size:var(--font-size-xs)}
-#file-preview-content pre{background:var(--surface-2);
- padding:var(--space-3);border-radius:var(--radius-md);
- overflow-x:auto;margin-bottom:var(--space-3);
- border:1px solid var(--border);position:relative}
-#file-preview-content pre code{padding:0;background:none;
- font-size:var(--font-size-xs);line-height:1.5}
-.copy-btn{position:absolute;top:var(--space-1);right:var(--space-1);
- background:var(--border-2);border:none;color:var(--text-dim);
- cursor:pointer;padding:2px 6px;border-radius:3px;
- font-size:var(--font-size-xs);opacity:0;transition:opacity .15s}
-pre:hover .copy-btn{opacity:1}
+/* ── File Preview — styles moved to static/study-ui.css (Phase 6) ── */
 
 /* ── Main Area ── */
 #main-area{
@@ -485,8 +435,10 @@ pre:hover .copy-btn{opacity:1}
        <span class="model-label">Model</span>
        <span class="model-select-wrap">
          <select id="chat-model-select" title="Select AI model">
+         <option value="deepseek-v4-flash-free">DeepSeek V4 Flash (Zen)</option>
+         <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro</option>
+         <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash</option>
          <option value="z-ai/glm-5.1">GLM-5.1</option>
-         <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4</option>
          </select>
          </span>
          </div>
@@ -565,24 +517,36 @@ pre:hover .copy-btn{opacity:1}
  <p class="placeholder-text">No files yet<br><span style="font-size:var(--font-size-xs)">Upload materials to get started</span></p>
  </div>
  </div>
- <!-- Preview Resize Handle (between Files and Preview) -->
- <div id="preview-resize-handle"></div>
  <!-- File Preview (bottom, resizable) -->
- <div class="sidebar-section" id="preview-section">
- <h3>File Preview</h3>
+ <!-- Preview Resize Handle — placed between files and preview, like chat handle is between objects and chat -->
+ <div id="preview-resize-handle" disabled>
+   <div class="grip"><span></span><span></span><span></span></div>
+ </div>
+ <div class="sidebar-section" id="preview-section" style="height:100px">
+ <div id="file-preview-header" style="display:none">
+  <div class="preview-header-left">
+   <div class="preview-title"></div>
+   <div class="preview-created"></div>
+  </div>
+  <div class="preview-header-right">
+   <div class="preview-source"></div>
+   <div class="preview-type"></div>
+   <div class="preview-tags"></div>
+  </div>
+ </div>
  <div id="preview-placeholder">
  <p class="placeholder-text">Select a .md file to preview</p>
  </div>
  <div id="file-preview" style="display:none">
  <div id="preview-toolbar">
-  <button class="preview-toolbar-btn" id="btn-copy-preview" title="Copy to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-  <button class="preview-toolbar-btn" id="btn-close-preview" title="Close">✕</button>
+  <button class="preview-toolbar-btn" id="btn-copy-preview"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+  <button class="preview-toolbar-btn" id="btn-close-preview">✕</button>
  </div>
  <div id="file-preview-content"></div>
  </div>
  </div>
- </aside>
-</div>
+  </aside>
+ </div>
 
 <!-- ── Toast Container ── -->
 <div id="toast-container"></div>
@@ -931,32 +895,169 @@ function toggleFolder(el) {
 }
 
 // ── File Preview ──
+let previewEverOpened = false;
+
+function parseFrontmatter(raw) {
+ const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+ if (!m) return { content: raw, meta: {} };
+ const body = m[1];
+ const rest = raw.slice(m[0].length);
+ const meta = {};
+ body.split('\n').forEach(line => {
+  const idx = line.indexOf(':');
+  if (idx === -1) return;
+  const key = line.slice(0, idx).trim();
+  let val = line.slice(idx + 1).trim();
+  // strip quotes
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))
+   val = val.slice(1, -1);
+  // arrays like [a, b, c]
+  if (val.startsWith('[') && val.endsWith(']'))
+   val = val.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+  meta[key] = val;
+ });
+ return { content: rest.replace(/^\r?\n/, ''), meta };
+}
+
+function processWikilinks(container) {
+ // Convert [[slug]] or [[slug|display]] to clickable spans
+ const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+ const nodes = [];
+ while (walker.nextNode()) nodes.push(walker.currentNode);
+ for (let i = nodes.length - 1; i >= 0; i--) {
+  const node = nodes[i];
+  const text = node.textContent;
+  if (!text.includes('[[')) continue;
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  const re = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+   if (match.index > last)
+    frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+   const slug = match[1].trim();
+   const display = match[2] ? match[2].trim() : slug;
+   const span = document.createElement('span');
+   span.className = 'wikilink';
+   span.textContent = display;
+   span.dataset.slug = slug;
+   span.addEventListener('click', () => selectNodeBySlug(slug));
+   frag.appendChild(span);
+   last = re.lastIndex;
+  }
+  if (last < text.length)
+   frag.appendChild(document.createTextNode(text.slice(last)));
+  if (frag.childNodes.length) node.parentNode.replaceChild(frag, node);
+ }
+}
+
 async function showFilePreview(path, searchQuery) {
  const preview = document.getElementById('file-preview');
+ const section = document.getElementById('preview-section');
+ const grip = document.getElementById('preview-resize-handle');
  try {
- const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
- const data = await res.json();
- if (!res.ok) {
- showToast('✗ ' + (data.error || 'Failed to load'), 'danger');
- return;
- }
- currentPreviewPath = path;
- document.getElementById('preview-placeholder').style.display = 'none';
- preview.style.display = 'flex';
- const contentEl = document.getElementById('file-preview-content');
- renderMarkdown(contentEl, data.content);
- 
- // If called from search, highlight query terms and scroll
- if (searchQuery && searchQuery.length >= 2) {
- highlightSearchInPreview(contentEl, searchQuery);
- scrollToFirstMatch(contentEl);
- }
+  const res = await fetch('/api/file-content?path=' + encodeURIComponent(path));
+  const data = await res.json();
+  if (!res.ok) {
+   showToast('✗ ' + (data.error || 'Failed to load'), 'danger');
+   return;
+  }
+  currentPreviewPath = path;
+
+  // Parse frontmatter and populate header
+  const { content: mdContent, meta } = parseFrontmatter(data.content);
+  const header = document.getElementById('file-preview-header');
+  const titleEl = header.querySelector('.preview-title');
+  const createdEl = header.querySelector('.preview-created');
+  const sourceEl = header.querySelector('.preview-source');
+  const typeEl = header.querySelector('.preview-type');
+  const tagsEl = header.querySelector('.preview-tags');
+
+  // Title: use frontmatter title or derive from filename
+  const basename = path.split('/').pop().replace(/\.md$/, '');
+  titleEl.textContent = meta.title || basename.replace(/[-_]/g, ' ');
+
+  // Created date
+  if (meta.created) {
+   const d = new Date(meta.created);
+   createdEl.textContent = isNaN(d) ? meta.created : d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  } else {
+   createdEl.textContent = '';
+  }
+
+  // Source — render as wikilink [[slug]] with source-halo color
+  const sourceVal = meta.source_url || meta.source || '';
+  if (sourceVal) {
+   // Extract slug: strip raw/ prefix and .md suffix
+   let slug = sourceVal.replace(/^raw\//, '').replace(/\.md$/, '');
+   // Strip subjects/ prefix if present
+   slug = slug.replace(/^subjects\/[^/]+\//, '');
+   const color = strToColor(sourceVal, 1.0, 0.6);
+   sourceEl.innerHTML = 'source: <span class="wikilink-preview" style="color:' + color.halo + '">' + slug + '</span>';
+   sourceEl.querySelector('.wikilink-preview').addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectNodeBySlug(slug);
+   });
+  } else {
+   sourceEl.textContent = '';
+  }
+
+  // Type badge — use TYPE_HALOS color
+  if (meta.type) {
+   const typeStr = Array.isArray(meta.type) ? meta.type[0] : meta.type;
+   const halo = TYPE_HALOS[typeStr] || TYPE_HALOS.note;
+   typeEl.textContent = typeStr.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+   typeEl.style.background = halo.halo;
+   typeEl.style.color = '#fff';
+   typeEl.style.display = '';
+  } else {
+   typeEl.style.display = 'none';
+  }
+
+  // Tags — each tag gets its topic-halo color from strToColor
+  if (meta.tags && (Array.isArray(meta.tags) ? meta.tags.length : meta.tags)) {
+   const tagList = Array.isArray(meta.tags) ? meta.tags : [meta.tags];
+   tagsEl.innerHTML = tagList.map(t => {
+    const c = strToColor(t, 0.6, 0.4);
+    return '<span style="color:' + (c ? c.halo : 'var(--text-dim)') + '">' + t + '</span>';
+   }).join(' ');
+  } else {
+   tagsEl.textContent = '';
+  }
+
+  // Show/hide header (only show if any metadata exists)
+  const hasMeta = meta.title || meta.created || meta.source_url || meta.source || meta.type || meta.tags;
+  header.style.display = hasMeta ? 'flex' : 'none';
+
+  // Show preview content
+  document.getElementById('preview-placeholder').style.display = 'none';
+  preview.style.display = 'flex';
+  const contentEl = document.getElementById('file-preview-content');
+  renderMarkdown(contentEl, mdContent);
+  processWikilinks(contentEl);
+  // Scroll content to top on new file
+  contentEl.scrollTop = 0;
+
+  // Grow only on first-ever open
+  if (!previewEverOpened) {
+   previewEverOpened = true;
+   section.style.height = '500px';
+   section.classList.add('preview-open');
+   grip.removeAttribute('disabled');
+  }
+  // No permanent .active class — handle dots only glow during drag (same as chat handle)
+
+  // If called from search, highlight query terms and scroll
+  if (searchQuery && searchQuery.length >= 2) {
+  highlightSearchInPreview(contentEl, searchQuery);
+  scrollToFirstMatch(contentEl);
+  }
  } catch (e) {
- showToast('✗ Failed to load preview', 'danger');
+  showToast('✗ Failed to load preview', 'danger');
  } finally {
- if (!preview.style.display || preview.style.display === 'none') {
- preview.style.display = 'flex';
- }
+  if (!preview.style.display || preview.style.display === 'none') {
+  preview.style.display = 'flex';
+  }
  }
 }
 
@@ -1619,7 +1720,16 @@ document.getElementById('btn-close-preview').addEventListener('click', () => {
  document.getElementById('file-preview').style.display = 'none';
  document.getElementById('file-preview-content').innerHTML = '';
  document.getElementById('preview-placeholder').style.display = 'block';
+ document.getElementById('file-preview-header').style.display = 'none';
  currentPreviewPath = '';
+ // Reset to collapsed state — next open will expand again
+   const section = document.getElementById('preview-section');
+   const grip = document.getElementById('preview-resize-handle');
+   section.style.height = '100px';
+   section.classList.remove('preview-open');
+   grip.setAttribute('disabled', '');
+   grip.classList.remove('active');
+   previewEverOpened = false;
 });
 
 // Copy preview content to clipboard
@@ -1638,22 +1748,22 @@ document.getElementById('btn-copy-preview').addEventListener('click', async () =
  showToast('\u2717 Copy failed', 'danger');
  }
 });
-
 // ── Preview Resize Handle ──
 (function initPreviewResize() {
  const handle = document.getElementById('preview-resize-handle');
  const section = document.getElementById('preview-section');
 
  handle.addEventListener('mousedown', (e) => {
+ if (handle.hasAttribute('disabled')) return;
  e.preventDefault();
  const startY = e.clientY;
  const startH = section.getBoundingClientRect().height;
  handle.classList.add('active');
  const sidebar = document.getElementById('sidebar-right');
  const sidebarH = sidebar.getBoundingClientRect().height;
- const maxH = sidebarH * 0.6; // max 60% of sidebar
- const minH = 80;
- document.body.style.cursor = 'row-resize';
+ const maxH = sidebarH * 0.6;
+ const minH = 100;
+ document.body.style.cursor = 'ns-resize';
  document.body.style.userSelect = 'none';
 
  const onMove = (me) => {
@@ -1672,8 +1782,8 @@ document.getElementById('btn-copy-preview').addEventListener('click', async () =
  document.removeEventListener('mouseup', onUp);
  };
  document.addEventListener('mousemove', onMove);
-         document.addEventListener('mouseup', onUp);
-     });
+        document.addEventListener('mouseup', onUp);
+    });
  })();
 
  // ── Chat Resize Handle (mirrors initPreviewResize pattern) ──
@@ -2793,7 +2903,7 @@ function closeSidebarsIfMobile(e) {
  const btnLeft = document.getElementById('btn-toggle-left');
  const btnRight = document.getElementById('btn-toggle-right');
  if (left.contains(e.target) || right.contains(e.target)) return;
- if (e.target === btnLeft || e.target === btnRight) return;
+ if (btnLeft.contains(e.target) || btnRight.contains(e.target)) return;
  if (left.dataset.collapsed === 'false') toggleSidebar('sidebar-left');
  if (right.dataset.collapsed === 'false') toggleSidebar('sidebar-right');
 }

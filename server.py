@@ -16,6 +16,7 @@ import urllib.parse
 import yaml
 from chat import handle_chat_start, handle_chat_stream, handle_chat_save, handle_chat_load, delete_chat_file
 from chat.ingest import run_ingest
+from chat.types import AVAILABLE_MODELS
 VAULT = os.path.expanduser("~/study-vault")
 STUDY_DIR = os.path.expanduser("~/study")
 PORT = 8081

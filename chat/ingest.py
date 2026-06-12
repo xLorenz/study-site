@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 from .llm import get_llm_client, get_extra_body
 from .tools import get_tool_definitions, execute_tool
-from .types import VAULT_DIR, AVAILABLE_MODELS
+from .types import VAULT_DIR, AVAILABLE_MODELS, PROVIDER_FOR_MODEL
 
 # Override: ingests can be very long (NVIDIA API is slow, many files to process)
 MAX_TOOL_ROUNDS = 300
@@ -145,6 +145,9 @@ def _run_tool_loop(
 ) -> dict:
     """Run a non-streaming multi-round tool-calling loop.
 
+    Tries primary provider first (determined by PROVIDER_FOR_MODEL).
+    On 429/timeout, falls back to the next provider in the list.
+
     Args:
         messages: List of message dicts starting with system prompt + user message.
         subject: Subject name (for tool execution).
@@ -154,9 +157,59 @@ def _run_tool_loop(
     Returns:
         dict with keys: content, model, pages_created, tokens_used, status
     """
-    client = get_llm_client()
+    # Build ordered list of (provider, model) pairs to try
+    from .llm import get_llm_client, get_extra_body, _is_429_error
+    primary_provider = PROVIDER_FOR_MODEL.get(model, "nvidia")
+    if primary_provider == "zen":
+        # Full fallback chain: Zen → NVIDIA v4-pro → v4-flash → glm-5.1
+        provider_chain = [
+            ("zen", model),
+            ("nvidia", "deepseek-ai/deepseek-v4-pro"),
+            ("nvidia", "deepseek-ai/deepseek-v4-flash"),
+            ("nvidia", "z-ai/glm-5.1"),
+        ]
+    else:
+        provider_chain = [("nvidia", model)]
+
     tools = get_tool_definitions()
-    extra_body = get_extra_body(model)
+    # Ingest only needs read_vault_file, write_wiki_page, mark_file_ingested
+    ingest_tool_names = {"read_vault_file", "write_wiki_page", "mark_file_ingested"}
+    tools = [t for t in tools if t["function"]["name"] in ingest_tool_names]
+
+    # Active provider (set after first successful call, persists across rounds)
+    active_provider = None
+    active_model = None
+    active_client = None
+
+    def _try_chain(messages, tools, chain_idx_start=0):
+        """Try API call across the provider chain. Returns (response, chain_index) on success."""
+        for idx in range(chain_idx_start, len(provider_chain)):
+            prov, mdl = provider_chain[idx]
+            try:
+                client = get_llm_client(prov)
+                extra_body = get_extra_body(mdl, prov)
+                resp = client.chat.completions.create(
+                    model=mdl,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    stream=False,
+                    extra_body=extra_body,
+                    temperature=0.3,
+                    max_tokens=LLM_MAX_TOKENS,
+                )
+                return resp, idx
+            except Exception as e:
+                _logger.warning(f"Provider '{prov}'/'{mdl}' failed: {e}")
+                if not _is_429_error(e):
+                    # Non-rate-limit error on first attempt — still fall through to retry
+                    if idx == 0 and len(provider_chain) > 1:
+                        _logger.info(f"  Falling back to next provider...")
+                        continue
+                    raise  # propagate to outer retry logic
+                # 429 — try next provider
+                continue
+        return None, -1  # all providers failed
 
     round_num = 0
     pages_created = 0
@@ -170,16 +223,29 @@ def _run_tool_loop(
         _logger.info(f"LLM round {round_num + 1} starting ({len(messages)} messages in context)")
 
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                stream=False,
-                extra_body=extra_body,
-                temperature=0.3,
-                max_tokens=LLM_MAX_TOKENS,
-            )
+            # Try active provider first (if known), otherwise start the chain
+            if active_provider is not None:
+                # Use existing active provider
+                extra_body = get_extra_body(active_model, active_provider)
+                response = active_client.chat.completions.create(
+                    model=active_model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    stream=False,
+                    extra_body=extra_body,
+                    temperature=0.3,
+                    max_tokens=LLM_MAX_TOKENS,
+                )
+            else:
+                # First call — try provider chain
+                response, chain_idx = _try_chain(messages, tools)
+                if response is None:
+                    raise Exception(f"All providers failed for round {round_num + 1}")
+                prov, mdl = provider_chain[chain_idx]
+                active_provider = prov
+                active_model = mdl
+                active_client = get_llm_client(prov)
         except Exception as e:
             _logger.error(f"LLM API call failed on round {round_num + 1}: {e}")
             _logger.debug(traceback.format_exc())
@@ -193,16 +259,28 @@ def _run_tool_loop(
                     _logger.info(f"  Retry {retry + 1}/3 in {wait}s...")
                     time.sleep(wait)
                     try:
-                        response = client.chat.completions.create(
-                            model=model,
-                            messages=messages,
-                            tools=tools,
-                            tool_choice="auto",
-                            stream=False,
-                            extra_body=extra_body,
-                            temperature=0.3,
-                            max_tokens=LLM_MAX_TOKENS,
-                        )
+                        if active_provider is not None:
+                            # Use active provider for retry
+                            retry_extra = get_extra_body(active_model, active_provider)
+                            response = active_client.chat.completions.create(
+                                model=active_model,
+                                messages=messages,
+                                tools=tools,
+                                tool_choice="auto",
+                                stream=False,
+                                extra_body=retry_extra,
+                                temperature=0.3,
+                                max_tokens=LLM_MAX_TOKENS,
+                            )
+                        else:
+                            # No active provider yet — try chain from start
+                            response, chain_idx = _try_chain(messages, tools)
+                            if response is None:
+                                raise Exception("All providers failed on retry")
+                            prov, mdl = provider_chain[chain_idx]
+                            active_provider = prov
+                            active_model = mdl
+                            active_client = get_llm_client(prov)
                         recovered = True
                         break
                     except Exception as e2:
@@ -360,7 +438,7 @@ def run_ingest(subject: str, model: str = None, on_progress: callable = None) ->
     Returns:
         dict with keys: pages_created, tokens_used, model, status, message, finished_at
     """
-    model = model or AVAILABLE_MODELS[1]
+    model = model or AVAILABLE_MODELS[0]
     start_time = time.time()
 
     _logger.info(f"=" * 60)

@@ -4,7 +4,7 @@ import json
 import time
 
 from . import state
-from .types import CHATS_DIR, MAX_BODY_SIZE
+from .types import CHATS_DIR, MAX_BODY_SIZE, AVAILABLE_MODELS
 
 
 def _read_body(handler):
@@ -30,7 +30,7 @@ def handle_chat_start(handler):
     subject = data.get("subject", "")
     message = data.get("message", "")
     conversation = data.get("conversation", [])
-    model = data.get("model", "z-ai/glm-5.1")
+    model = data.get("model", AVAILABLE_MODELS[0])
 
     if not subject or not message:
         handler._send_json(400, {"error": "subject and message are required"})

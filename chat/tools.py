@@ -290,8 +290,10 @@ def mark_file_ingested(subject, filename):
         "subject": subject,
         "total_ingested": len(ingested),
     }
-    """Render a manim script and save as a self-contained HTML with embedded video."""
 
+
+def write_study_video(subject, filename, script, scene_name):
+    """Render a manim script and save as a self-contained HTML with embedded video."""
     filename = _normalize_filename(filename)
     if not filename.endswith(".html"):
         filename += ".html"

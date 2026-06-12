@@ -6,51 +6,113 @@ import time
 import uuid
 from collections import namedtuple
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
-from .types import NIM_BASE_URL, MAX_TOOL_ROUNDS
+from .types import (
+    NIM_BASE_URL,
+    ZEN_BASE_URL,
+    ZEN_API_KEY_ENV,
+    PROVIDER_FOR_MODEL,
+    MAX_TOOL_ROUNDS,
+)
 from .tools import get_tool_definitions, execute_tool
 
 ToolCall = namedtuple("ToolCall", ["index", "id", "name", "arguments"], defaults=[0, "", "", ""])
 
-_client = None
+_nvidia_client = None
+_zen_client = None
 
 
-def get_llm_client():
-    """Create a cached OpenAI client for NVIDIA NIM endpoint."""
-    global _client
-    if _client is not None:
-        return _client
-
-    # Resolve API key
-    api_key = os.environ.get("NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY", "")
-    if not api_key:
-        # Try config.yaml
+def _resolve_api_key(provider):
+    """Resolve API key for a provider from env or config.yaml."""
+    if provider == "zen":
+        api_key = os.environ.get(ZEN_API_KEY_ENV, "")
+    else:
+        api_key = os.environ.get("NIM_API_KEY") or os.environ.get("NVIDIA_API_KEY", "")
+        if api_key:
+            return api_key
+        # NVIDIA fallback: try config.yaml
         import yaml
         cfg_path = os.path.expanduser("~/study/config.yaml")
         if os.path.isfile(cfg_path):
             with open(cfg_path) as f:
                 cfg = yaml.safe_load(f) or {}
             api_key = cfg.get("nim_api_key", cfg.get("nim_base_url", ""))
+        return api_key
 
-    _client = OpenAI(
+    if not api_key:
+        # Try config.yaml for Zen key too
+        import yaml
+        cfg_path = os.path.expanduser("~/study/config.yaml")
+        if os.path.isfile(cfg_path):
+            with open(cfg_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            api_key = cfg.get("opencode_zen_api_key", "")
+    return api_key
+
+
+def get_llm_client(provider="nvidia"):
+    """Create a cached OpenAI client for the specified provider."""
+    global _nvidia_client, _zen_client
+
+    if provider == "zen":
+        if _zen_client is not None:
+            return _zen_client
+        api_key = _resolve_api_key("zen")
+        if not api_key:
+            raise ValueError(
+                "OpenCode Zen API key not found. "
+                f"Set {ZEN_API_KEY_ENV} env var or add 'opencode_zen_api_key' to config.yaml"
+            )
+        _zen_client = OpenAI(
+            base_url=ZEN_BASE_URL,
+            api_key=api_key,
+            timeout=900,
+            max_retries=0,  # we handle retries ourselves
+        )
+        return _zen_client
+
+    # Default: NVIDIA
+    if _nvidia_client is not None:
+        return _nvidia_client
+
+    api_key = _resolve_api_key("nvidia")
+    if not api_key:
+        raise ValueError("NVIDIA API key not found. Set NIM_API_KEY or NVIDIA_API_KEY.")
+
+    _nvidia_client = OpenAI(
         base_url=NIM_BASE_URL,
         api_key=api_key,
         timeout=900,
         max_retries=2,
     )
-    return _client
+    return _nvidia_client
 
 
-def get_extra_body(model):
-    """Get extra body params for the NIM API call."""
-    if "deepseek-v4" in model.lower() or "deepseek" in model.lower():
+def get_extra_body(model, provider="nvidia"):
+    """Get extra body params for the API call.
+
+    NVIDIA's DeepSeek V4 supports chat_template_kwargs for thinking/reasoning.
+    OpenCode Zen may not support this — skip for Zen provider.
+    """
+    if provider == "nvidia" and ("deepseek" in model.lower()):
         return {"chat_template_kwargs": {"thinking": True, "reasoning_effort": "high"}}
     return {}
 
 
+def _is_429_error(e):
+    """Check if an exception is a 429 rate-limit error."""
+    if isinstance(e, RateLimitError):
+        return True
+    status = getattr(e, "status_code", 0) or getattr(e, "code", 0)
+    return status == 429
+
+
 def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries=3):
-    """Call the LLM API with retry logic for transient errors (5xx, timeouts)."""
+    """Call the LLM API with retry logic for transient errors (5xx, timeouts).
+
+    Does NOT retry on 429 (rate-limit) — the caller should handle provider fallback.
+    """
     last_exception = None
     for attempt in range(max_retries):
         try:
@@ -67,8 +129,11 @@ def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries
             )
         except Exception as e:
             last_exception = e
-            status = getattr(e, 'status_code', 0) or getattr(e, 'code', 0)
-            is_timeout = status == 0 or 'timeout' in str(e).lower() or '504' in str(e)
+            # Don't retry 429 — caller handles fallback
+            if _is_429_error(e):
+                raise
+            status = getattr(e, "status_code", 0) or getattr(e, "code", 0)
+            is_timeout = status == 0 or "timeout" in str(e).lower() or "504" in str(e)
             if (status >= 500 or is_timeout) and attempt < max_retries - 1:
                 time.sleep(1 * (2 ** attempt))
                 continue
@@ -76,18 +141,66 @@ def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries
     raise last_exception
 
 
+def _try_model_round(models_to_try, current_messages, tools, extra_body_func, subject):
+    """Try API call across a list of (provider, model) pairs for fallback.
+
+    Returns (stream, provider_used, model_used) on success.
+    Raises the last exception if all providers fail.
+    """
+    last_exception = None
+    for provider, model in models_to_try:
+        try:
+            client = get_llm_client(provider)
+            extra_body = extra_body_func(model, provider)
+            stream = _api_call_with_retry(client, model, current_messages, tools, extra_body)
+            return stream, provider, model
+        except Exception as e:
+            last_exception = e
+            # Only fall back if this is a connection/rate-limit error on the primary
+            if not _is_429_error(e) and not "timeout" in str(e).lower():
+                # Non-rate-limit, non-timeout error — don't waste time falling back
+                raise
+            # Otherwise continue to next provider in list
+            continue
+    raise last_exception
+
+
 def stream_chat(messages, model, subject):
-    """Multi-round tool-calling generator. Yields event dicts."""
-    client = get_llm_client()
+    """Multi-round tool-calling generator. Yields event dicts.
+
+    Tries the requested model first (determines provider from PROVIDER_FOR_MODEL).
+    If it's a Zen model and rate-limited, falls back to NVIDIA.
+    """
+    # Determine primary provider and build fallback list
+    primary_provider = PROVIDER_FOR_MODEL.get(model, "nvidia")
+    fallback_model = None
+    fallback_provider = None
+
+    if primary_provider == "zen":
+        # Full fallback chain: Zen → NVIDIA v4-pro → v4-flash → glm-5.1
+        models_to_try = [
+            ("zen", model),
+            ("nvidia", "deepseek-ai/deepseek-v4-pro"),
+            ("nvidia", "deepseek-ai/deepseek-v4-flash"),
+            ("nvidia", "z-ai/glm-5.1"),
+        ]
+    else:
+        # NVIDIA model — just use it directly
+        models_to_try = [
+            ("nvidia", model),
+        ]
+
     round_num = 0
     current_messages = list(messages)
 
     while round_num < MAX_TOOL_ROUNDS:
         try:
-            stream = _api_call_with_retry(
-                client, model, current_messages,
-                get_tool_definitions(), get_extra_body(model)
+            stream, actual_provider, actual_model = _try_model_round(
+                models_to_try, current_messages,
+                get_tool_definitions(), get_extra_body, subject
             )
+            # Remember which model/provider we're actually using for tool calls
+            current_model = actual_model
         except Exception as e:
             yield {"type": "error", "message": f"LLM API error: {e}"}
             return
@@ -119,17 +232,15 @@ def stream_chat(messages, model, subject):
                 if idx not in tool_calls_buffer:
                     tool_calls_buffer[idx] = ToolCall(index=idx)
                 buf = tool_calls_buffer[idx]
-                # Handle both standard (tc_chunk.function.name) and non-standard (tc_chunk.name) formats
                 chunk_id = tc_chunk.id or ""
                 chunk_name = ""
                 chunk_args = ""
-                if hasattr(tc_chunk, 'function') and tc_chunk.function:
+                if hasattr(tc_chunk, "function") and tc_chunk.function:
                     chunk_name = tc_chunk.function.name or ""
                     chunk_args = tc_chunk.function.arguments or ""
                 else:
-                    # Non-standard: name/arguments at top level
-                    chunk_name = getattr(tc_chunk, 'name', '') or ""
-                    chunk_args = getattr(tc_chunk, 'arguments', '') or ""
+                    chunk_name = getattr(tc_chunk, "name", "") or ""
+                    chunk_args = getattr(tc_chunk, "arguments", "") or ""
                 if chunk_id:
                     buf = buf._replace(id=buf.id + chunk_id)
                 if chunk_name:
@@ -142,9 +253,7 @@ def stream_chat(messages, model, subject):
                 finish_reason = chunk.choices[0].finish_reason
 
         if finish_reason == "tool_calls" and tool_calls_buffer:
-            # Build assistant message with tool calls
             sorted_calls = sorted(tool_calls_buffer.values(), key=lambda x: x.index)
-            # Ensure every tool call has a valid id (some models don't provide one)
             for i, tc in enumerate(sorted_calls):
                 if not tc.id or not tc.id.strip():
                     sorted_calls[i] = tc._replace(id=f"tc_{uuid.uuid4().hex[:8]}")
@@ -162,7 +271,6 @@ def stream_chat(messages, model, subject):
             }
             current_messages.append(assistant_msg)
 
-            # Execute each tool and append results
             for tc in sorted_calls:
                 yield {"type": "tool_call", "name": tc.name, "arguments": tc.arguments}
                 result = execute_tool(subject, tc.name, tc.arguments)
@@ -177,24 +285,16 @@ def stream_chat(messages, model, subject):
             round_num += 1
             continue
 
-        # Fallback: finish_reason == "tool_calls" but buffer is empty or tool names missing
-        # This happens with some NIM-wrapped models that return tool calls differently.
-        # Treat the content as a regular response and stop.
         if finish_reason == "tool_calls":
-            # Log the problem — the model said it wanted tool calls but didn't provide them.
-            # Just yield what we have as text content and stop.
             import sys
             print(f"[DEBUG] tool_calls_buffer: {tool_calls_buffer}", file=sys.stderr)
             print(f"[DEBUG] full_content: {repr(full_content)}", file=sys.stderr)
             if full_content:
                 yield {"type": "token", "content": full_content}
 
-        # finish_reason is stop, length, or no tool calls
         break
 
-    # Edge case: model produced reasoning but zero visible content
-    # (common with deep-thinking models that spend all tokens reasoning)
     if not full_content and full_reasoning:
         full_content = f"(Modelo solo produjo razonamiento — {len(full_reasoning)} caracteres sin respuesta visible)"
 
-    yield {"type": "done", "model": model, "content": full_content, "reasoning": full_reasoning}
+    yield {"type": "done", "model": current_model, "content": full_content, "reasoning": full_reasoning}
