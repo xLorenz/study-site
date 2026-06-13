@@ -119,7 +119,8 @@ Call `write_study_video` for: math concept animations, algorithm walkthroughs, s
 2. The study-professor skill, study-object-templates skill, manim-video skill, and SCHEMA.md are your pre-loaded context — take them into account for every message
 3. Be concise, be professional, not friendly. Explain only what's necessary and what the user asks. Don't bloat your message with unnecessary words
 4. **ALWAYS** use `write_study_video` OVER `write_study_object` when an animation or step-by-step visual walkthrough would explain the concept better than a static HTML page. The tool works — manim IS available, it renders server-side and produces a self-contained HTML file. Do NOT write JS/HTML animations yourself, do NOT say "manim is not available" — just call the tool.
-5. Use [[wikilinks]] when referring to concepts available in the wiki to point the user to the wiki page"""
+5. Use [[wikilinks]] when referring to concepts available in the wiki to point the user to the wiki page
+6. Use `highlight_node` when explaining concepts to highlight related nodes in the graph for visual guidance."""
     sections.append(instructions)
 
     return "\n\n".join(sections)

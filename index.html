@@ -11,8 +11,8 @@
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <link rel="stylesheet" href="/static/chat-ui.css?v=12">
 <link rel="stylesheet" href="/static/study-ui.css?v=15">
-<script defer src="/static/chat-ui.js?v=14"></script>
-<script defer src="/static/study-ui.js?v=3"></script>
+<script defer src="/static/chat-ui.js?v=18"></script>
+<script defer src="/static/study-ui.js?v=4"></script>
 <style>
 /* ── Reset ── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -936,7 +936,7 @@ function processWikilinks(container) {
    if (match.index > last)
     frag.appendChild(document.createTextNode(text.slice(last, match.index)));
    const slug = match[1].trim();
-   const display = match[2] ? match[2].trim() : slug;
+   const display = match[2] ? match[2].trim() : slug.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
    const span = document.createElement('span');
    span.className = 'wikilink';
    span.textContent = display;
@@ -2322,7 +2322,14 @@ function drawGraph() {
       (e.source === selectedNode.id && e.target === node.id) ||
       (e.target === selectedNode.id && e.source === node.id)
     );
-    const isDimmed = selectedNode && !isSelected && !connected;
+    let isDimmed = selectedNode && !isSelected && !connected;
+    // Tool highlights: dim non-highlighted nodes (keep selected visible)
+    if (window._highlightedNodeIds && window._highlightedNodeIds.size > 0) {
+      if (!isSelected && !window._highlightedNodeIds.has(node.id)) {
+        isDimmed = true;
+      }
+    }
+    const isToolHighlighted = window._highlightedNodeIds && window._highlightedNodeIds.has(node.id);
     const theme = subjectThemes[node.subject] || {};
     const fillColor = theme.primary || '#6366f1';
     const typeHalo = getHaloForNode(node);
@@ -2336,14 +2343,20 @@ function drawGraph() {
     ctx.fill();
 
     // Outer glow for hover/selected
-    if (hovered || isSelected) {
+    if (hovered || isSelected || isToolHighlighted) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? fillColor + '30' : typeHalo.glow;
+      if (isToolHighlighted) {
+        ctx.fillStyle = 'rgba(139,92,246,0.45)';
+      } else if (isSelected) {
+        ctx.fillStyle = fillColor + '30';
+      } else {
+        ctx.fillStyle = typeHalo.glow;
+      }
       ctx.fill();
     }
     // Search highlight glow
-    if (!hovered && !isSelected && window.searchHighlightedNodes &&
+    if (!hovered && !isSelected && !isToolHighlighted && window.searchHighlightedNodes &&
         window.searchHighlightedNodes.includes(node.id)) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius + 10 / graphZoom, 0, Math.PI * 2);
@@ -2362,6 +2375,12 @@ function drawGraph() {
       (selectedNode.id === edge.source || selectedNode.id === edge.target);
     const isDimmed = selectedNode && !isHighlighted;
 
+    // Edge connecting two tool-highlighted nodes: draw brighter
+    const isToolHighlighted = window._highlightedNodeIds && window._highlightedNodeIds.size > 0 &&
+      window._highlightedNodeIds.has(edge.source) && window._highlightedNodeIds.has(edge.target);
+    // Dim edges when tool highlights are active but this edge doesn't connect two highlighted nodes
+    const isToolDimmed = window._highlightedNodeIds && window._highlightedNodeIds.size > 0 && !isToolHighlighted;
+
     // Edge weight: combined link density of source + target
     const weight = ((src.link_count || 0) + (tgt.link_count || 0)) / 2;
     const alpha = Math.min(0.6, Math.max(0.18, weight / maxLinks));
@@ -2369,10 +2388,13 @@ function drawGraph() {
     ctx.beginPath();
     ctx.moveTo(src.x, src.y);
     ctx.lineTo(tgt.x, tgt.y);
-    if (isHighlighted) {
+    if (isToolHighlighted) {
+      ctx.strokeStyle = 'rgba(139,92,246,0.9)';
+      ctx.lineWidth = 2.5 / graphZoom;
+    } else if (isHighlighted) {
       ctx.strokeStyle = `rgba(99,102,241,0.85)`;
       ctx.lineWidth = 2.5 / graphZoom;
-    } else if (isDimmed) {
+    } else if (isDimmed || isToolDimmed) {
       ctx.strokeStyle = `rgba(26,26,46,0.3)`;
       ctx.lineWidth = 0.5 / graphZoom;
     } else {
@@ -2392,7 +2414,7 @@ function drawGraph() {
     ctx.lineTo(tipX - arrowLen * Math.cos(angle - arrowW), tipY - arrowLen * Math.sin(angle - arrowW));
     ctx.lineTo(tipX - arrowLen * Math.cos(angle + arrowW), tipY - arrowLen * Math.sin(angle + arrowW));
     ctx.closePath();
-    ctx.fillStyle = isHighlighted ? 'rgba(99,102,241,0.85)' : isDimmed ? 'rgba(26,26,46,0.3)' : `rgba(90,100,150,${alpha})`;
+    ctx.fillStyle = isToolHighlighted ? 'rgba(139,92,246,0.9)' : isHighlighted ? 'rgba(99,102,241,0.85)' : isDimmed || isToolDimmed ? 'rgba(26,26,46,0.3)' : `rgba(90,100,150,${alpha})`;
     ctx.fill();
   }
 
@@ -2407,7 +2429,14 @@ function drawGraph() {
     const isSelected = selectedNode && selectedNode.id === node.id;
     const connected = isConnected(node);
     const hovered = isHovered(node);
-    const isDimmed = selectedNode && !isSelected && !connected;
+    let isDimmed = selectedNode && !isSelected && !connected;
+    // Tool highlights: dim non-highlighted nodes (keep selected visible)
+    if (window._highlightedNodeIds && window._highlightedNodeIds.size > 0) {
+      if (!isSelected && !window._highlightedNodeIds.has(node.id)) {
+        isDimmed = true;
+      }
+    }
+    const isToolHighlighted = window._highlightedNodeIds && window._highlightedNodeIds.has(node.id);
     const theme = subjectThemes[node.subject] || {};
     const fillColor = theme.primary || '#6366f1';
 
@@ -2416,12 +2445,11 @@ function drawGraph() {
     ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
     if (isDimmed) {
       ctx.fillStyle = '#1a1a2e';
-    } else if (isSelected) {
+    } else if (isSelected || isToolHighlighted) {
       ctx.fillStyle = fillColor;
-      ctx.shadowColor = fillColor;
+      ctx.shadowColor = isToolHighlighted ? '#8b5cf6' : fillColor;
       ctx.shadowBlur = 12;
     } else if (node.exists === false) {
-      // Ghost nodes — dashed look
       ctx.fillStyle = '#2a2a3e';
     } else {
       ctx.fillStyle = fillColor;
@@ -2442,8 +2470,8 @@ function drawGraph() {
     } else {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-      ctx.strokeStyle = isDimmed ? '#252540' : isSelected ? '#e8e8f0' : fillColor + 'aa';
-      ctx.lineWidth = (isSelected ? 2 : 1) / graphZoom;
+      ctx.strokeStyle = isDimmed ? '#252540' : isSelected || isToolHighlighted ? (isToolHighlighted ? '#c4b5fd' : '#e8e8f0') : fillColor + 'aa';
+      ctx.lineWidth = (isSelected || isToolHighlighted ? 2 : 1) / graphZoom;
       ctx.stroke();
     }
 
@@ -2470,7 +2498,13 @@ function drawNodeLabels(ctx) {
       (e.source === selectedNode.id && e.target === node.id) ||
       (e.target === selectedNode.id && e.source === node.id)
     );
-    const isDimmed = selectedNode && !isSelected && !connected;
+    let isDimmed = selectedNode && !isSelected && !connected;
+    // Tool highlights: dim non-highlighted nodes (keep selected visible)
+    if (window._highlightedNodeIds && window._highlightedNodeIds.size > 0) {
+      if (!isSelected && !window._highlightedNodeIds.has(node.id)) {
+        isDimmed = true;
+      }
+    }
 
     // Label — show if hovered/selected, or labelsVisible is toggled on
     if (hovered || isSelected || labelsVisible) {
@@ -2838,9 +2872,10 @@ graphCanvas.addEventListener('touchend', (e) => {
    delete dragNode._tempPinned;
   }
  } else if (!hasDragged && e.changedTouches.length === 1) {
-  // Tap on empty space → deselect
+  // Tap on empty space → deselect + clear highlights
   selectedNode = null;
   highlightFileInTree(null);
+  if (typeof window.clearHighlightedNodes === 'function') window.clearHighlightedNodes();
  }
  dragNode = null;
  isPanning = false;
@@ -2859,6 +2894,7 @@ graphCanvas.addEventListener('click', (e) => {
  if (!node) {
  selectedNode = null;
  highlightFileInTree(null);
+ if (typeof window.clearHighlightedNodes === 'function') window.clearHighlightedNodes();
  }
 });
 

@@ -272,7 +272,7 @@ def stream_chat(messages, model, subject):
             current_messages.append(assistant_msg)
 
             for tc in sorted_calls:
-                yield {"type": "tool_call", "name": tc.name, "arguments": tc.arguments}
+                yield {"type": "tool_call", "id": tc.id, "name": tc.name, "arguments": tc.arguments}
                 result = execute_tool(subject, tc.name, tc.arguments)
                 result_str = json.dumps(result)
                 current_messages.append({

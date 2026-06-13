@@ -253,7 +253,15 @@
             case 'tool_call': {
             var args = safeParse(event.arguments, {});
             var isRead = event.name === 'read_vault_file';
-            var label = isRead ? (args.path || 'file') : (args.filename || 'object');
+            var isHighlight = event.name === 'highlight_node';
+            var label;
+            if (isRead) {
+                label = args.path || 'file';
+            } else if (isHighlight) {
+                label = (args.nodes || []).join(', ') || 'nodes';
+            } else {
+                label = args.filename || 'object';
+            }
             // Track for persistence
             chat.currentToolCalls.push({ name: event.name, arguments: event.arguments, label: label });
             if (isRead) {
@@ -299,15 +307,20 @@
             window.showObject(path);
             }
             }
+            // Highlight nodes in the graph when highlight_node tool completes
+            if (event.name === 'highlight_node' && typeof window.highlightNodes === 'function') {
+            window.highlightNodes(event.result && event.result.highlight_nodes || []);
+            }
             }
             smartScroll();
             break;
 
             case 'done':
-            // If content is empty but we have reasoning, show that the model only reasoned
-            if (!event.content && chat.currentFullContent) {
-                // keep what we have
-            } else if (event.content) {
+            // If we already accumulated tokens from the stream, keep them.
+            // Don't overwrite with event.content — that's only the *last round's*
+            // content and would erase earlier rounds (bug when tool calls span
+            // multiple rounds, e.g. read_vault_file then highlight_node).
+            if (!chat.currentFullContent && event.content) {
                 chat.currentFullContent = event.content;
                 if (chat.currentBodyDiv) {
                     renderContent(chat.currentFullContent, chat.currentBodyDiv);
@@ -426,12 +439,20 @@
 
         var icon = document.createElement('span');
         icon.className = 'tool-icon';
-        icon.textContent = isRead ? '\uD83D\uDCD6' : '\u270F\uFE0F';
+        if (toolName === 'highlight_node') {
+            icon.textContent = '\uD83D\uDD26';
+        } else {
+            icon.textContent = isRead ? '\uD83D\uDCD6' : '\u270F\uFE0F';
+        }
         box.appendChild(icon);
 
         var labelSpan = document.createElement('span');
         labelSpan.className = 'tool-label';
-        labelSpan.innerHTML = (isRead ? 'reading ' : 'creating ') + '<code>' + escapeHtml(label) + '</code>';
+        if (toolName === 'highlight_node') {
+            labelSpan.innerHTML = 'highlighting <code>' + escapeHtml(label) + '</code>';
+        } else {
+            labelSpan.innerHTML = (isRead ? 'reading ' : 'creating ') + '<code>' + escapeHtml(label) + '</code>';
+        }
         box.appendChild(labelSpan);
 
         var dots = document.createElement('span');
@@ -448,10 +469,15 @@
     var label = box.querySelector('.tool-label code');
     var labelText = label ? label.textContent : '';
     var isRead = box.dataset.toolName === 'read_vault_file';
-    if (icon) icon.textContent = isRead ? '\uD83D\uDCD6' : '\u2705';
+    var isHighlight = box.dataset.toolName === 'highlight_node';
+    if (icon) icon.textContent = isHighlight ? '\u2728' : (isRead ? '\uD83D\uDCD6' : '\u2705');
     var labelSpan = box.querySelector('.tool-label');
     if (labelSpan) {
-    labelSpan.innerHTML = (isRead ? 'read ' : 'created ') + '<code>' + escapeHtml(labelText) + '</code>';
+    if (isHighlight) {
+        labelSpan.innerHTML = 'highlighted <code>' + escapeHtml(labelText) + '</code>';
+    } else {
+        labelSpan.innerHTML = (isRead ? 'read ' : 'created ') + '<code>' + escapeHtml(labelText) + '</code>';
+    }
     }
     }
 
@@ -539,7 +565,11 @@
     var box = document.createElement('div');
     box.className = 'msg-tool-box completed';
     box.dataset.toolName = w.name || 'write_study_object';
-    box.innerHTML = '<span class="tool-icon">\u2705</span><span class="tool-label">created <code>' + escapeHtml(w.label || 'object') + '</code></span>';
+    if (w.name === 'highlight_node') {
+        box.innerHTML = '<span class="tool-icon">\u2728</span><span class="tool-label">highlighted <code>' + escapeHtml(w.label || 'nodes') + '</code></span>';
+    } else {
+        box.innerHTML = '<span class="tool-icon">\u2705</span><span class="tool-label">created <code>' + escapeHtml(w.label || 'object') + '</code></span>';
+    }
     div.insertBefore(box, div.firstChild);
     }
     }
@@ -582,15 +612,18 @@
                 if (match.index > lastIdx) {
                     fragment.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
                 }
+                var parts = match[1].split('|');
+                var slug = parts[0].trim();
+                var displayText = (parts[1] ? parts[1].trim() : null) || slug.replace(/[-_]/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
                 var link = document.createElement('span');
                 link.className = 'wikilink';
-                link.textContent = match[1];
-                link.title = 'Open wiki: ' + match[1];
-                link.addEventListener('click', (function(name) {
+                link.textContent = displayText;
+                link.title = 'Open wiki: ' + slug;
+                link.addEventListener('click', (function(s) {
                     return function() {
-                        openWikilink(name);
+                        openWikilink(s);
                     };
-                })(match[1]));
+                })(slug));
                 fragment.appendChild(link);
                 lastIdx = match.index + match[0].length;
             }

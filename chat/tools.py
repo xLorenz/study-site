@@ -131,6 +131,24 @@ def get_tool_definitions():
                     "required": ["filename"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "highlight_node",
+                "description": "Highlight one or more concept nodes in the knowledge graph. Use this when explaining concepts to visually guide the student.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "nodes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Array of wikilink node names to highlight"
+                        }
+                    },
+                    "required": ["nodes"]
+                }
+            }
         }
     ]
 
@@ -454,6 +472,12 @@ def execute_tool(subject, tool_call_name, args_json_str):
         if not filename:
             return {"error": "Missing 'filename' argument"}
         return mark_file_ingested(subject, filename)
+
+    elif tool_call_name == "highlight_node":
+        nodes = args.get("nodes", [])
+        if not isinstance(nodes, list) or len(nodes) == 0:
+            return {"error": "Missing or empty 'nodes' array"}
+        return {"highlight_nodes": nodes}
 
     else:
         return {"error": f"Unknown tool: {tool_call_name}"}

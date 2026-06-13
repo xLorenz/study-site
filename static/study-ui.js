@@ -72,4 +72,59 @@
   };
 
   console.log('Study UI — Phase 5: highlightNodeFromFile loaded');
+
+  // ── Phase 7: highlight_node tool state ──
+
+  /**
+   * Set of node IDs currently highlighted by the highlight_node chat tool.
+   * Separate from selectedNode — both can be active simultaneously.
+   */
+  window._highlightedNodeIds = new Set();
+
+  /**
+   * highlightNodes — Called by chat-ui.js when a highlight_node tool result arrives.
+   * Finds graph nodes matching the given slugs/names and adds them to the highlighted set.
+   * Clears any previous highlights first.
+   */
+  window.highlightNodes = function(nodeNames) {
+    window._highlightedNodeIds.clear();
+    if (!nodeNames || nodeNames.length === 0) {
+      if (typeof resumeGraphLoop === 'function') resumeGraphLoop();
+      return;
+    }
+    if (typeof graphNodes === 'undefined' || !graphNodes) {
+      if (typeof showToast === 'function') showToast('🔦 No graph loaded to highlight', 'info');
+      return;
+    }
+    for (var i = 0; i < nodeNames.length; i++) {
+      var slug = nodeNames[i].toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
+      // Exact match on node.id
+      var node = graphNodes.find(function(n) { return n.id.toLowerCase() === slug; });
+      // Fallback: partial match on title or id
+      if (!node) {
+        node = graphNodes.find(function(n) {
+          return (n.title || '').toLowerCase().includes(slug) ||
+                 n.id.toLowerCase().includes(slug);
+        });
+      }
+      if (node) {
+        window._highlightedNodeIds.add(node.id);
+      }
+    }
+    if (window._highlightedNodeIds.size > 0) {
+      if (typeof showToast === 'function') showToast('🔦 Highlighted ' + window._highlightedNodeIds.size + ' node(s) in graph', 'info');
+    }
+    if (typeof resumeGraphLoop === 'function') resumeGraphLoop();
+  };
+
+  /**
+   * clearHighlightedNodes — Clear all highlighted node IDs.
+   * Called when the user clicks empty space on the graph.
+   */
+  window.clearHighlightedNodes = function() {
+    window._highlightedNodeIds.clear();
+    if (typeof resumeGraphLoop === 'function') resumeGraphLoop();
+  };
+
+  console.log('Study UI — Phase 7: highlightNodes loaded');
 })();

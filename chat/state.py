@@ -106,19 +106,51 @@ def _normalize_conversation(conversation):
     API returns ``400 Unterminated string`` because it expects tool messages
     alongside assistant tool_call messages.
     """
+    # First pass: collect tool message IDs so we can match them to assistant
+    # tool_calls (saved history has no 'id' on assistant tool_calls, but
+    # the following tool messages keep their original tool_call_id).
+    tool_message_ids = []
+    for msg in conversation:
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_message_ids.append(msg["tool_call_id"])
+
     normalized = []
+    tool_id_idx = 0
     for msg in conversation:
         entry = {"role": msg["role"], "content": msg.get("content", "")}
         if msg["role"] == "assistant" and "tool_calls" in msg and msg["tool_calls"]:
+            # Check if any tool_call has a result (embedded) — if none do AND
+            # there are no following tool messages, these are stale/orphaned
+            # tool_calls from a frontend that doesn't store role:"tool" messages.
+            # Strip them to avoid sending orphaned tool_calls to the LLM API.
+            has_any_result = any(
+                tc.get("result") is not None
+                for tc in msg["tool_calls"]
+                if isinstance(tc, dict)
+            )
+            if not has_any_result and not tool_message_ids:
+                # Stale tool_calls with no results and no tool messages — strip them
+                normalized.append(entry)
+                continue
+
             normalized_tcs = []
             for tc in msg["tool_calls"]:
                 if isinstance(tc, dict):
-                    tc_id = tc.get("id") or f"tc_{uuid.uuid4().hex[:8]}"
                     fn = tc.get("function", {})
                     tc_name = tc.get("name", fn.get("name", "unknown"))
                     raw_args = tc.get("arguments", fn.get("arguments", "{}"))
                     if isinstance(raw_args, dict):
                         raw_args = json.dumps(raw_args)
+
+                    # Use saved ID, or match by position to tool messages, or generate
+                    tc_id = tc.get("id")
+                    if not tc_id:
+                        if tool_id_idx < len(tool_message_ids):
+                            tc_id = tool_message_ids[tool_id_idx]
+                        else:
+                            tc_id = f"tc_{uuid.uuid4().hex[:8]}"
+                    tool_id_idx += 1
+
                     normalized_tcs.append({
                         "id": tc_id,
                         "type": "function",
@@ -159,6 +191,7 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
                 assistant_content = event.get("content", "")
             if event["type"] == "tool_call":
                 tool_events.append({
+                    "id": event.get("id", ""),
                     "name": event.get("name", ""),
                     "arguments": event.get("arguments", "{}"),
                     "label": _tool_label(event.get("name", ""), event.get("arguments", "{}"))
@@ -169,14 +202,18 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
                         te["result"] = event.get("result")
                         break
 
-        # Save to chat history
-        history = list(conversation)
-        history.append({"role": "user", "content": user_message})
+        # Save to chat history (clean: strip stale tool_calls from incoming conversation)
+        history = _normalize_conversation(conversation)
+        # Remove any tool messages from history that came from normalization —
+        # save_chat will regenerate them properly from the stream's tool_events.
+        # We only keep user and assistant messages from the normalized conversation.
+        cleaned = [m for m in history if m["role"] in ("user", "assistant")]
+        cleaned.append({"role": "user", "content": user_message})
         asst_msg = {"role": "assistant", "content": assistant_content}
         if tool_events:
             asst_msg["tool_calls"] = tool_events
-        history.append(asst_msg)
-        save_chat(subject, history)
+        cleaned.append(asst_msg)
+        save_chat(subject, cleaned)
 
     except Exception as e:
         task.buffer.put({"type": "error", "message": str(e)})
@@ -200,6 +237,9 @@ def _tool_label(name, arguments_raw):
         return args.get("filename", "object")
     elif name == "write_study_video":
         return args.get("filename", "video")
+    elif name == "highlight_node":
+        nodes = args.get("nodes", [])
+        return ", ".join(nodes) if nodes else "nodes"
     return name
 
 
