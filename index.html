@@ -139,6 +139,11 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
 .ingest-progress-fill.done{background:linear-gradient(90deg,var(--success),#16a34a)}
 .ingest-progress-fill.error{background:var(--danger)}
 .ingest-progress-text{font-size:var(--font-size-xs);color:var(--text-dim);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ingest-progress-text.small{font-size:10px;opacity:0.7}
+
+/* ── Ingest highlight for wiki pages being created ── */
+.tree-item-ingesting{animation:ingestFade 2s ease-out forwards;border-radius:var(--radius-sm)}
+@keyframes ingestFade{0%{background:rgba(99,102,241,0.2)}100%{background:transparent}}
 
 /* ── Green/Red File Markers ── */
 .tree-item-green{position:relative;background:rgba(34,197,94,.12);border-radius:var(--radius-sm)}
@@ -1175,6 +1180,38 @@ function restoreFolderState(openNames) {
  });
 }
 
+function highlightCreatedWikiPage(name) {
+  const treeContainer = document.getElementById('files-tree');
+  if (!treeContainer) return;
+  // Match by filename (case-insensitive, strip .md from both sides)
+  const targetName = name.replace(/\.md$/, '').toLowerCase();
+  const names = treeContainer.querySelectorAll('.tree-item-name');
+  for (const el of names) {
+    const fileName = el.textContent.replace(/\.md$/, '').trim().toLowerCase();
+    if (fileName === targetName) {
+      // Expand parent folders so the file is visible
+      let parent = el.closest('.tree-children');
+      while (parent) {
+        parent.style.display = 'block';
+        const toggle = parent.previousElementSibling;
+        if (toggle && toggle.classList.contains('tree-folder-toggle')) {
+          toggle.innerHTML = toggle.innerHTML.replace('📁', '📂');
+        }
+        parent = parent.parentElement?.closest('.tree-children');
+      }
+      // Add fade-out background highlight (2s CSS animation)
+      const li = el.closest('.tree-file');
+      if (li) {
+        li.classList.remove('tree-item-ingesting');
+        void li.offsetWidth;  // force reflow to restart animation
+        li.classList.add('tree-item-ingesting');
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      break;
+    }
+  }
+}
+
 async function markForDelete(path, subject) {
  const openState = saveFolderState();
  try {
@@ -1235,6 +1272,7 @@ const INGEST_PHASES = [
 
 let _progressInterval = null;
 let _pendingTotal = 0;  // total files queued for ingest (set at start)
+let _lastCreatedPage = null;  // last page name seen for real-time tree updates
 
 function showIngestProgress() {
   const btn = document.getElementById('update-wiki-btn');
@@ -1259,6 +1297,9 @@ function finishIngestProgress(success) {
   const label = document.getElementById('ingest-progress-text');
   // Restore page title
   document.title = 'study';
+  // Clear ingest highlights and tracker
+  _lastCreatedPage = null;
+  document.querySelectorAll('.tree-item-ingesting').forEach(el => el.classList.remove('tree-item-ingesting'));
   if (fill) {
     fill.style.width = '100%';
     fill.classList.add(success ? 'done' : 'error');
@@ -1277,44 +1318,30 @@ function finishIngestProgress(success) {
 }
 
 /**
- * Compute ingest progress from real backend state.
- * Uses TWO signals from /api/status to drive the progress bar:
- *   1. pending_total (remaining files via .ingested.json) — primary
- *   2. wiki_pages_created (filesystem wiki/ file delta) — secondary fallback
- * Takes the MAX of both, so the bar progresses even if the LLM
- * batches .ingested.json updates at the end.
+ * Compute progress from live backend state.
+ * Uses wiki_pages_created count and last_created_name for per-concept progress text.
  * @param {object} status - response from GET /api/status
- * @returns {{pct: number, text: string}}
+ * @returns {{pct: number, text: string, createdName: (string|null)}}
  */
 function _computeRealProgress(status) {
-  // _pendingTotal is the initial count of files to ingest (set from update-wiki response).
   const initialTotal = _pendingTotal;
-  const initialServerTotal = status.initial_total || initialTotal;
-
-  // Signal 1: from .ingested.json (files acknowledged by agent)
-  const remaining = status.pending_total || 0;
-  const doneFromIngested = Math.max(0, initialTotal - remaining);
-
-  // Signal 2: from wiki/ filesystem (pages actually written to disk)
+  if (initialTotal === 0) {
+    return { pct: 5, text: 'reading sources...', createdName: null };
+  }
   const wikiCreated = status.wiki_pages_created || 0;
 
-  // Use the better of both signals
-  const done = Math.max(doneFromIngested, wikiCreated);
-
-  if (initialTotal === 0) {
-    return { pct: 15, text: 'Starting…' };
+  if (wikiCreated === 0) {
+    return { pct: 10, text: 'reading sources...', createdName: null };
   }
 
-  const fraction = Math.min(done / initialTotal, 1);
-  if (done === 0) {
-    return { pct: 15, text: 'LLM extracting sections…' };
-  }
-  if (fraction < 0.5) {
-    const pct = 15 + (50 - 15) * (fraction / 0.5);
-    return { pct: pct, text: 'Building wiki pages…' };
-  }
-  const pct = 50 + (85 - 50) * ((fraction - 0.5) / 0.5);
-  return { pct: pct, text: 'Finalizing…' };
+  const fraction = Math.min(wikiCreated / initialTotal, 1);
+  const name = status.last_created_name;
+  const customText = name
+    ? `Created '${name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}' wiki`
+    : `Processing ${wikiCreated}/${initialTotal}...`;
+  const pct = 10 + 85 * fraction;
+
+  return { pct, text: customText, createdName: name };
 }
 
 /**
@@ -1323,9 +1350,15 @@ function _computeRealProgress(status) {
  * @param {object} status - latest /api/status response
  */
 function updateIngestProgressFromStatus(status) {
-  const { pct, text } = _computeRealProgress(status);
+  const { pct, text, createdName } = _computeRealProgress(status);
   const fill = document.getElementById('ingest-progress-fill');
+  const label = document.getElementById('ingest-progress-text');
   if (!fill) return;
+  // Toggle small class when showing per-concept progress
+  if (label) {
+    if (createdName) label.classList.add('small');
+    else label.classList.remove('small');
+  }
   // Write target atomically so the animation interval reads consistent data
   fill.dataset.targetPct = pct;
   fill.dataset.targetText = text;
@@ -1393,8 +1426,16 @@ async function updateWiki() {
       const r = await fetch('/api/status');
       const s = await r.json();
       if (s.ingest_running) {
-        // Update bar target from real backend data
         updateIngestProgressFromStatus(s);
+        // Real-time file tree update: when a new wiki page is created, refresh
+        // the tree and highlight it. write_wiki_page writes to disk immediately.
+        if (s.last_created_name && s.last_created_name !== _lastCreatedPage) {
+          _lastCreatedPage = s.last_created_name;
+          const openState = saveFolderState();
+          await reloadFileTree(subject);
+          restoreFolderState(openState);
+          highlightCreatedWikiPage(s.last_created_name);
+        }
         return;
       }
       clearInterval(poll);
