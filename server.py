@@ -176,7 +176,11 @@ def _read_node_meta(subject, node_id):
             elif line.startswith("title:"):
                 meta["title"] = line.split(":", 1)[1].strip().strip("\"'")
             elif line.startswith("source_url:"):
-                meta["source_url"] = line.split(":", 1)[1].strip().strip("\"'")
+                raw = line.split(":", 1)[1].strip().strip("\"'")
+                # Take only the first source if multiple are comma-separated
+                if "," in raw:
+                    raw = raw.split(",")[0].strip()
+                meta["source_url"] = raw
         return meta
     # Fallback to legacy dirs
     legacy_dirs = [("concepts", "concept"), ("definitions", "definition"),
@@ -207,7 +211,11 @@ def _read_node_meta(subject, node_id):
             elif line.startswith("title:"):
                 meta["title"] = line.split(":", 1)[1].strip().strip("\"'")
             elif line.startswith("source_url:"):
-                meta["source_url"] = line.split(":", 1)[1].strip().strip("\"'")
+                raw = line.split(":", 1)[1].strip().strip("\"'")
+                # Take only the first source if multiple are comma-separated
+                if "," in raw:
+                    raw = raw.split(",")[0].strip()
+                meta["source_url"] = raw
         return meta
     return {"type": "note", "created": None, "tags": [], "source_url": None, "title": None}
 

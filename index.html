@@ -585,6 +585,18 @@ function showToast(message, type = 'info') {
 // ── Markdown Rendering ──
 function renderMarkdown(container, content) {
  container.innerHTML = marked.parse(content);
+ // Render LaTeX math with KaTeX auto-render
+ if (typeof renderMathInElement === 'function') {
+  renderMathInElement(container, {
+   delimiters: [
+    {left: '$$', right: '$$', display: true},
+    {left: '\\[', right: '\\]', display: true},
+    {left: '$', right: '$', display: false},
+    {left: '\\(', right: '\\)', display: false}
+   ],
+   throwOnError: false
+  });
+ }
  container.querySelectorAll('pre code').forEach(block => {
  const btn = document.createElement('button');
  btn.className = 'copy-btn';
@@ -993,11 +1005,13 @@ async function showFilePreview(path, searchQuery) {
   // Source — render as wikilink [[slug]] with source-halo color
   const sourceVal = meta.source_url || meta.source || '';
   if (sourceVal) {
+   // Take only the first source if multiple are comma-separated
+   const firstSource = sourceVal.includes(',') ? sourceVal.split(',')[0].trim() : sourceVal;
    // Extract slug: strip raw/ prefix and .md suffix
-   let slug = sourceVal.replace(/^raw\//, '').replace(/\.md$/, '');
+   let slug = firstSource.replace(/^raw\//, '').replace(/\.md$/, '');
    // Strip subjects/ prefix if present
    slug = slug.replace(/^subjects\/[^/]+\//, '');
-   const color = strToColor(sourceVal, 1.0, 0.6);
+   const color = strToColor(firstSource, 1.0, 0.6);
    sourceEl.innerHTML = 'source: <span class="wikilink-preview" style="color:' + color.halo + '">' + slug + '</span>';
    sourceEl.querySelector('.wikilink-preview').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -2139,7 +2153,11 @@ function getHaloForNode(node) {
     if (tag) return strToColor(tag);
   }
   if (glowMode === 'source') {
-    if (node.source_url) return strToColor(node.source_url);
+    if (node.source_url) {
+      // Take only the first source if multiple are comma-separated
+      const src = node.source_url.includes(',') ? node.source_url.split(',')[0].trim() : node.source_url;
+      return strToColor(src);
+    }
   }
   // Fallback: type-based
   return TYPE_HALOS[node.type] || TYPE_HALOS.note;
