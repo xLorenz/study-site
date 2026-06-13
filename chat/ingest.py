@@ -102,7 +102,7 @@ If SCHEMA.md does NOT exist, use these defaults:
 - Frontmatter fields: title, created, type, tags, source_url
 - type: one of source_summary, concept, formula, definition, exercise
 - tags: exactly ONE topic tag per page (e.g., tags: [arrays]). Pick the single most specific topic.
-- source_url: path to the raw file this page derives from (e.g., source_url: raw/2026-cd-tp6.md)
+- source_url: path to the raw file this page derives from (exactly one source — do NOT list multiple files). E.g., source_url: raw/2026-cd-tp6.md
 - Source summaries: name them src-{{base-name}} (e.g., src-2026-cd-tp6) — never reuse raw/ filenames
 - Create BOTH a source summary page per raw file AND concept pages for each distinct concept
 - Use [[wikilinks]] with exact lowercase-hyphen filenames (e.g., [[cable-coaxial]], not [[Cable Coaxial]])
