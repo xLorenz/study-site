@@ -3,7 +3,7 @@
 import os, re, sys
 from datetime import date
 
-VAULT = os.path.expanduser("~/study-vault")
+VAULT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vaults")
 TYPE_MAP = {
     "concepts": "concept",
     "definitions": "definition",

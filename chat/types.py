@@ -3,8 +3,8 @@ import os
 
 # Models by provider:
 #   deepseek-v4-flash-free  → OpenCode Zen (primary — fast, free)
-#   deepseek-ai/deepseek-v4-flash  → NVIDIA NIM (fallback)
-#   deepseek-ai/deepseek-v4-pro    → NVIDIA NIM (fallback — higher quality)
+#   deepseek-ai/deepseek-v4-pro    → NVIDIA NIM (fallback)
+#   deepseek-ai/deepseek-v4-flash  → NVIDIA NIM (fallback — higher quality)
 AVAILABLE_MODELS = [
     "deepseek-v4-flash-free",       # OpenCode Zen (primary — fast, free)
     "deepseek-ai/deepseek-v4-pro",  # NVIDIA NIM (fallback 1)
@@ -13,8 +13,8 @@ AVAILABLE_MODELS = [
 ]
 
 # Provider endpoints
-NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
-ZEN_BASE_URL = "https://opencode.ai/zen/v1"
+NIM_BASE_URL = os.environ.get("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
+ZEN_BASE_URL = os.environ.get("ZEN_BASE_URL", "https://opencode.ai/zen/v1")
 
 # Environment variable names
 ZEN_API_KEY_ENV = "OPENCODE_ZEN_API_KEY"
@@ -31,12 +31,17 @@ MAX_HISTORY_MESSAGES = 20  # Context window limit
 MAX_TOOL_ROUNDS = 100  # Effectively unlimited tool calls
 MAX_BODY_SIZE = 10 * 1024 * 1024  # 10MB
 SSE_TIMEOUT = 3600  # 1 hour
-SKILL_DIR = os.path.expanduser("~/.hermes/skills/study")
-VAULT_DIR = os.path.expanduser("~/study-vault")
+SKILL_DIR = os.environ.get("SKILL_DIR", os.path.expanduser("~/.hermes/skills/study"))
+VAULT_DIR = os.environ.get("VAULT_DIR", os.path.join(
+    os.environ.get("STUDY_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "vaults"))
 CHATS_DIR = os.path.join(VAULT_DIR, "chats")
-MANIM_DIR = os.path.join(VAULT_DIR, "..", "study", ".manim-tmp")
+STUDY_DIR = os.environ.get("STUDY_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CACHE_DIR = os.environ.get("CACHE_DIR", os.path.join(STUDY_DIR, ".cache"))
+MANIM_DIR = os.path.join(CACHE_DIR, "manim")
 
 # Manim render quality: use "ql" (480p15 draft) for speed, "qm" (720p30 medium) for decent, "qh" (1080p60) for production
 MANIM_RENDER_QUALITY = "ql"
 
 os.makedirs(CHATS_DIR, exist_ok=True)
+os.makedirs(MANIM_DIR, exist_ok=True)

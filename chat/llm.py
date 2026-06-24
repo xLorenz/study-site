@@ -25,6 +25,9 @@ _zen_client = None
 
 def _resolve_api_key(provider):
     """Resolve API key for a provider from env or config.yaml."""
+    study_dir = os.environ.get("STUDY_DIR", os.path.expanduser("~/study"))
+    cfg_path = os.path.join(study_dir, "config.yaml")
+    
     if provider == "zen":
         api_key = os.environ.get(ZEN_API_KEY_ENV, "")
     else:
@@ -33,7 +36,6 @@ def _resolve_api_key(provider):
             return api_key
         # NVIDIA fallback: try config.yaml
         import yaml
-        cfg_path = os.path.expanduser("~/study/config.yaml")
         if os.path.isfile(cfg_path):
             with open(cfg_path) as f:
                 cfg = yaml.safe_load(f) or {}
@@ -43,7 +45,6 @@ def _resolve_api_key(provider):
     if not api_key:
         # Try config.yaml for Zen key too
         import yaml
-        cfg_path = os.path.expanduser("~/study/config.yaml")
         if os.path.isfile(cfg_path):
             with open(cfg_path) as f:
                 cfg = yaml.safe_load(f) or {}

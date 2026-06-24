@@ -1,0 +1,4 @@
+host: 0.0.0.0
+port: 8081
+nim_base_url: https://integrate.api.nvidia.com/v1
+vault_path: vaults

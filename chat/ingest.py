@@ -22,7 +22,8 @@ from .types import VAULT_DIR, AVAILABLE_MODELS, PROVIDER_FOR_MODEL
 MAX_TOOL_ROUNDS = 300
 LLM_MAX_TOKENS = 65536  # max output tokens per LLM response
 
-LOG_PATH = os.path.expanduser("~/study/ingest.log")
+from .types import CACHE_DIR
+LOG_PATH = os.path.join(CACHE_DIR, "ingest.log")
 
 # ---------------------------------------------------------------------------
 # Logging setup — writes to both file and stderr
@@ -84,7 +85,7 @@ def _build_ingest_prompt(subject: str, uningested_files: list[str]) -> str:
 
     prompt = f"""You are a NON-INTERACTIVE automated wiki ingest assistant for subject '{subject}'. Do NOT ask questions or wait for discussion — just DO the work.
 
-Un-ingested raw files in ~/study-vault/subjects/{subject}/raw/:
+Un-ingested raw files in vaults/subjects/{subject}/raw/:
 {file_list}
 
 You have THREE tools available:
@@ -483,7 +484,7 @@ def run_ingest(subject: str, model: str = None, on_progress: callable = None) ->
         # 4. Build messages
         system_content = (
             f"You are a wiki ingest assistant for subject '{subject}'.\n"
-            f"The vault is at ~/study-vault/subjects/{subject}/.\n"
+            f"The vault is at vaults/subjects/{subject}/.\n"
             f"You have read_vault_file, write_wiki_page, and mark_file_ingested tools.\n"
             f"Be thorough, create high-quality pages, and always call mark_file_ingested after each file is done."
         )

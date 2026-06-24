@@ -1,6 +1,7 @@
 """System prompt construction for the study chat system."""
 
 import os
+from .types import VAULT_DIR
 
 
 def read_skill_content(skill_name):
@@ -91,8 +92,7 @@ Call `write_study_video` for: math concept animations, algorithm walkthroughs, s
     sections.append(manim_guide)
 
     # 4. Subject SCHEMA.md
-    vault_dir = os.path.expanduser("~/study-vault")
-    schema_path = os.path.join(vault_dir, "subjects", subject, "SCHEMA.md")
+    schema_path = os.path.join(VAULT_DIR, "subjects", subject, "SCHEMA.md")
     if os.path.isfile(schema_path):
         with open(schema_path, "r", encoding="utf-8") as f:
             schema_content = f.read()
@@ -101,7 +101,7 @@ Call `write_study_video` for: math concept animations, algorithm walkthroughs, s
         sections.append("<!-- No SCHEMA.md found for this subject -->")
 
     # 5. Subject index.md (overview of raw materials and relationships)
-    index_path = os.path.join(vault_dir, "subjects", subject, "index.md")
+    index_path = os.path.join(VAULT_DIR, "subjects", subject, "index.md")
     if os.path.isfile(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             index_content = f.read()

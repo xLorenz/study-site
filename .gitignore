@@ -2,5 +2,12 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-.manim-tmp/
-ingest.log
+*.hermes-tmp*
+*.pre-rewrite-backup
+*.bak
+study-plan/
+.env
+secrets.yaml
+.cache/
+vaults/
+/index.md

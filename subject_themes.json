@@ -5,28 +5,10 @@
     "accent": "#22d3ee",
     "icon": "\ud83d\udcda"
   },
-  "test-subject": {
-    "primary": "#f161c4",
-    "secondary": "#f16194",
-    "accent": "#f161ac",
-    "icon": "\ud83d\udcda"
-  },
   "comunicacion-de-datos": {
     "primary": "#f16164",
     "secondary": "#f18d61",
     "accent": "#f17661",
-    "icon": "\ud83d\udcda"
-  },
-  "test8": {
-    "primary": "#f1bd61",
-    "secondary": "#f1ed61",
-    "accent": "#f1d561",
-    "icon": "\ud83d\udcda"
-  },
-  "test9": {
-    "primary": "#c4f161",
-    "secondary": "#93f161",
-    "accent": "#abf161",
     "icon": "\ud83d\udcda"
   },
   "fisica-ii": {
