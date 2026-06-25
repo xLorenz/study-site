@@ -1,138 +1,150 @@
 # Study Site
 
-Local study companion: a single-page UI plus a Python server that ingests study
-material into a vault, runs an AI chat over it, and renders visual explanations
-(manim/HyperFrames). All assets are served from `static/`; the vault lives
-inside the repo at `vaults/`.
+A self-contained study companion that ingests course materials, generates wiki
+documentation via AI, and provides an interactive chat with a professor persona
+grounded in your subject's content. All from a single Python server.
+
+## Features
+
+- **AI chat** over your study material with multi-round tool calling (read files,
+  create study aids, render animations, highlight concepts)
+- **Document ingest** — upload PDFs, PPTX, DOCX; auto-converted to markdown via
+  MarkItDown
+- **Wiki generation** — LLM creates curated wiki pages with cross-references and
+  [[wikilinks]]
+- **Study objects** — HTML exams, cheat-sheets, mind maps, flashcards, formula
+  decks (6+ templates)
+- **Manim video** — renders animated explanations server-side with embedded HTML
+  playback
+- **Knowledge graph** — wikilink-based concept graph with search and highlight
+- **Tag system** — objects get free-form tags with deterministic HSL colors
+- **Skills registry** — loadable domain guidelines (`manim-video`,
+  `study-object-templates`) that tailor model behavior
 
 ## Requirements
 
 - Python 3.10+
-- One Python dependency: `pyyaml`
-- A working `markitdown` installation (used via subprocess by `server.py`)
-- Optional: `manim` + `ffmpeg` if you want server-side video rendering through
-  the chat's `write_study_video` tool
+- `pyyaml` (one pip dependency)
+- `markitdown` — used via subprocess for document conversion
+- Optional: `manim` + `ffmpeg` for server-side video rendering
 
-## Install
+## Quick start
 
 ```bash
 pip install pyyaml
-```
-
-## Run
-
-```bash
 python server.py
 ```
 
-Default: listens on `0.0.0.0:8081`. Open <http://localhost:8081>.
+Open http://localhost:8081. Default port is 8081; configurable in `config.yaml`.
 
 ## Configuration
 
-Configuration is split into two YAML files plus `.env`:
+| File | Purpose | Committed? |
+|------|---------|-----------|
+| `config.yaml` | Non-secret tunables (host, port, vault path, model endpoints) | Yes |
+| `secrets.yaml` | API keys | No (gitignored) |
+| `.env` | Environment variable overrides | No (gitignored) |
 
-- **`config.yaml`** — non-secret tunables (committed).
-  - `host`, `port`, `nim_base_url`, `vault_path`
-- **`secrets.yaml`** — API keys (gitignored). Use `secrets.example.yaml` as a
-  template.
-- **`.env`** — environment-variable overrides (gitignored). Use `.env.example`
-  as a template.
-
-Path values may be relative to `STUDY_DIR` (e.g. `vault_path: vaults`).
+Use `secrets.example.yaml` and `.env.example` as templates.
 
 ## Vault layout
 
-The default vault is `vaults/`. Per subject:
-
 ```
 vaults/
-├── index.md
-├── log.md
-├── chats/                    # Saved chat timelines per subject
-├── objects/                  # Generated .html previews
-├── originals/                # Uploaded PDFs, PPTX, etc.
-└── subjects/<subject-name>/
-    ├── index.md              # Auto-generated file index
-    ├── raw/                  # MarkItDown-converted markdown (upload target)
-    ├── wiki/                 # LLM-generated wiki pages with [[wikilinks]]
-    └── .ingested.json        # Tracks which raw files have been ingested
+├── index.md                    # Vault-wide index
+├── log.md                      # Vault-wide changelog
+├── chats/                      # Saved chat histories per subject
+├── objects/                    # Generated HTML study objects
+├── originals/                  # Uploaded source files (PDF, PPTX, etc.)
+└── subjects/<subject>/
+    ├── index.md                # Auto-generated file index
+    ├── raw/                    # Markdown conversions from uploads
+    ├── wiki/                   # LLM-generated wiki pages
+    ├── references/             # Design notes and internal docs
+    └── .ingested.json          # Tracks ingestion state
 ```
 
 ## Project layout
 
 ```
 .
-├── chat/                # Chat package (handler, ingest, llm, prompt, state, tools, types)
-├── scripts/             # One-off maintenance scripts (add-frontmatter.py)
+├── chat/                # Chat package (handler, ingest, llm, prompt, state, tools, types, skills/)
+├── routes/              # HTTP route handlers (admin, chat, files, ingest, system)
 ├── static/              # Front-end assets (chat-ui.{css,js}, study-ui.{css,js})
-├── routes/              # HTTP route handlers (admin, chat, files, ingest, system, _base)
-├── vaults/              # Vault directory (user data, gitignored)
-├── .cache/              # Generated/cache artifacts (gitignored)
-├── .env.example         # Template for .env
-├── config.yaml          # Non-secret config
-├── secrets.example.yaml # Template for secrets.yaml (gitignored)
-├── index.html           # SPA shell
-├── server.py            # HTTP server entry point
-└── subject_themes.json  # Per-subject color theming
+├── scripts/             # One-off maintenance scripts
+├── vaults/              # User data (gitignored)
+├── .cache/              # Cache artifacts (gitignored)
+├── index.html           # SPA entry point
+├── server.py            # HTTP server
+├── config.yaml          # Non-secret configuration
+├── subject_themes.json  # Per-subject color theming
 ```
 
-## Generated / cache locations
+## API overview
 
-These are gitignored and safe to delete:
+All endpoints under `/api/`.
 
-- `.cache/manim/` — manim renders (videos, partial movie files, slide JSON)
-- `.cache/ingest.log` — server ingest log
+### File system
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/subjects` | List subjects |
+| GET | `/api/files` | List directory entries |
+| GET | `/api/file-content` | Read markdown file |
+| GET | `/api/objects` | List generated objects (with tags) |
+| GET | `/api/object-content` | Serve HTML object |
+| GET | `/api/original` | Serve uploaded file |
+| POST | `/api/upload` | Upload a file |
+| POST | `/api/delete-file` | Cascade-delete raw file |
+| POST | `/api/regenerate-index` | Rebuild subject index |
 
-## API endpoints
+### Chat
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/model` | Available AI models |
+| POST | `/api/chat-start` | Start background chat task |
+| POST | `/api/chat-stream` | SSE stream from task |
+| POST | `/api/chat-save` | Save chat history |
+| POST | `/api/chat-delete` | Delete saved chat |
+| GET | `/api/chat-load` | Load saved chat |
 
-All endpoints under `/api/`. Route modules in `routes/`:
+### System
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/graph` | Wikilink graph (nodes + edges) |
+| GET | `/api/lint` | Orphaned files, missing frontmatter |
+| GET | `/api/themes` | Subject theme colors |
+| GET | `/api/search` | Full-text search |
+| POST | `/api/create-subject` | Create new subject |
+| POST | `/api/delete-subject` | Delete subject and data |
 
-| Method | Path                  | Module  | Purpose                          |
-|--------|-----------------------|---------|----------------------------------|
-| GET    | /api/health           | ingest  | Server health                    |
-| GET    | /api/status           | ingest  | Ingest progress / queue state    |
-| GET    | /api/subjects         | files   | List subjects                    |
-| GET    | /api/files            | files   | List directory entries           |
-| GET    | /api/file-content     | files   | Read a markdown file             |
-| GET    | /api/objects          | files   | List generated objects           |
-| GET    | /api/object-content   | files   | Serve an HTML object             |
-| GET    | /api/original         | files   | Serve an uploaded original file  |
-| GET    | /api/graph            | system  | Wikilink graph (nodes + edges)   |
-| GET    | /api/lint             | system  | Lint: orphans, frontmatter, etc. |
-| GET    | /api/themes           | system  | Subject theme colors             |
-| GET    | /api/search           | system  | Full-text search across subjects |
-| GET    | /api/pending-state    | files   | Pending deletion state           |
-| GET    | /api/model            | chat    | Available AI models              |
-| POST   | /api/upload           | files   | Upload a file (PDF, PPTX, etc.)  |
-| POST   | /api/regenerate-index | files   | Rebuild subject index.md         |
-| POST   | /api/update-wiki      | ingest  | Cascade-delete + LLM ingest      |
-| POST   | /api/delete-file      | files   | Cascade-delete a raw file        |
-| POST   | /api/mark-file        | files   | Mark/unmark file for deletion    |
-| POST   | /api/create-subject   | admin   | Create a new subject             |
-| POST   | /api/delete-subject   | admin   | Delete a subject and all data    |
-| POST   | /api/chat-start       | chat    | Start a new chat session         |
-| POST   | /api/chat-stream      | chat    | Stream a chat response           |
-| POST   | /api/chat-save        | chat    | Save current chat                |
-| POST   | /api/chat-delete      | chat    | Delete saved chat                |
-| GET    | /api/chat-load        | chat    | Load saved chat                  |
-| GET    | /skill/:name          | system  | Serve skill prompt documents     |
+## Chat tools
 
-Bash scripts from `study-scripts/` have been replaced by the admin API
-(`create-subject`, `delete-subject`).
+The AI model can invoke these tools during a conversation:
 
-## Security note
+| Tool | Purpose |
+|------|---------|
+| `read_vault_file` | Read wiki, raw, or reference files |
+| `write_study_object` | Create HTML study aids (exams, mind maps, flashcards, etc.) |
+| `write_study_video` | Render animated manim explanations |
+| `write_wiki_page` | Create or update wiki documentation |
+| `write_design_notes` | Write internal design docs to references/ |
+| `mark_file_ingested` | Mark raw file as fully processed |
+| `highlight_node` | Highlight concepts in the knowledge graph |
+| `read_skill` | Load skill guidelines for specialized tasks |
 
-Personal identifiers (`xlorenz`) and API keys were previously committed to the
-repo. They have been scrubbed from all 60 commits via `git filter-branch`.
-The NVIDIA API key from an old `.env` file was only present in a dangling
-commit that was never pushed. **There are no known secrets in the git history
-reachable from master.**
+## Skills
 
-## Troubleshooting
+Skills are markdown documents in `chat/skills/` that provide domain-specific
+guidelines to the LLM. Built-in:
 
-- The vault directory (`vaults/`) and its subdirectories (`subjects/`,
-  `objects/`, `originals/`, `chats/`) are created automatically by the server
-  on first use. If you see 404 errors on a new subject, create it via
-  `POST /api/create-subject` or the web UI.
-- The server will fail to start if `config.yaml` cannot be read. Check the
-  terminal output for YAML parse errors.
+- **`study-professor`** — base persona (always loaded)
+- **`study-object-templates`** — HTML template reference for 6+ study object
+  formats
+- **`manim-video`** — manim scripting conventions, patterns, and best practices
+
+## Tags
+
+Objects created via `write_study_object` and `write_study_video` accept an
+optional `tag` parameter (max 7 lowercase letters). Tags are free-form and
+receive a deterministic HSL color derived from the tag string. They display as
+uppercase badges in the object tree UI.
