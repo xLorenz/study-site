@@ -8,8 +8,9 @@ import re
 import subprocess
 import sys
 import textwrap
+from datetime import datetime, timezone
 
-from .types import VAULT_DIR, MANIM_DIR, MANIM_RENDER_QUALITY
+from .types import VAULT_DIR, MANIM_DIR, MANIM_RENDER_QUALITY, STUDY_DIR
 
 
 def get_tool_definitions():
@@ -21,7 +22,8 @@ def get_tool_definitions():
                 "name": "read_vault_file",
                 "description": "Read a file from the current subject's vault directory. "
                                "Use this when asked subject-related questions. "
-                               "Read from wiki/ for specific concepts, read from raw/ for general questions.",
+                               "Prefer wiki/ pages (including wiki/src-{name}.md source summaries), "
+                               "only fall back to raw/ if the concept isn't covered in wiki/.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -45,11 +47,15 @@ def get_tool_definitions():
                     "properties": {
                         "filename": {
                             "type": "string",
-                            "description": "Desired filename (e.g. 'mock-exam-1', 'cheat-sheet-vectors'). Extension will be enforced to .html"
+                            "description": "Desired filename (e.g. 'exam-1', 'vectors-mindmap'). Extension will be enforced to .html"
                         },
                         "html_content": {
                             "type": "string",
                             "description": "Full HTML content of the study object. Must include DOCTYPE, html, head, and body tags."
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "Optional free-form tag (max 7 lowercase letters only). Describe the object type/content: 'mock', 'mindmap', 'flash', 'cheat', 'exam', 'formula', 'solutions', etc. Used for UI badge with deterministic color."
                         }
                     },
                     "required": ["filename", "html_content"]
@@ -73,15 +79,15 @@ def get_tool_definitions():
                         },
                         "script": {
                             "type": "string",
-                            "description": "Full Python manim script using Slide from manim_slides. "
-                                           "Must import: from manim import *, from manim_slides import Slide. "
-                                           "Each scene is a class extending Slide. Use self.pause() between slides. "
-                                           "Use DEFAULT_BG_COLOR constant for background. "
-                                           "NO self.camera.background_color assignment."
+                            "description": "Full Python manim script. Load the `manim-video` skill via `read_skill` for complete guidelines (2D/3D, patterns, conventions). Minimal: `from manim import *`; class extending `Scene` or `ThreeDScene`; set `self.camera.background_color`."
                         },
                         "scene_name": {
                             "type": "string",
-                            "description": "The class name of the scene to render (must match a Slide subclass in the script)."
+                            "description": "The class name of the scene to render (must match a Scene subclass in the script)."
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "Optional free-form tag (max 7 lowercase letters only). Describe the video type: 'animation', 'video', 'viz', 'demo', etc. Used for UI badge with deterministic color."
                         }
                     },
                     "required": ["filename", "script", "scene_name"]
@@ -149,6 +155,49 @@ def get_tool_definitions():
                     "required": ["nodes"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_skill",
+                "description": "Read a skill definition from the chat/skills/ directory. "
+                               "Use this to load creative/technical guidelines before generating content. "
+                               "Available skills: manim-video, study-professor, study-object-templates.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Skill directory name (e.g. 'manim-video', 'study-professor', 'study-object-templates')"
+                        }
+                    },
+                    "required": ["skill_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_design_notes",
+                "description": "Write design notes, session plans, or object blueprints to the subject's references/ directory. "
+                               "Use this for object design plans (before creating study objects), session notes, or any internal reference material. "
+                               "The references/ folder is for internal design docs — not shown in the wiki index. "
+                               "Creates folder on first write.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Desired filename (e.g. 'object-exam-1-design', 'session-notes'). .md extension added if missing."
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Full markdown content (raw, no frontmatter required)."
+                        }
+                    },
+                    "required": ["filename", "content"]
+                }
+            }
         }
     ]
 
@@ -177,15 +226,17 @@ def read_vault_file(subject, path):
         return {"error": f"Path traversal detected: {path} is outside subject directory"}
 
     if not os.path.isfile(real_target):
-        # Try fuzzy resolution: basename search in wiki/, raw/, references/
-        basename = os.path.basename(path)
+        # Try fuzzy resolution: case-insensitive basename search in wiki/, raw/, references/
+        basename_lower = os.path.basename(path).lower()
+        base_no_ext = os.path.splitext(basename_lower)[0]
         for search_dir in ["wiki", "raw", "references"]:
             search_path = os.path.join(subject_dir, search_dir)
             if not os.path.isdir(search_path):
                 continue
             for root, dirs, fnames in os.walk(search_path):
                 for f in fnames:
-                    if f == basename or f == basename + ".md" or os.path.splitext(f)[0] == os.path.splitext(basename)[0]:
+                    fl = f.lower()
+                    if fl == basename_lower or fl == basename_lower + ".md" or os.path.splitext(fl)[0] == base_no_ext:
                         found_path = os.path.join(root, f)
                         if os.path.realpath(found_path).startswith(real_subject_dir + os.sep):
                             with open(found_path, "r", encoding="utf-8") as fh:
@@ -199,11 +250,18 @@ def read_vault_file(subject, path):
     return {"content": content, "path": rel_path}
 
 
-def write_study_object(subject, filename, html_content):
+def write_study_object(subject, filename, html_content, tag=None):
     """Write an HTML study object with versioned collision handling."""
     filename = _normalize_filename(filename)
     if not filename.endswith(".html"):
         filename += ".html"
+
+    # Validate tag: max 7 lowercase letters only
+    if tag:
+        tag = tag.strip().lower()
+        tag = re.sub(r'[^a-z]', '', tag)[:7]
+        if not tag:
+            tag = None
 
     objects_dir = os.path.join(VAULT_DIR, "objects", subject)
     os.makedirs(objects_dir, exist_ok=True)
@@ -228,17 +286,24 @@ def write_study_object(subject, filename, html_content):
     with open(real_target, "w", encoding="utf-8") as f:
         f.write(html_content)
 
+    # Write metadata file with tag
+    if tag:
+        meta_path = os.path.join(objects_dir, f"{os.path.basename(real_target)}.meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump({"tag": tag, "created": datetime.now(timezone.utc).isoformat()}, f)
+
     return {
         "path": os.path.relpath(real_target, VAULT_DIR),
         "filename": os.path.basename(real_target),
-        "subject": subject
+        "subject": subject,
+        "tag": tag
     }
 
 
 def write_wiki_page(subject, filename, content):
     """Write a wiki markdown page with path traversal protection."""
-    # Normalize: strip .md if present, normalize base, add .md back
-    base = filename
+    # Strip any directory prefix (e.g. "wiki/foo" → "foo") and normalize
+    base = os.path.basename(filename)
     if base.endswith(".md"):
         base = base[:-3]
     base = _normalize_filename(base)
@@ -259,7 +324,7 @@ def write_wiki_page(subject, filename, content):
     if filename == "log.md" and os.path.isfile(real_target):
         with open(real_target, "r", encoding="utf-8") as f:
             existing = f.read()
-        content = existing.rstrip() + "\\n" + content.lstrip()
+        content = existing.rstrip() + "\n" + content.lstrip()
 
     with open(real_target, "w", encoding="utf-8") as f:
         f.write(content)
@@ -274,6 +339,7 @@ def write_wiki_page(subject, filename, content):
 
 def mark_file_ingested(subject, filename):
     """Mark a raw file as ingested in .ingested.json."""
+    filename = os.path.basename(filename)  # strip any directory prefix
     if not filename.endswith(".md"):
         filename += ".md"
     raw_dir = os.path.join(VAULT_DIR, "subjects", subject, "raw")
@@ -296,7 +362,6 @@ def mark_file_ingested(subject, filename):
 
     ingested.add(filename)
 
-    from datetime import datetime
     with open(ingested_path, "w", encoding="utf-8") as f:
         json.dump({
             "ingested": sorted(ingested),
@@ -310,11 +375,18 @@ def mark_file_ingested(subject, filename):
     }
 
 
-def write_study_video(subject, filename, script, scene_name):
+def write_study_video(subject, filename, script, scene_name, tag=None):
     """Render a manim script and save as a self-contained HTML with embedded video."""
     filename = _normalize_filename(filename)
     if not filename.endswith(".html"):
         filename += ".html"
+
+    # Validate tag: max 7 lowercase letters only
+    if tag:
+        tag = tag.strip().lower()
+        tag = re.sub(r'[^a-z]', '', tag)[:7]
+        if not tag:
+            tag = None
 
     objects_dir = os.path.join(VAULT_DIR, "objects", subject)
     os.makedirs(objects_dir, exist_ok=True)
@@ -339,7 +411,8 @@ def write_study_video(subject, filename, script, scene_name):
     os.makedirs(manim_dir, exist_ok=True)
 
     # Write script to file
-    script_path = os.path.join(manim_dir, f"{scene_name}.py")
+    scene_name_clean = scene_name.replace("/", "_").replace("\\", "_")
+    script_path = os.path.join(manim_dir, f"{scene_name_clean}.py")
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(textwrap.dedent(script))
 
@@ -356,15 +429,12 @@ def write_study_video(subject, filename, script, scene_name):
             return {"error": f"Manim render failed: {error_msg}"}
 
         # Step 2: Find the rendered MP4
-        quality_name = f"{MANIM_RENDER_QUALITY}p15"
+        QUALITY_DIR_MAP = {"l": "480p15", "m": "720p30", "h": "1080p60"}
+        qkey = MANIM_RENDER_QUALITY.replace("q", "")  # "ql" → "l"
+        quality_dir = QUALITY_DIR_MAP.get(qkey, "480p15")
         mp4_path = os.path.join(
-            manim_dir, "media", "videos", scene_name, quality_name, f"{scene_name}.mp4"
+            manim_dir, "media", "videos", scene_name, quality_dir, f"{scene_name}.mp4"
         )
-        if not os.path.isfile(mp4_path):
-            # Try alternate quality name (without p15 suffix)
-            mp4_path = os.path.join(
-                manim_dir, "media", "videos", scene_name, MANIM_RENDER_QUALITY, f"{scene_name}.mp4"
-            )
         if not os.path.isfile(mp4_path):
             # Fallback: search for any mp4
             found = sorted(glob.glob(os.path.join(manim_dir, "media", "videos", scene_name, "**", f"{scene_name}.mp4"), recursive=True), key=os.path.getmtime, reverse=True)
@@ -424,9 +494,59 @@ def write_study_video(subject, filename, script, scene_name):
     except Exception as e:
         return {"error": f"Manim pipeline error: {e}"}
 
+    # Write metadata file with tag
+    if tag:
+        meta_path = os.path.join(objects_dir, f"{os.path.basename(real_target)}.meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump({"tag": tag, "created": datetime.now(timezone.utc).isoformat()}, f)
+
     return {
         "path": os.path.relpath(real_target, VAULT_DIR),
         "filename": os.path.basename(real_target),
+        "subject": subject,
+        "size_bytes": os.path.getsize(real_target),
+        "tag": tag
+    }
+
+
+def read_skill(skill_name):
+    """Read a skill from chat/skills/ directory."""
+    skills_dir = os.path.join(STUDY_DIR, "chat", "skills")
+    skill_path = os.path.join(skills_dir, skill_name, "SKILL.md")
+    if os.path.isfile(skill_path):
+        with open(skill_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        if content.startswith("---"):
+            end = content.find("---", 3)
+            if end != -1:
+                content = content[end + 3:].strip()
+        return content
+    return f"<!-- Skill '{skill_name}' not found in chat/skills/ -->"
+
+
+def write_design_notes(subject, filename, content):
+    """Write a design note to the subject's references/ directory."""
+    base = os.path.basename(filename)
+    if base.endswith(".md"):
+        base = base[:-3]
+    base = _normalize_filename(base)
+    filename = base + ".md"
+
+    refs_dir = os.path.join(VAULT_DIR, "subjects", subject, "references")
+    os.makedirs(refs_dir, exist_ok=True)
+
+    target_path = os.path.join(refs_dir, filename)
+    real_refs_dir = os.path.realpath(refs_dir)
+    real_target = os.path.realpath(target_path)
+    if not real_target.startswith(real_refs_dir + os.sep):
+        return {"error": "Path traversal prevented"}
+
+    with open(real_target, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return {
+        "path": os.path.relpath(real_target, VAULT_DIR),
+        "filename": filename,
         "subject": subject,
         "size_bytes": os.path.getsize(real_target),
     }
@@ -448,17 +568,19 @@ def execute_tool(subject, tool_call_name, args_json_str):
     elif tool_call_name == "write_study_object":
         filename = args.get("filename", "")
         html_content = args.get("html_content", "")
+        tag = args.get("tag")
         if not filename or not html_content:
             return {"error": "Missing 'filename' or 'html_content' argument"}
-        return write_study_object(subject, filename, html_content)
+        return write_study_object(subject, filename, html_content, tag)
 
     elif tool_call_name == "write_study_video":
         filename = args.get("filename", "")
         script = args.get("script", "")
         scene_name = args.get("scene_name", "")
+        tag = args.get("tag")
         if not filename or not script or not scene_name:
             return {"error": "Missing 'filename', 'script', or 'scene_name' argument"}
-        return write_study_video(subject, filename, script, scene_name)
+        return write_study_video(subject, filename, script, scene_name, tag)
 
     elif tool_call_name == "write_wiki_page":
         filename = args.get("filename", "")
@@ -478,6 +600,19 @@ def execute_tool(subject, tool_call_name, args_json_str):
         if not isinstance(nodes, list) or len(nodes) == 0:
             return {"error": "Missing or empty 'nodes' array"}
         return {"highlight_nodes": nodes}
+
+    elif tool_call_name == "read_skill":
+        skill_name = args.get("skill_name", "")
+        if not skill_name:
+            return {"error": "Missing 'skill_name' argument"}
+        return read_skill(skill_name)
+
+    elif tool_call_name == "write_design_notes":
+        filename = args.get("filename", "")
+        content = args.get("content", "")
+        if not filename or not content:
+            return {"error": "Missing 'filename' or 'content' argument"}
+        return write_design_notes(subject, filename, content)
 
     else:
         return {"error": f"Unknown tool: {tool_call_name}"}

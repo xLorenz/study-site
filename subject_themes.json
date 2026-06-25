@@ -5,16 +5,10 @@
     "accent": "#22d3ee",
     "icon": "\ud83d\udcda"
   },
-  "comunicacion-de-datos": {
-    "primary": "#f16164",
-    "secondary": "#f18d61",
-    "accent": "#f17661",
-    "icon": "\ud83d\udcda"
-  },
-  "fisica-ii": {
-    "primary": "#64f161",
-    "secondary": "#61f18e",
-    "accent": "#61f176",
+  "test": {
+    "primary": "#be62f1",
+    "secondary": "#ed61f1",
+    "accent": "#d561f1",
     "icon": "\ud83d\udcda"
   }
 }

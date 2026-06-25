@@ -39,7 +39,7 @@ def _resolve_api_key(provider):
         if os.path.isfile(cfg_path):
             with open(cfg_path) as f:
                 cfg = yaml.safe_load(f) or {}
-            api_key = cfg.get("nim_api_key", cfg.get("nim_base_url", ""))
+            api_key = cfg.get("nim_api_key", "")
         return api_key
 
     if not api_key:
@@ -193,6 +193,8 @@ def stream_chat(messages, model, subject):
 
     round_num = 0
     current_messages = list(messages)
+    tools_executed = False
+    skip_rounds = 0
 
     while round_num < MAX_TOOL_ROUNDS:
         try:
@@ -284,6 +286,17 @@ def stream_chat(messages, model, subject):
                 yield {"type": "tool_result", "name": tc.name, "result": result}
 
             round_num += 1
+            tools_executed = True
+            continue
+
+        # If we just executed tools, continue even if finish_reason is "stop" or "length"
+        if tools_executed:
+            tools_executed = False
+            skip_rounds += 1
+            if skip_rounds > 5:
+                break
+            if full_content:
+                current_messages.append({"role": "assistant", "content": full_content})
             continue
 
         if finish_reason == "tool_calls":

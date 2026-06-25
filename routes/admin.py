@@ -137,7 +137,10 @@ When new raw files are detected:
 ### Step 1 — Read SCHEMA.md
 Read this file. This is the sole authority for page format and conventions.
 
-### Step 2 — Process each raw file
+### Step 2 — Read wiki/index.md
+Read `wiki/index.md` to discover which wiki pages already exist. This tells you the available concepts and prevents creating duplicates. Note the filenames (the `[[wikilink]]` slugs) so you can interlink correctly.
+
+### Step 3 — Process each raw file
 For each un-ingested `.md` file in `raw/`:
 1. Read the raw content
 2. Create a **source summary page** in `wiki/` using `src-{{base-name}}` naming (e.g., `wiki/src-2026-cd-tp6.md`)
@@ -146,7 +149,7 @@ For each un-ingested `.md` file in `raw/`:
 5. Add `[[wikilinks]]` between source summary and concept pages using exact lowercase-hyphen filenames
 6. Immediately add the filename to the `ingested` array in `raw/.ingested.json`
 
-### Step 3 — Finalize
+### Step 4 — Finalize
 1. Update `wiki/index.md` with all new pages and one-line descriptions
 2. Append to `wiki/log.md`: date, source name, what changed
 

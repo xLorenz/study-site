@@ -96,10 +96,14 @@ def handle_update_wiki(handler):
         if cl > 1_000_000:
             handler._send_json(413, {"error": "body_too_large", "detail": "JSON body exceeds 1 MB limit"})
             return
-        body = json.loads(handler.rfile.read(cl)) if cl else {}
+        try:
+            body = json.loads(handler.rfile.read(cl).decode("utf-8")) if cl else {}
+        except (ValueError, json.JSONDecodeError):
+            handler._send_json(400, {"error": "invalid_body", "detail": "Expected JSON body"})
+            return
         subject = body.get("subject", "")
         if not subject:
-            handler._send_json(400, {"error": "missing_subject"})
+            handler._send_json(400, {"error": "missing_subject", "detail": "Subject field is required"})
             return
 
         vault_subject = os.path.join(VAULT, "subjects", subject)

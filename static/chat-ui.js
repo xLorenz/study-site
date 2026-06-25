@@ -254,64 +254,92 @@
             var args = safeParse(event.arguments, {});
             var isRead = event.name === 'read_vault_file';
             var isHighlight = event.name === 'highlight_node';
+            var isMarkIngested = event.name === 'mark_file_ingested';
+            var isReadSkill = event.name === 'read_skill';
             var label;
+
             if (isRead) {
                 label = args.path || 'file';
             } else if (isHighlight) {
                 label = (args.nodes || []).join(', ') || 'nodes';
+            } else if (isReadSkill) {
+                label = args.skill_name || 'skill';
             } else {
                 label = args.filename || 'object';
             }
+
             // Track for persistence
             chat.currentToolCalls.push({ name: event.name, arguments: event.arguments, label: label });
+
             if (isRead) {
-            if (chat.currentReadGroup) {
-            addToReadGroup(chat.currentReadGroup, label);
+                if (chat.currentReadGroup) {
+                    addToReadGroup(chat.currentReadGroup, label);
+                } else {
+                    var group = createReadGroup();
+                    chat.currentReadGroup = group;
+                    if (chat.currentBodyDiv) {
+                        chat.currentBodyDiv.parentNode.insertBefore(group, chat.currentBodyDiv.nextSibling);
+                    }
+                    addToReadGroup(group, label);
+                }
+            } else if (isHighlight || isMarkIngested) {
+                // No display box for highlight_node and mark_file_ingested
+            } else if (isReadSkill) {
+                // read_skill goes to read group (collapsible)
+                if (chat.currentReadGroup) {
+                    addToReadGroup(chat.currentReadGroup, label);
+                } else {
+                    var group = createReadGroup();
+                    chat.currentReadGroup = group;
+                    if (chat.currentBodyDiv) {
+                        chat.currentBodyDiv.parentNode.insertBefore(group, chat.currentBodyDiv.nextSibling);
+                    }
+                    addToReadGroup(group, label);
+                }
             } else {
-            var group = createReadGroup();
-            chat.currentReadGroup = group;
-            if (chat.currentBodyDiv) {
-            chat.currentBodyDiv.parentNode.insertBefore(group, chat.currentBodyDiv.nextSibling);
-            }
-            addToReadGroup(group, label);
-            }
-            } else {
-            var box = createToolBox(isRead, label, event.name);
-            chat.currentToolBoxes.push(box);
-            if (chat.currentBodyDiv) {
-            var insertBefore = chat.currentReadGroup ? chat.currentReadGroup.nextSibling : chat.currentBodyDiv.nextSibling;
-            chat.currentBodyDiv.parentNode.insertBefore(box, insertBefore);
-            }
+                // write_study_object, write_study_video, write_wiki_page, write_design_notes
+                var box = createToolBox(isRead, label, event.name);
+                if (box) {
+                    chat.currentToolBoxes.push(box);
+                    if (chat.currentBodyDiv) {
+                        var insertBefore = chat.currentReadGroup ? chat.currentReadGroup.nextSibling : chat.currentBodyDiv.nextSibling;
+                        chat.currentBodyDiv.parentNode.insertBefore(box, insertBefore);
+                    }
+                }
             }
             smartScroll();
             break;
             }
 
             case 'tool_result':
-            if (event.name === 'read_vault_file' && chat.currentReadGroup) {
-            completeReadGroupItem(chat.currentReadGroup, event);
+            if ((event.name === 'read_vault_file' || event.name === 'read_skill') && chat.currentReadGroup) {
+                completeReadGroupItem(chat.currentReadGroup, event);
+            } else if (event.name === 'mark_file_ingested' || event.name === 'highlight_node') {
+                // No display box for these tools
             } else {
-            for (var i = 0; i < chat.currentToolBoxes.length; i++) {
-            var box = chat.currentToolBoxes[i];
-            if (box.dataset.toolName === event.name && !box.classList.contains('completed')) {
-            completeToolBox(box);
-            break;
-            }
+                for (var i = 0; i < chat.currentToolBoxes.length; i++) {
+                    var box = chat.currentToolBoxes[i];
+                    if (box.dataset.toolName === event.name && !box.classList.contains('completed')) {
+                        completeToolBox(box);
+                        break;
+                    }
+                }
             }
             // Auto-refresh objects tab when a study object or video is created
             if ((event.name === 'write_study_object' || event.name === 'write_study_video') && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
-            const path = event.result && event.result.path;
-            window.reloadObjectTree(chat.currentSubject, path);
-            // Auto-open the created object in the main area
+                const path = event.result && event.result.path;
+                window.reloadObjectTree(chat.currentSubject, path);
+                // Auto-open the created object in the main area
             if (path && typeof window.showObject === 'function') {
             window.showObject(path);
             }
-            }
             // Highlight nodes in the graph when highlight_node tool completes
             if (event.name === 'highlight_node' && typeof window.highlightNodes === 'function') {
-            window.highlightNodes(event.result && event.result.highlight_nodes || []);
+                window.highlightNodes(event.result && event.result.highlight_nodes || []);
             }
-            }
+            smartScroll();
+            break;
+        }
             smartScroll();
             break;
 
@@ -435,12 +463,27 @@
     function createToolBox(isRead, label, toolName) {
         var box = document.createElement('div');
         box.className = 'msg-tool-box';
-        box.dataset.toolName = toolName || (isRead ? 'read_vault_file' : 'write_study_object');
+        box.dataset.toolName = toolName;
+
+        // No display box for mark_file_ingested and highlight_node
+        if (toolName === 'mark_file_ingested' || toolName === 'highlight_node') {
+            return null;
+        }
 
         var icon = document.createElement('span');
         icon.className = 'tool-icon';
         if (toolName === 'highlight_node') {
             icon.textContent = '\uD83D\uDD26';
+        } else if (toolName === 'read_skill') {
+            icon.textContent = '\uD83D\uDCDA';
+        } else if (toolName === 'write_study_video') {
+            icon.textContent = '\uD83C\uDFA5';
+        } else if (toolName === 'write_wiki_page') {
+            icon.textContent = '\uD83D\uDCDD';
+        } else if (toolName === 'write_design_notes') {
+            icon.textContent = '\uD83D\uDDBC\uFE0F';
+        } else if (toolName === 'mark_file_ingested') {
+            icon.textContent = '\u2705';
         } else {
             icon.textContent = isRead ? '\uD83D\uDCD6' : '\u270F\uFE0F';
         }
@@ -450,6 +493,16 @@
         labelSpan.className = 'tool-label';
         if (toolName === 'highlight_node') {
             labelSpan.innerHTML = 'highlighting <code>' + escapeHtml(label) + '</code>';
+        } else if (toolName === 'read_skill') {
+            labelSpan.innerHTML = 'loading skill <code>' + escapeHtml(label) + '</code>';
+        } else if (toolName === 'write_study_video') {
+            labelSpan.innerHTML = 'rendering <code>' + escapeHtml(label) + '</code>';
+        } else if (toolName === 'write_wiki_page') {
+            labelSpan.innerHTML = 'adding <code>' + escapeHtml(label) + '</code> to the wiki';
+        } else if (toolName === 'write_design_notes') {
+            labelSpan.innerHTML = 'writing design note <code>' + escapeHtml(label) + '</code>';
+        } else if (toolName === 'mark_file_ingested') {
+            labelSpan.innerHTML = 'marking <code>' + escapeHtml(label) + '</code> as ingested';
         } else {
             labelSpan.innerHTML = (isRead ? 'reading ' : 'creating ') + '<code>' + escapeHtml(label) + '</code>';
         }
@@ -468,16 +521,44 @@
     var icon = box.querySelector('.tool-icon');
     var label = box.querySelector('.tool-label code');
     var labelText = label ? label.textContent : '';
-    var isRead = box.dataset.toolName === 'read_vault_file';
-    var isHighlight = box.dataset.toolName === 'highlight_node';
-    if (icon) icon.textContent = isHighlight ? '\u2728' : (isRead ? '\uD83D\uDCD6' : '\u2705');
+    var toolName = box.dataset.toolName;
+
+    var isRead = toolName === 'read_vault_file';
+    var isHighlight = toolName === 'highlight_node';
+    var isReadSkill = toolName === 'read_skill';
+    var isWriteWiki = toolName === 'write_wiki_page';
+    var isWriteVideo = toolName === 'write_study_video';
+    var isWriteDesign = toolName === 'write_design_notes';
+    var isMarkIngested = toolName === 'mark_file_ingested';
+
+    if (icon) {
+        if (isHighlight) icon.textContent = '\u2728';
+        else if (isReadSkill) icon.textContent = '\uD83D\uDCDA';
+        else if (isWriteWiki) icon.textContent = '\uD83D\uDCDD';
+        else if (isWriteVideo) icon.textContent = '\uD83C\uDFA5';
+        else if (isWriteDesign) icon.textContent = '\uD83D\uDDBC\uFE0F';
+        else if (isMarkIngested) icon.textContent = '\u2705';
+        else if (isRead) icon.textContent = '\uD83D\uDCD6';
+        else icon.textContent = '\u2705';
+    }
+
     var labelSpan = box.querySelector('.tool-label');
     if (labelSpan) {
-    if (isHighlight) {
-        labelSpan.innerHTML = 'highlighted <code>' + escapeHtml(labelText) + '</code>';
-    } else {
-        labelSpan.innerHTML = (isRead ? 'read ' : 'created ') + '<code>' + escapeHtml(labelText) + '</code>';
-    }
+        if (isHighlight) {
+            labelSpan.innerHTML = 'highlighted <code>' + escapeHtml(labelText) + '</code>';
+        } else if (isReadSkill) {
+            labelSpan.innerHTML = 'loaded skill <code>' + escapeHtml(labelText) + '</code>';
+        } else if (isWriteWiki) {
+            labelSpan.innerHTML = 'added <code>' + escapeHtml(labelText) + '</code> to the wiki';
+        } else if (isWriteVideo) {
+            labelSpan.innerHTML = 'rendered <code>' + escapeHtml(labelText) + '</code>';
+        } else if (isWriteDesign) {
+            labelSpan.innerHTML = 'wrote design note <code>' + escapeHtml(labelText) + '</code>';
+        } else if (isMarkIngested) {
+            labelSpan.innerHTML = 'marked <code>' + escapeHtml(labelText) + '</code> as ingested';
+        } else {
+            labelSpan.innerHTML = (isRead ? 'read ' : 'created ') + '<code>' + escapeHtml(labelText) + '</code>';
+        }
     }
     }
 
@@ -541,36 +622,65 @@
     var reads = [];
     var writes = [];
     for (var i = 0; i < toolCalls.length; i++) {
-    var tc = toolCalls[i];
-    if (tc.name === 'read_vault_file') {
-    reads.push(tc.label || 'file');
-    } else {
-    writes.push(tc);
-    }
+        var tc = toolCalls[i];
+        if (tc.name === 'read_vault_file' || tc.name === 'read_skill') {
+            reads.push({ label: tc.label || 'file', name: tc.name });
+        } else if (tc.name === 'mark_file_ingested' || tc.name === 'highlight_node') {
+            // No display for these
+        } else {
+            writes.push(tc);
+        }
     }
 
-    // Render read group
+    // Render read group (includes read_vault_file and read_skill)
     if (reads.length > 0) {
-    var group = createReadGroup();
-    for (var j = 0; j < reads.length; j++) {
-    addToReadGroup(group, reads[j]);
-    completeReadGroupItem(group);
-    }
-    div.insertBefore(group, div.firstChild);
+        var group = createReadGroup();
+        for (var j = 0; j < reads.length; j++) {
+            var icon = reads[j].name === 'read_skill' ? '\uD83D\uDCDA' : '\uD83D\uDCD6';
+            var item = document.createElement('div');
+            item.className = 'read-group-item completed';
+            item.dataset.label = reads[j].label;
+            item.innerHTML = '<span class="read-group-item-icon">' + icon + '</span><code>' + escapeHtml(reads[j].label) + '</code>';
+            group.querySelector('.read-group-list').appendChild(item);
+            group._count++;
+        }
+        var countSpan = group.querySelector('.read-group-label strong');
+        if (countSpan) countSpan.textContent = group._count;
+        div.insertBefore(group, div.firstChild);
     }
 
     // Render write tool boxes
     for (var k = 0; k < writes.length; k++) {
-    var w = writes[k];
-    var box = document.createElement('div');
-    box.className = 'msg-tool-box completed';
-    box.dataset.toolName = w.name || 'write_study_object';
-    if (w.name === 'highlight_node') {
-        box.innerHTML = '<span class="tool-icon">\u2728</span><span class="tool-label">highlighted <code>' + escapeHtml(w.label || 'nodes') + '</code></span>';
-    } else {
-        box.innerHTML = '<span class="tool-icon">\u2705</span><span class="tool-label">created <code>' + escapeHtml(w.label || 'object') + '</code></span>';
-    }
-    div.insertBefore(box, div.firstChild);
+        var w = writes[k];
+        var box = document.createElement('div');
+        box.className = 'msg-tool-box completed';
+        box.dataset.toolName = w.name || 'write_study_object';
+
+        var icon, labelText;
+        if (w.name === 'highlight_node') {
+            icon = '\u2728';
+            labelText = 'highlighted <code>' + escapeHtml(w.label || 'nodes') + '</code>';
+        } else if (w.name === 'read_skill') {
+            icon = '\uD83D\uDCDA';
+            labelText = 'loaded skill <code>' + escapeHtml(w.label || 'skill') + '</code>';
+        } else if (w.name === 'write_study_video') {
+            icon = '\uD83C\uDFA5';
+            labelText = 'rendered <code>' + escapeHtml(w.label || 'video') + '</code>';
+        } else if (w.name === 'write_wiki_page') {
+            icon = '\uD83D\uDCDD';
+            labelText = 'added <code>' + escapeHtml(w.label || 'page') + '</code> to the wiki';
+        } else if (w.name === 'write_design_notes') {
+            icon = '\uD83D\uDDBC\uFE0F';
+            labelText = 'wrote design note <code>' + escapeHtml(w.label || 'note') + '</code>';
+        } else if (w.name === 'mark_file_ingested') {
+            icon = '\u2705';
+            labelText = 'marked <code>' + escapeHtml(w.label || 'file') + '</code> as ingested';
+        } else {
+            icon = '\u2705';
+            labelText = 'created <code>' + escapeHtml(w.label || 'object') + '</code>';
+        }
+        box.innerHTML = '<span class="tool-icon">' + icon + '</span><span class="tool-label">' + labelText + '</span>';
+        div.insertBefore(box, div.firstChild);
     }
     }
 

@@ -6,6 +6,7 @@ import email.policy
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -189,7 +190,7 @@ def slugify(text: str) -> str:
 
 def run_markitdown(input_path: str, output_path: str) -> tuple[bool, str]:
     """Convert a file to markdown using MarkItDown. Returns (success, stderr)."""
-    md_bin = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/markitdown")
+    md_bin = shutil.which("markitdown") or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/markitdown")
     try:
         result = subprocess.run(
             [md_bin, input_path, "-o", output_path],
@@ -325,24 +326,65 @@ def _read_node_meta(subject: str, node_id: str) -> dict:
                 meta["source_url"] = raw
         return meta
     return {"type": "note", "created": None, "tags": [], "source_url": None, "title": None}
-# ─── Vault/tracking state functions ───
 
-OBJECT_TYPE_PREFIXES = {
- "mock-": "mock",
- "cheat-": "cheat",
- "mindmap-": "mindmap",
- "formula-": "formula",
- "flash-": "flash",
-}
 
-OBJECT_TYPE_KEYWORDS = {
- "examen": "mock", "practica": "mock",
- "summary": "cheat", "mapa": "mindmap",
- "concept": "cheat", "calculus": "formula",
- "flashcard": "flash", "card": "flash",
-}
+def tag_color(tag: str) -> str:
+    """Deterministic HSL color from tag string. Returns #RRGGBB."""
+    h = sum(ord(c) * (i + 1) for i, c in enumerate(tag.lower())) % 360
+    s, l = 65, 55
+    c = (1 - abs(2 * l / 100 - 1)) * s / 100
+    x = c * (1 - abs((h / 60) % 2 - 1))
+    m = l / 100 - c / 2
+    if h < 60:
+        r, g, b = c, x, 0
+    elif h < 120:
+        r, g, b = x, c, 0
+    elif h < 180:
+        r, g, b = 0, c, x
+    elif h < 240:
+        r, g, b = 0, x, c
+    elif h < 300:
+        r, g, b = x, 0, c
+    else:
+        r, g, b = c, 0, x
+    return '#{:02x}{:02x}{:02x}'.format(
+        int((r + m) * 255), int((g + m) * 255), int((b + m) * 255)
+    )
 
-TITLE_SUFFIX_RE = re.compile(r'-v\d+\.html$')
+
+def _object_meta_path(subject: str, filename: str) -> str:
+    obj_dir = os.path.join(VAULT, "objects", subject)
+    return os.path.join(obj_dir, f"{filename}.meta.json")
+
+
+def _read_object_meta(subject: str, filename: str) -> dict:
+    meta_path = _object_meta_path(subject, filename)
+    if not os.path.isfile(meta_path):
+        return {}
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _write_object_meta(subject: str, filename: str, tag: str) -> None:
+    meta_path = _object_meta_path(subject, filename)
+    os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+    from datetime import datetime, timezone
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump({"tag": tag, "created": datetime.now(timezone.utc).isoformat()}, f)
+
+
+def _ensure_object_meta(subject: str, filename: str) -> str:
+    """Ensure .meta.json exists, creating from legacy inference if needed. Returns tag."""
+    meta = _read_object_meta(subject, filename)
+    if meta.get("tag"):
+        return meta["tag"]
+    legacy_type = _infer_object_type(filename)
+    tag = legacy_type if legacy_type != "unknown" else "note"
+    _write_object_meta(subject, filename, tag)
+    return tag
 
 
 def _now_iso():
@@ -648,7 +690,7 @@ def _list_entries(abs_dir, vault_prefix, subject):
         if name.startswith("."):
             continue
         abs_path = os.path.join(abs_dir, name)
-        rel_path = os.path.join(vault_prefix, name)
+        rel_path = os.path.join(vault_prefix, name).replace("\\", "/")
         entry = {"name": name, "path": rel_path}
         if os.path.isdir(abs_path):
             entry["type"] = "dir"
@@ -684,6 +726,21 @@ def _count_objects(subject):
 
 
 def _infer_object_type(filename):
+    """Legacy inference for objects without metadata. Returns type string."""
+    OBJECT_TYPE_PREFIXES = {
+        "mock-": "mock",
+        "cheat-": "cheat",
+        "mindmap-": "mindmap",
+        "formula-": "formula",
+        "flash-": "flash",
+        "parcial-": "exam",
+    }
+    OBJECT_TYPE_KEYWORDS = {
+        "examen": "mock", "practica": "mock",
+        "summary": "cheat", "mapa": "mindmap",
+        "concept": "cheat", "calculus": "formula",
+        "flashcard": "flash", "card": "flash",
+    }
     for prefix, obj_type in OBJECT_TYPE_PREFIXES.items():
         if filename.startswith(prefix):
             return obj_type
@@ -692,15 +749,6 @@ def _infer_object_type(filename):
         if keyword in lower:
             return obj_type
     return "unknown"
-
-
-def _infer_object_title(filename):
-    stem = TITLE_SUFFIX_RE.sub("", filename)
-    for prefix in OBJECT_TYPE_PREFIXES:
-        if stem.startswith(prefix):
-            stem = stem[len(prefix):]
-            break
-    return stem.replace("-", " ").strip().title()
 
 
 def _regenerate_index(subject):
@@ -831,7 +879,6 @@ def _parse_relationships(subject):
             break
     WIKILINK_RE2 = re.compile(r'\[\[([^\]]+)\]\]')
     FENCED_RE2 = re.compile(r'`[\s\S]*?`')
-    INLINE_RE2 = re.compile(r'[^\n]+')
     COMMENT_RE2 = re.compile(r'%%[\s\S]*?%%')
     FRONTMATTER_RE2 = re.compile(r'^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)')
     edges = []
@@ -884,7 +931,6 @@ def _parse_relationships(subject):
                 continue
             body = FRONTMATTER_RE2.sub("", raw)
             body = FENCED_RE2.sub("", body)
-            body = INLINE_RE2.sub("", body)
             body = COMMENT_RE2.sub("", body)
             for m in WIKILINK_RE2.finditer(body):
                 link_part = m.group(1).split("|")[0]

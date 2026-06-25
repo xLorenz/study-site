@@ -7,9 +7,11 @@ from ._base import (
     VAULT, STUDY_DIR,
     _subject_exists, _resolve_vault_path, _find_original, _has_original,
     _list_entries, _count_md_files, _count_objects, _infer_object_type,
-    _infer_object_title, slugify, run_markitdown, parse_multipart,
+    _ensure_object_meta, slugify, run_markitdown, parse_multipart,
     _read_ingested, _read_pending_deletes, _write_pending_deletes,
     _cascade_delete, _regenerate_index, _log_action,
+    get_upload_in_progress, set_upload_in_progress,
+    get_ingest_state, set_ingest_running,
 )
 
 
@@ -135,14 +137,16 @@ def handle_objects(handler, params):
         for fname in os.listdir(obj_dir):
             if fname.startswith(".") or not fname.endswith(".html"):
                 continue
+            if fname.endswith(".meta.json"):
+                continue
             fpath = os.path.join(obj_dir, fname)
             size = os.path.getsize(fpath)
             mtime = os.path.getmtime(fpath)
+            tag = _ensure_object_meta(subject, fname)
             objects.append({
                 "name": fname,
+                "tag": tag,
                 "path": f"objects/{subject}/{fname}",
-                "type": _infer_object_type(fname),
-                "title": _infer_object_title(fname),
                 "size_bytes": size,
                 "mtime": mtime,
             })
@@ -184,7 +188,7 @@ def handle_upload(handler):
 
     set_upload_in_progress(True)
     try:
-        handler._do_upload()
+        _do_upload(handler)
     finally:
         set_upload_in_progress(False)
 
@@ -252,7 +256,7 @@ def _do_upload(handler):
         from datetime import datetime
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         safe_name = filename.replace('\n', ' ').replace('\r', ' ').replace('|', ' ')
-        with open(log_path, "a") as logf:
+        with open(log_path, "a", encoding="utf-8") as logf:
             logf.write(f"- {ts} | UPLOAD | {subject} | {safe_name} \u2192 raw/{md_filename}\n")
     except OSError:
         pass
@@ -278,7 +282,7 @@ def handle_delete_file(handler):
 
     set_ingest_running(True)
     try:
-        handler._do_delete_file()
+        _do_delete_file(handler)
     finally:
         set_ingest_running(False)
 
@@ -328,7 +332,7 @@ def _do_delete_file(handler):
     try:
         from datetime import datetime
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        with open(log_path, "a") as logf:
+        with open(log_path, "a", encoding="utf-8") as logf:
             logf.write(f"- {ts} | DELETE | {subject} | {base_name} ({len(removed)} files, {removed_edges} edges removed)\n")
     except OSError:
         pass

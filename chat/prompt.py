@@ -1,27 +1,16 @@
 """System prompt construction for the study chat system."""
 
 import os
-from .types import VAULT_DIR
+from .types import VAULT_DIR, STUDY_DIR
 
 
 def read_skill_content(skill_name):
-    """Read SKILL.md content (minus YAML frontmatter) from ~/.hermes/skills/study/{name}/
-    or ~/.hermes/skills/creative/{name}/ if not found."""
-    search_paths = [
-        os.path.expanduser(f"~/.hermes/skills/study/{skill_name}"),
-        os.path.expanduser(f"~/.hermes/skills/creative/{skill_name}"),
-    ]
-    skill_path = None
-    for sp in search_paths:
-        candidate = os.path.join(sp, "SKILL.md")
-        if os.path.isfile(candidate):
-            skill_path = candidate
-            break
-    if skill_path is None:
+    """Read SKILL.md content (minus YAML frontmatter) from chat/skills/{name}/"""
+    skill_path = os.path.join(STUDY_DIR, "chat", "skills", skill_name, "SKILL.md")
+    if not os.path.isfile(skill_path):
         return f"<!-- {skill_name} skill not found -->"
     with open(skill_path, "r", encoding="utf-8") as f:
         content = f.read()
-    # Strip YAML frontmatter
     if content.startswith("---"):
         end = content.find("---", 3)
         if end != -1:
@@ -29,69 +18,31 @@ def read_skill_content(skill_name):
     return content
 
 
+def get_available_skills():
+    """List all skills in chat/skills/ directory."""
+    skills_dir = os.path.join(STUDY_DIR, "chat", "skills")
+    if not os.path.isdir(skills_dir):
+        return []
+    skills = []
+    for entry in os.listdir(skills_dir):
+        skill_path = os.path.join(skills_dir, entry, "SKILL.md")
+        if os.path.isfile(skill_path):
+            skills.append(entry)
+    return skills
+
+
 def build_chat_system_prompt(subject):
     """Build the complete system prompt for a chat session."""
     sections = []
 
-    # 0. Subject identity (explicit so the model knows what it's teaching)
+    # 0. Subject identity
     sections.append(f"You are a university professor currently teaching the subject **{subject}**.\nEvery answer you give must be grounded in this subject's materials.")
 
-    # 1. Study professor persona
+    # 1. Study professor persona (always loaded)
     professor = read_skill_content("study-professor")
     sections.append(professor)
 
-    # 2. Study object templates
-    templates = read_skill_content("study-object-templates")
-    sections.append(templates)
-
-    # 3. Manim video production reference (concise guide for script writing)
-    manim_guide = """
-## Manim Video Production — Quick Guide
-
-Write animated math/concept videos using `write_study_video` tool.
-
-### Script structure
-```python
-from manim import *
-
-class MyVideoName(Scene):
-    def construct(self):
-        # Background: set with a hex string or leave default (#1C1C1C works fine)
-        self.camera.background_color = "#1C1C1C"
-        title = Text("Concept Name", font_size=48, color=BLUE, font="Menlo")
-        self.play(Write(title), run_time=1.5)
-        self.wait(0.5)
-        # ... more animations ...
-```
-
-### Key rules
-1. **Use `Scene`**, NOT `Slide` — this tool renders a single video, not slides
-2. **Set `self.camera.background_color`** to your preferred dark color (hex string works fine now)
-3. **Avoid run_time under 0.3** — too fast to see
-4. **Use `font="Menlo"`** for monospace text
-5. **Add `self.wait(0.5-1.0)`** after animations for breathing room
-6. **Use `self.add_subcaption("text", duration=2)`** for accessibility
-7. **FadeOut at scene end**: `self.play(FadeOut(Group(*self.mobjects)))`
-8. **Colors**: use named constants — BLUE, GREEN, YELLOW, RED, PURPLE, ORANGE, WHITE, GREY
-9. **Use `self.camera.frame.save_state()` / `self.play(Restore(self.camera.frame))`** for camera moves
-
-### Common patterns
-- `Write(text)` for text appearing
-- `Create(shape)` for shapes drawing
-- `Transform(mobj1, mobj2)` for morphing
-- `FadeIn(mobj)` / `FadeOut(mobj)` for fade transitions
-- `self.play(mobj.animate.shift(UP))` for movement
-- `VGroup(text, arrow, formula)` to group elements
-- `MathTex(r"\\\\frac{1}{2}")` for LaTeX (always use raw strings)
-- `self.wait(N)` pauses N seconds
-- `self.play(Create(Axes()), run_time=2)` then plot with `graph = axes.plot(...)`
-
-### When to use
-Call `write_study_video` for: math concept animations, algorithm walkthroughs, step-by-step derivations, visual tutorials, data visualizations, any concept where animation explains better than static text.
-"""
-    sections.append(manim_guide)
-
-    # 4. Subject SCHEMA.md
+    # 2. Subject SCHEMA.md
     schema_path = os.path.join(VAULT_DIR, "subjects", subject, "SCHEMA.md")
     if os.path.isfile(schema_path):
         with open(schema_path, "r", encoding="utf-8") as f:
@@ -100,7 +51,7 @@ Call `write_study_video` for: math concept animations, algorithm walkthroughs, s
     else:
         sections.append("<!-- No SCHEMA.md found for this subject -->")
 
-    # 5. Subject index.md (overview of raw materials and relationships)
+    # 3. Subject index.md
     index_path = os.path.join(VAULT_DIR, "subjects", subject, "index.md")
     if os.path.isfile(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
@@ -109,18 +60,51 @@ Call `write_study_video` for: math concept animations, algorithm walkthroughs, s
     else:
         sections.append("<!-- No index.md found for this subject -->")
 
-    # 6. Behavioral instructions
+    # 4. Available Tools & Skills (scalable registry)
+    skills = get_available_skills()
+    tools = [
+        "read_vault_file",
+        "write_study_object",
+        "write_study_video",
+        "write_wiki_page",
+        "mark_file_ingested",
+        "highlight_node",
+        "read_skill",
+    ]
+    tool_lines = "\n".join(f"  - `{t}`" for t in tools)
+    skill_lines = "\n".join(f"  - `{s}` (via `read_skill`)"
+                            for s in skills)
+    sections.append(
+        f"## Available Tools\n{tool_lines}\n\n## Available Skills (load via `read_skill`)\n{skill_lines}"
+    )
+
+    # 5. Behavioral instructions
     instructions = """## Behavioral Instructions
 
-1. Use tools when possible:
- - `write_study_object` when asked to create practice objects (exams, cheat-sheets, mind maps, diagrams, etc.) or when visually explaining something
- - `write_study_video` when asked for animated explanations, math visualizations, algorithm walkthroughs, step-by-step concept animations, or visual tutorials — write a manim Slide script, render it, and save as self-contained HTML
- - `read_vault_file` when asked subject-related questions — read from wiki/ for specific concepts, read from raw/ for general questions
-2. The study-professor skill, study-object-templates skill, manim-video skill, and SCHEMA.md are your pre-loaded context — take them into account for every message
-3. Be concise, be professional, not friendly. Explain only what's necessary and what the user asks. Don't bloat your message with unnecessary words
-4. **ALWAYS** use `write_study_video` OVER `write_study_object` when an animation or step-by-step visual walkthrough would explain the concept better than a static HTML page. The tool works — manim IS available, it renders server-side and produces a self-contained HTML file. Do NOT write JS/HTML animations yourself, do NOT say "manim is not available" — just call the tool.
-5. Use [[wikilinks]] when referring to concepts available in the wiki to point the user to the wiki page
-6. Use `highlight_node` when explaining concepts to highlight related nodes in the graph for visual guidance."""
+1. **Choose the right tool for the user's request:**
+   - `read_vault_file` — subject questions; prefer `wiki/` pages (including `wiki/src-{name}.md` source summaries), fall back to `raw/` only if concept not covered in wiki
+   - `write_study_object` — static study aids: exams, cheat-sheets, mind maps, flashcards, formula decks, interactive exams
+   - `write_study_video` — animated explanations, math/algorithm visualizations, step-by-step walkthroughs where motion adds clarity
+   - `write_wiki_page` — create/update curated wiki documentation
+   - `write_design_notes` — internal design docs, object blueprints, session notes (writes to references/)
+   - `mark_file_ingested` — after fully processing a raw file
+   - `highlight_node` — visually guide the student in the knowledge graph
+   - `read_skill` — load additional skill guidelines (e.g. `manim-video`, `study-object-templates`) when the task warrants it
+
+2. **Study-professor skill and SCHEMA.md are your always-loaded context.** Additional skills are available via `read_skill` — load them when the task requires their specific guidance.
+
+3. Be concise, professional, direct. Answer exactly what was asked. No fluff, no meta-commentary.
+
+4. Use [[wikilinks]] when referring to concepts available in the wiki.
+
+5. Use `highlight_node` when explaining concepts to visually guide the student in the graph.
+
+6. Use `write_design_notes` for object design plans (before `write_study_object`), session notes, or internal reference docs. These go to `references/` and are not in the wiki index.
+
+7. **Use multiple tool calls when needed.** If a question requires reading multiple files, call `read_vault_file` multiple times. If creating an object requires reading context first, chain the calls: read → design → create. Do not stop after one tool call if more information or actions are needed.
+
+8. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
     sections.append(instructions)
 
     return "\n\n".join(sections)
+

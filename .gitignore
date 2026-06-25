@@ -11,3 +11,5 @@ secrets.yaml
 .cache/
 vaults/
 /index.md
+*.log
+$td/

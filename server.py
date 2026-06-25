@@ -55,6 +55,13 @@ os.environ.setdefault("NIM_BASE_URL", CFG.get("nim_base_url", "https://integrate
 os.environ.setdefault("ZEN_BASE_URL", "https://opencode.ai/zen/v1")
 os.environ.setdefault("SKILL_DIR", os.path.expanduser("~/.hermes/skills/study"))
 
+# Add MiKTeX to PATH so manim can find pdflatex
+_miktex_bin = "C:\\Users\\Lucas\\AppData\\Local\\Programs\\MiKTeX\\miktex\\bin\\x64"
+if os.path.isdir(_miktex_bin) and _miktex_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _miktex_bin + os.pathsep + os.environ.get("PATH", "")
+
+os.environ.setdefault("NIM_API_KEY", SECRETS.get("nim_api_key", ""))
+os.environ.setdefault("OPENCODE_ZEN_API_KEY", SECRETS.get("opencode_zen_api_key", ""))
 NIM_API_KEY = os.environ.get("NIM_API_KEY", SECRETS.get("nim_api_key", ""))
 OPENCODE_ZEN_API_KEY = os.environ.get("OPENCODE_ZEN_API_KEY", SECRETS.get("opencode_zen_api_key", ""))
 NIM_BASE_URL = os.environ.get("NIM_BASE_URL", CFG.get("nim_base_url", "https://integrate.api.nvidia.com/v1"))

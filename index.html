@@ -76,6 +76,13 @@ a:hover{color:var(--text-bright)}
  border:1px solid var(--border);border-radius:var(--radius-sm);
  padding:2px var(--space-2);font-size:var(--font-size-sm);
  font-family:var(--font-sans);max-width:180px}
+.btn-subject-action{
+ background:transparent;color:var(--text-dim);
+ font-size:16px;line-height:1;padding:0 4px;
+ display:flex;align-items:center;justify-content:center;
+ height:24px;width:24px;cursor:pointer;border:none;
+ border-radius:var(--radius-sm);transition:color .15s}
+.btn-subject-action:hover{color:var(--text-bright)}
 #btn-toggle-left,#btn-toggle-right{background:transparent;
  font-size:var(--font-size-lg);line-height:1;padding:0 var(--space-1);
  display:flex;align-items:center;justify-content:center;height:28px;width:28px;
@@ -397,9 +404,11 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
    <div id="search-results"></div>
  </div>
  <span style="flex:1"></span>
- <select id="subject-select">
- <option value="">— Select subject —</option>
- </select>
+  <button id="btn-create-subject" class="btn-subject-action" title="Create subject">+</button>
+  <select id="subject-select">
+  <option value="">— Select subject —</option>
+  </select>
+  <button id="btn-delete-subject" class="btn-subject-action" title="Delete subject" style="display:none">×</button>
  <button id="btn-toggle-right">
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
  </button>
@@ -571,6 +580,29 @@ const TYPE_BADGES = {
  flash: { label: 'FLASH', color: '#22c55e' },
  unknown: { label: '?', color: '#505068' },
 };
+
+// Deterministic color from tag string (port of Python tag_color)
+function tagColor(tag) {
+  if (!tag) return '#505068';
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) {
+    h = (h + tag.charCodeAt(i) * (i + 1)) % 360;
+  }
+  const s = 65, l = 55;
+  const c = (1 - Math.abs(2 * l / 100 - 1)) * s / 100;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l / 100 - c / 2;
+  let r, g, b;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return '#' + toHex(r) + toHex(g) + toHex(b);
+}
+
 let _activeTreeItem = null; // Currently highlighted object tree element
 
 // ── Toast ──
@@ -634,6 +666,7 @@ async function loadSubjects() {
      await reloadAll(data.subjects[0].name);
    }
  fitSubjectSelect();
+ document.getElementById('btn-delete-subject').style.display = select.value ? '' : 'none';
  } catch (e) {
  showToast('\u2717 Failed to load subjects', 'danger');
  }
@@ -641,39 +674,33 @@ async function loadSubjects() {
 
 // ── Object Tree (Left Sidebar) ──
 async function reloadObjectTree(subject, highlightPath) {
- const container = document.getElementById('objects-tree');
- if (!subject) {
- container.innerHTML = '<p class="placeholder-text">No subject selected</p>';
- return;
- }
- try {
- const res = await fetch('/api/objects?subject=' + encodeURIComponent(subject));
- const data = await res.json();
- if (!data.objects || data.objects.length === 0) {
- container.innerHTML = '<p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>';
- return;
- }
-   container.innerHTML = data.objects.map(obj => {
-  let badge = TYPE_BADGES[obj.type];
-    if (!badge && obj.type) {
-    // Use deterministic color from type name
-    const c = strToColor(obj.type, 0.8, 0.4);
-    badge = { label: (obj.type || '?').toUpperCase(), color: c ? c.halo : '#505068' };
-    } else if (!badge) {
-    badge = TYPE_BADGES.unknown;
+  const container = document.getElementById('objects-tree');
+  if (!subject) {
+    container.innerHTML = '<p class="placeholder-text">No subject selected</p>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/objects?subject=' + encodeURIComponent(subject));
+    const data = await res.json();
+    if (!data.objects || data.objects.length === 0) {
+      container.innerHTML = '<p class="placeholder-text">No objects yet<br><span style="font-size:var(--font-size-xs)">Create via /study command</span></p>';
+      return;
     }
-    const path = encodeURIComponent(obj.path);
-    return '<div class="tree-item" onclick="onObjectClick(\'' + obj.path + '\', this)">' +
-    '<span class="type-badge" style="background:' + badge.color + '">' + badge.label + '</span>' +
-    '<span class="tree-item-name" title="' + (obj.title || '') + '">' + (obj.title || obj.name) + '</span>' +
-    '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">⬇</a>' +
-    '</div>';
- }).join('');
-   // Highlight after DOM is updated
-   if (highlightPath) _highlightTreeItemByPath(highlightPath);
- } catch (e) {
- container.innerHTML = '<p class="placeholder-text">✗ Failed to load objects</p>';
- }
+    container.innerHTML = data.objects.map(obj => {
+      const tag = obj.tag;
+      const badgeLabel = tag ? tag.toUpperCase() : '?';
+      const badgeColor = tag ? tagColor(tag) : TYPE_BADGES.unknown.color;
+      const path = encodeURIComponent(obj.path);
+      return '<div class="tree-item" onclick="onObjectClick(\'' + obj.path + '\', this)">' +
+        '<span class="type-badge" style="background:' + badgeColor + '">' + badgeLabel + '</span>' +
+        '<span class="tree-item-name" title="' + obj.name + '">' + obj.name + '</span>' +
+        '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">⬇</a>' +
+        '</div>';
+    }).join('');
+    if (highlightPath) _highlightTreeItemByPath(highlightPath);
+  } catch (e) {
+    container.innerHTML = '<p class="placeholder-text">✗ Failed to load objects</p>';
+  }
 }
 
 // ── Object tree click handler (highlights on click, stays while open) ──
@@ -1435,7 +1462,7 @@ async function updateWiki() {
   }, 100);
 
   // Poll /api/status for LLM ingest result — no timeout, only stop when server reports done
-  poll = setInterval(async () => {
+  const poll = setInterval(async () => {
     try {
       const r = await fetch('/api/status');
       const s = await r.json();
@@ -1760,6 +1787,48 @@ document.addEventListener('drop', async (e) => {
 document.getElementById('subject-select').addEventListener('change', (e) => {
  reloadAll(e.target.value);
  fitSubjectSelect();
+ document.getElementById('btn-delete-subject').style.display = e.target.value ? '' : 'none';
+});
+
+document.getElementById('btn-create-subject').addEventListener('click', async () => {
+ const name = prompt('Enter subject name:');
+ if (!name) return;
+ try {
+  const res = await fetch('/api/create-subject', {
+   method: 'POST', headers: {'Content-Type': 'application/json'},
+   body: JSON.stringify({subject: name})
+  });
+  const data = await res.json();
+  if (res.ok) {
+   showToast('✓ Subject created', 'success');
+   await loadSubjects();
+  } else {
+   showToast('✗ ' + (data.detail || data.error || 'Failed'), 'danger');
+  }
+ } catch (e) {
+  showToast('✗ Failed: ' + e.message, 'danger');
+ }
+});
+
+document.getElementById('btn-delete-subject').addEventListener('click', async () => {
+ const subject = document.getElementById('subject-select').value;
+ if (!subject) return;
+ if (!confirm('Delete subject "' + subject + '" and all its data?')) return;
+ try {
+  const res = await fetch('/api/delete-subject', {
+   method: 'POST', headers: {'Content-Type': 'application/json'},
+   body: JSON.stringify({subject})
+  });
+  const data = await res.json();
+  if (res.ok) {
+   showToast('✓ Subject deleted', 'success');
+   await loadSubjects();
+  } else {
+   showToast('✗ ' + (data.detail || data.error || 'Failed'), 'danger');
+  }
+ } catch (e) {
+  showToast('✗ Failed: ' + e.message, 'danger');
+ }
 });
 
 // Sidebar toggle buttons

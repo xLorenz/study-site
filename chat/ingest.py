@@ -111,7 +111,10 @@ If SCHEMA.md does NOT exist, use these defaults:
 - End each concept page with a "## Related concepts" section
 - Page names: lowercase-with-hyphens.md (no spaces, no special chars)
 
-STEP 2 — Process each raw file
+STEP 2 — Read wiki/index.md
+Use read_vault_file(path='wiki/index.md') to see which wiki pages already exist. This prevents creating duplicates and tells you the available [[wikilink]] targets.
+
+STEP 3 — Process each raw file
 For each un-ingested raw .md file:
 1. Read it with read_vault_file(path='raw/<filename>')
 2. Follow SCHEMA.md conventions for page format
@@ -119,7 +122,7 @@ For each un-ingested raw .md file:
 4. Create concept page(s) for distinct concepts with write_wiki_page
 5. After ALL pages for this file are created, call mark_file_ingested(filename='<filename>')
 
-STEP 3 — Final steps
+STEP 4 — Final steps
 After ALL files are processed:
 1. Update wiki/index.md with new pages and one-line descriptions (read existing index.md first, then write updated version)
 2. Append an entry to wiki/log.md with the date, source name, and what changed
@@ -252,7 +255,7 @@ def _run_tool_loop(
             _logger.debug(traceback.format_exc())
             # Retry on transient errors (5xx, timeouts, network blips) — up to 3 attempts
             status = getattr(e, 'status_code', 0) or getattr(e, 'code', 0)
-            is_transient = status == 0 or status >= 500 or 'timeout' in str(e).lower() or '504' in str(e)
+            is_transient = status and (status >= 500 or 'timeout' in str(e).lower() or '504' in str(e))
             if is_transient:
                 recovered = False
                 for retry in range(3):
@@ -502,7 +505,7 @@ def run_ingest(subject: str, model: str = None, on_progress: callable = None) ->
 
         elapsed = time.time() - start_time
         status = loop_result.get("status", "error")
-        is_error = status.startswith("error") or status == "max_rounds_exceeded"
+        is_error = "error" in status or status == "max_rounds_exceeded"
         result_status = "error" if is_error else "complete"
 
         message = (
