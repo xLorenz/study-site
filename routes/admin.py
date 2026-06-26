@@ -269,6 +269,19 @@ def handle_create_subject(handler):
         SUBJECT_THEMES.clear()
         SUBJECT_THEMES.update(themes)
 
+        # Write _theme.md inside the vault (model-readable via read_vault_file)
+        theme_md_path = os.path.join(subj_dir, "references", "_theme.md")
+        os.makedirs(os.path.dirname(theme_md_path), exist_ok=True)
+        with open(theme_md_path, "w", encoding="utf-8") as f:
+            t = themes[normalized]
+            f.write(f"# {display_name} — Theme\n\n"
+                    f"primary: {t['primary']}\n"
+                    f"secondary: {t['secondary']}\n"
+                    f"accent: {t['accent']}\n"
+                    f"icon: {t['icon']}\n\n"
+                    f"Use these colors for title gradients, section headings, "
+                    f"and alert borders in study objects.\n")
+
     vault_idx = os.path.join(_vault(), "index.md")
     with open(vault_idx, "a", encoding="utf-8") as f:
         f.write(f"\n- [{display_name}](subjects/{normalized}/wiki/index.md)\n")

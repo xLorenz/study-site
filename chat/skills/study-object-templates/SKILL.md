@@ -28,7 +28,7 @@ This skill describes the **6 canonical HTML template formats** stored at `~/.her
 - Text: `#e2e2e8`, secondary `#6a6a7a` / `#b0b0c0`
 - Surfaces: `#111118`, `#18181c`, `#1f1f2a`
 - Borders: `#1e1e2a`, hover `#2a2a3a`
-- Accent varies by subject/theme (use the theme colors from the system prompt's Subject Theme section)
+- Accent varies by subject/theme (see `references/_theme.md` or the Subject Theme section in the system prompt)
 
 ### Fonts
 - **Body**: `'Inter', system-ui, -apple-system, sans-serif`
@@ -118,7 +118,7 @@ STEP 1 — SCHEMA & CONTENT DESIGN
   - Write ALL question content yourself — no delegation
 
 STEP 2 — THEME LOOKUP
-  - The subject's theme colors (primary, secondary, accent, icon) are in the system prompt's Subject Theme section
+  - Read `references/_theme.md` via `read_vault_file` (or use the colors from the system prompt's Subject Theme section)
   - Title gradient = linear-gradient(135deg, primary, secondary)
   - Section h2 color = secondary (or accent)
   - Alert border-color = accent with transparency
@@ -297,7 +297,7 @@ STEP 1 — CONTENT DESIGN
   - Write ALL question content yourself — the point is your understanding drives the questions
 
 STEP 2 — THEME
-  - Use the theme colors (primary, secondary, accent) from the system prompt's Subject Theme section
+  - Read `references/_theme.md` via `read_vault_file` (or use the colors from the system prompt's Subject Theme section)
   - Flashcards use accent for option hover, correct indicator, next-button
 
 STEP 3 — SETUP FRAMEWORK
@@ -443,7 +443,7 @@ STEP 1 — CONTENT DESIGN
   - Design ALL content yourself: descriptions, explanations, code examples for detail panel
 
 STEP 2 — THEME
-  - Use the theme colors (primary, secondary, accent) from the system prompt's Subject Theme section
+  - Read `references/_theme.md` via `read_vault_file` (or use the colors from the system prompt's Subject Theme section)
   - The COLORS map must have keys matching all .cat values in data
 
 STEP 3 — HTML FRAMEWORK

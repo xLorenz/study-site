@@ -1,6 +1,5 @@
 """System prompt construction for the study chat system."""
 
-import json
 import os
 from .types import VAULT_DIR, STUDY_DIR
 
@@ -39,28 +38,19 @@ def build_chat_system_prompt(subject):
     # 0. Subject identity
     sections.append(f"You are a university professor currently teaching the subject **{subject}**.\nEvery answer you give must be grounded in this subject's materials.")
 
-    # Theme colors for HTML study objects (injected so the model doesn't try to read subject_themes.json)
-    themes_path = os.path.join(STUDY_DIR, "subject_themes.json")
-    theme = {}
-    if os.path.isfile(themes_path):
-        try:
-            with open(themes_path, encoding="utf-8") as f:
-                all_themes = json.load(f)
-            theme = all_themes.get(subject) or all_themes.get("_default", {})
-        except (json.JSONDecodeError, OSError):
-            pass
-    if theme:
-        sections.append(
-            f"## Subject Theme\n\n"
-            f"primary: {theme.get('primary', '#6366f1')}\n"
-            f"secondary: {theme.get('secondary', '#a78bfa')}\n"
-            f"accent: {theme.get('accent', '#22d3ee')}\n"
-            f"icon: {theme.get('icon', '📚')}\n\n"
-            "Use these colors when creating HTML study objects. "
-            "Title gradient = linear-gradient(135deg, primary, secondary). "
-            "Section headings = secondary (or accent). "
-            "Alert borders = accent with transparency."
-        )
+    # Subject theme from vault (model-readable via read_vault_file(path='references/_theme.md'))
+    theme_path = os.path.join(VAULT_DIR, "subjects", subject, "references", "_theme.md")
+    if os.path.isfile(theme_path):
+        with open(theme_path, encoding="utf-8") as f:
+            theme_content = f.read()
+    else:
+        theme_content = f"# {subject} — Theme\n\nprimary: #6366f1\nsecondary: #a78bfa\naccent: #22d3ee\nicon: 📚\n"
+    sections.append(f"## Subject Theme\n\n{theme_content.strip()}\n\n"
+                    "Use these colors when creating HTML study objects. "
+                    "Title gradient = linear-gradient(135deg, primary, secondary). "
+                    "Section headings = secondary (or accent). "
+                    "Alert borders = accent with transparency."
+                    )
 
     # 1. Study professor persona (always loaded)
     professor = read_skill_content("study-professor")

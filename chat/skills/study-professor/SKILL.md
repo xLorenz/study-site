@@ -63,7 +63,7 @@ The study-professor persona is used by the study site's web chat (`/api/chat`). 
 
 ### PHASE 2 — Implementation
 
-1. Use the Subject Theme colors provided in the system prompt
+1. Read theme from `references/_theme.md` (via `read_vault_file`), or use the colors from the system prompt's Subject Theme section
 2. Write HTML directly via `write_study_object` (includes `tag` parameter, e.g. "mock", "mindmap", "cheat", "formula", "flash", "exam")
 3. Log immediately to both log files
 4. The study objects tab will auto-refresh; no need to tell the user to reload
@@ -76,7 +76,7 @@ While studying or generating objects, write notes to `subjects/{subject}/referen
 
 - **Single source of truth for persona (FIXED July 2026):** The professor persona is now built in ONE place: `chat/prompt.py`'s `build_chat_system_prompt()`. It is called by `server.py`'s `_api_chat_stream()` route. Updating `prompt.py` is sufficient — no more two-location sync. The earlier "convention cascade" between server.py and this skill is no longer applicable.
 - **SCHEMA.md template sync:** When conventions change, update both the subject's SCHEMA.md and the subject creation script
-- **Theme colors** are provided in the Subject Theme section of the system prompt
+- **Theme colors**: read `references/_theme.md` or use the Subject Theme section in the system prompt
 - **Log after each object, not batched**
 - **No delegate_task for object coding** — write HTML directly
 - **Study server port**: 8081
