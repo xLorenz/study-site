@@ -7,7 +7,7 @@ __pycache__/
 *.bak
 study-plan/
 .env
-secrets.yaml
+
 .cache/
 vaults/
 /index.md

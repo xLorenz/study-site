@@ -6,11 +6,11 @@ import os
 from ._base import (
     VAULT, STUDY_DIR,
     _subject_exists, _resolve_vault_path, _find_original, _has_original,
-    _list_entries, _count_md_files, _count_objects, _infer_object_type,
+    _list_entries, _get_originals_set, _count_md_files, _count_objects, _infer_object_type,
     _ensure_object_meta, slugify, run_markitdown, parse_multipart,
     _read_ingested, _read_pending_deletes, _write_pending_deletes,
     _cascade_delete, _regenerate_index, _log_action,
-    get_upload_in_progress, set_upload_in_progress,
+    try_acquire_upload_lock, release_upload_lock,
     get_ingest_state, set_ingest_running,
 )
 
@@ -70,7 +70,8 @@ def handle_files(handler, params):
         handler._send_json(400, {"error": "not_a_directory", "detail": "Path is not a directory"})
         return
 
-    entries = _list_entries(abs_path, rel_path, subject)
+    originals_set = _get_originals_set(subject)
+    entries = _list_entries(abs_path, rel_path, subject, originals_set)
     handler._send_json(200, {"path": rel_path, "entries": entries})
 
 
@@ -182,15 +183,14 @@ def handle_object_content(handler, params):
 
 def handle_upload(handler):
     """POST /api/upload — multipart upload with MarkItDown conversion + auto-ingest."""
-    if get_upload_in_progress() or get_ingest_state()["ingest_running"]:
+    if not try_acquire_upload_lock():
         handler._send_json(503, {"error": "busy", "detail": "Another operation in progress, try again shortly"})
         return
 
-    set_upload_in_progress(True)
     try:
         _do_upload(handler)
     finally:
-        set_upload_in_progress(False)
+        release_upload_lock()
 
 
 def _do_upload(handler):

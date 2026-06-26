@@ -7,8 +7,11 @@ import http.server
 import json
 import os
 import re
+import shutil
+import signal
 import socketserver
 import subprocess
+import sys
 import threading
 import time
 import unicodedata
@@ -20,6 +23,17 @@ STUDY_DIR = os.environ.get("STUDY_DIR", os.path.dirname(os.path.abspath(__file__
 CACHE_DIR = os.path.join(STUDY_DIR, ".cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# Load .env (gitignored, API keys)
+ENV_PATH = os.path.join(STUDY_DIR, ".env")
+if os.path.isfile(ENV_PATH):
+    with open(ENV_PATH) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
+
 # Load config.yaml (non-secrets)
 CFG_PATH = os.path.join(STUDY_DIR, "config.yaml")
 CFG = {}
@@ -30,17 +44,7 @@ if os.path.isfile(CFG_PATH):
     except Exception as e:
         print(f"Warning: config.yaml load failed: {e}")
 
-# Load secrets.yaml (gitignored, API keys)
-SECRETS_PATH = os.path.join(STUDY_DIR, "secrets.yaml")
-SECRETS = {}
-if os.path.isfile(SECRETS_PATH):
-    try:
-        with open(SECRETS_PATH) as f:
-            SECRETS = yaml.safe_load(f) or {}
-    except Exception as e:
-        print(f"Warning: secrets.yaml load failed: {e}")
-
-# Env var overrides (highest priority) — set BEFORE importing chat modules
+# Env var overrides — set BEFORE importing chat modules
 os.environ.setdefault("STUDY_DIR", STUDY_DIR)
 os.environ.setdefault("CACHE_DIR", CACHE_DIR)
 
@@ -52,21 +56,27 @@ VAULT = os.path.normpath(VAULT)
 os.environ.setdefault("VAULT_DIR", VAULT)
 
 os.environ.setdefault("NIM_BASE_URL", CFG.get("nim_base_url", "https://integrate.api.nvidia.com/v1"))
-os.environ.setdefault("ZEN_BASE_URL", "https://opencode.ai/zen/v1")
+os.environ.setdefault("ZEN_BASE_URL", CFG.get("zen_base_url", "https://opencode.ai/zen/v1"))
 os.environ.setdefault("SKILL_DIR", os.path.expanduser("~/.hermes/skills/study"))
 
 # Add MiKTeX to PATH so manim can find pdflatex
-_miktex_bin = "C:\\Users\\Lucas\\AppData\\Local\\Programs\\MiKTeX\\miktex\\bin\\x64"
-if os.path.isdir(_miktex_bin) and _miktex_bin not in os.environ.get("PATH", ""):
-    os.environ["PATH"] = _miktex_bin + os.pathsep + os.environ.get("PATH", "")
+_pdflatex = shutil.which("pdflatex")
+if _pdflatex:
+    _miktex_dir = os.path.dirname(os.path.realpath(_pdflatex))
+    if _miktex_dir not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = _miktex_dir + os.pathsep + os.environ.get("PATH", "")
 
-os.environ.setdefault("NIM_API_KEY", SECRETS.get("nim_api_key", ""))
-os.environ.setdefault("OPENCODE_ZEN_API_KEY", SECRETS.get("opencode_zen_api_key", ""))
-NIM_API_KEY = os.environ.get("NIM_API_KEY", SECRETS.get("nim_api_key", ""))
-OPENCODE_ZEN_API_KEY = os.environ.get("OPENCODE_ZEN_API_KEY", SECRETS.get("opencode_zen_api_key", ""))
+os.environ.setdefault("NIM_API_KEY", "")
+os.environ.setdefault("OPENCODE_ZEN_API_KEY", "")
+NIM_API_KEY = os.environ.get("NIM_API_KEY", "")
+OPENCODE_ZEN_API_KEY = os.environ.get("OPENCODE_ZEN_API_KEY", "")
 NIM_BASE_URL = os.environ.get("NIM_BASE_URL", CFG.get("nim_base_url", "https://integrate.api.nvidia.com/v1"))
 HOST = os.environ.get("HOST", CFG.get("host", "0.0.0.0"))
 PORT = int(os.environ.get("PORT", CFG.get("port", 8081)))
+
+if not NIM_API_KEY and not OPENCODE_ZEN_API_KEY:
+    print("[WARNING] No API keys configured. Copy .env.example to .env and add your keys.")
+    print("   LLM features (chat, wiki ingest) will fail without API keys.")
 
 from routes import register, setup_routes
 
@@ -107,16 +117,16 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
         if not os.path.isfile(abs_path):
             self._send_json(404, {"error": "not_found", "detail": "File not found"})
             return
-        with open(abs_path, "rb") as f:
-            body = f.read()
+        file_size = os.path.getsize(abs_path)
         self.send_response(200)
         self._set_cors()
         if cache_control:
             self.send_header("Cache-Control", cache_control)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(file_size))
         self.end_headers()
-        self.wfile.write(body)
+        with open(abs_path, "rb") as f:
+            shutil.copyfileobj(f, self.wfile)
 
     # ─── Routing ───
 
@@ -230,7 +240,6 @@ if __name__ == "__main__":
         cache_dir=CACHE_DIR,
         subject_themes=SUBJECT_THEMES,
         cfg=CFG,
-        secrets=SECRETS,
         nim_api_key=NIM_API_KEY,
         opencode_zen_api_key=OPENCODE_ZEN_API_KEY,
         nim_base_url=NIM_BASE_URL,
@@ -238,6 +247,15 @@ if __name__ == "__main__":
         port=PORT,
     )
 
-    with socketserver.ThreadingTCPServer((HOST, PORT), StudyHandler) as httpd:
-        print(f"Study server on {HOST}:{PORT}")
-        httpd.serve_forever()
+    httpd = socketserver.ThreadingTCPServer((HOST, PORT), StudyHandler)
+    httpd.allow_reuse_address = True
+
+    def _shutdown(signum, frame):
+        print("\nShutting down gracefully...")
+        httpd.shutdown()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    print(f"Study server on {HOST}:{PORT}")
+    httpd.serve_forever()

@@ -6,7 +6,7 @@
 
     const chat = {
     messages: [],
-    model: 'z-ai/glm-5.1',
+    model: null,  // set by initChat() via /api/model
     availableModels: [],
     streaming: false,
     currentSubject: null,
@@ -84,7 +84,8 @@
                 populateModelSelect();
             })
             ['catch'](function() {
-                chat.availableModels = ['z-ai/glm-5.1', 'deepseek-ai/deepseek-v4-flash'];
+                chat.availableModels = ['deepseek-v4-flash-free', 'deepseek-ai/deepseek-v4-flash', 'z-ai/glm-5.1'];
+                chat.model = chat.availableModels[0];
                 populateModelSelect();
             });
 
@@ -325,21 +326,20 @@
                     }
                 }
             }
-            // Auto-refresh objects tab when a study object or video is created
-            if ((event.name === 'write_study_object' || event.name === 'write_study_video') && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
-                const path = event.result && event.result.path;
-                window.reloadObjectTree(chat.currentSubject, path);
-                // Auto-open the created object in the main area
-            if (path && typeof window.showObject === 'function') {
-            window.showObject(path);
-            }
             // Highlight nodes in the graph when highlight_node tool completes
             if (event.name === 'highlight_node' && typeof window.highlightNodes === 'function') {
                 window.highlightNodes(event.result && event.result.highlight_nodes || []);
             }
-            smartScroll();
-            break;
-        }
+            // Auto-refresh objects tab when a study object or video is created
+            if ((event.name === 'write_study_object' || event.name === 'write_study_video') && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
+                const path = event.result && event.result.path;
+                window.reloadObjectTree(chat.currentSubject, path);
+                if (path && typeof window.showObject === 'function') {
+                    window.showObject(path);
+                }
+                smartScroll();
+                break;
+            }
             smartScroll();
             break;
 

@@ -2,3 +2,6 @@ host: 0.0.0.0
 port: 8081
 nim_base_url: https://integrate.api.nvidia.com/v1
 vault_path: vaults
+# zen_base_url: https://opencode.ai/zen/v1
+# skill_dirs:
+#   - path/to/skills

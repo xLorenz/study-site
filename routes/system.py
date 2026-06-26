@@ -3,11 +3,10 @@
 import json
 import os
 import re
-import unicodedata
 from datetime import datetime, date as _date
 
 from ._base import (
-    VAULT, STUDY_DIR, SUBJECT_THEMES,
+    VAULT, STUDY_DIR, SUBJECT_THEMES, CFG,
     _subject_exists, _resolve_vault_path, _read_node_meta, _parse_relationships,
     _regenerate_index, _log_action,
 )
@@ -133,7 +132,7 @@ def handle_themes(handler):
 
 def handle_skill(handler, skill_name):
     """GET /skill/<name> — serve skill markdown content."""
-    skill_dirs = [
+    skill_dirs = CFG.get("skill_dirs", []) or [
         os.path.join(VAULT, "..", "chat", "skills"),
         os.path.join(VAULT, "..", "chat", "skills", "study"),
         os.path.expanduser("~/.hermes/skills/study"),

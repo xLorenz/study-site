@@ -3124,12 +3124,15 @@ if (window.innerWidth <= 768) {
 
 // ── Ingest Status Polling ──
 let ingestPollTimer = null;
+let ingestPollFailures = 0;
 function startIngestPoll() {
  stopIngestPoll();
+ ingestPollFailures = 0;
  ingestPollTimer = setInterval(async () => {
   try {
    const res = await fetch('/api/status');
    if (!res.ok) return;
+   ingestPollFailures = 0;
    const data = await res.json();
    const overlay = document.getElementById('ingest-overlay');
    const uploadInput = document.getElementById('file-input');
@@ -3145,7 +3148,6 @@ function startIngestPoll() {
     }
     if (uploadInput) uploadInput.disabled = true;
     if (uploadZone) uploadZone.style.pointerEvents = 'none';
-    // Disable all delete buttons
     document.querySelectorAll('.delete-btn').forEach(b => b.disabled = true);
    } else {
     overlay.classList.add('hidden');
@@ -3154,7 +3156,15 @@ function startIngestPoll() {
     if (uploadZone) uploadZone.style.pointerEvents = '';
     document.querySelectorAll('.delete-btn').forEach(b => b.disabled = false);
    }
-  } catch(e) { /* server may be busy */ }
+  } catch(e) {
+   ingestPollFailures++;
+   if (ingestPollFailures >= 5) {
+    const overlay = document.getElementById('ingest-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    document.getElementById('file-input')?.disabled !== false;
+    document.getElementById('upload-zone')?.style.pointerEvents !== '';
+   }
+  }
  }, 1500);
 }
 function stopIngestPoll() {

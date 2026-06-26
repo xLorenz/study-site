@@ -9,9 +9,7 @@ import re
 import shutil
 import subprocess
 import threading
-import time
 import unicodedata
-import urllib.parse
 import yaml
 
 # Import chat functions after env vars are set
@@ -27,15 +25,16 @@ from chat.types import AVAILABLE_MODELS
 
 # ─── Global state (module-level, mutable) ───
 
-# Ingest state (single-threaded server, so no threading lock needed)
 _ingest_running = False
-_ingest_result = None  # last result: {pages_created, files_deleted, tokens_used, model, message, finished_at}
-_ingest_total_pending = 0  # total files queued for ingest (set at ingest start)
-_ingest_current_subject = None  # subject currently being ingested (used for live progress)
-_ingest_initial_wiki_count = 0  # wiki/ .md file count BEFORE ingest started (for progress tracking)
-_ingest_initial_total = 0  # initial count of files to ingest (saved so frontend can compute fraction)
-_ingest_last_created_name = None  # name of most recently created wiki page (for live progress text)
-_upload_in_progress = False  # separate lock for upload (sync, fast — not LLM ingest)
+_ingest_result = None
+_ingest_total_pending = 0
+_ingest_current_subject = None
+_ingest_initial_wiki_count = 0
+_ingest_initial_total = 0
+_ingest_last_created_name = None
+_upload_in_progress = False
+_ingest_lock = threading.Lock()
+_upload_lock = threading.Lock()
 
 # ─── Config/paths loaded by server.py and injected via set_config() ───
 
@@ -44,12 +43,12 @@ VAULT = ""
 CACHE_DIR = ""
 SUBJECT_THEMES = {}
 CFG = {}
-SECRETS = {}
 NIM_API_KEY = ""
 OPENCODE_ZEN_API_KEY = ""
 NIM_BASE_URL = ""
 HOST = "0.0.0.0"
 PORT = 8081
+
 
 
 def set_config(
@@ -58,7 +57,6 @@ def set_config(
     cache_dir: str,
     subject_themes: dict,
     cfg: dict,
-    secrets: dict,
     nim_api_key: str,
     opencode_zen_api_key: str,
     nim_base_url: str,
@@ -66,7 +64,7 @@ def set_config(
     port: int,
 ):
     """Inject configuration from server.py."""
-    global STUDY_DIR, VAULT, CACHE_DIR, SUBJECT_THEMES, CFG, SECRETS
+    global STUDY_DIR, VAULT, CACHE_DIR, SUBJECT_THEMES, CFG
     global NIM_API_KEY, OPENCODE_ZEN_API_KEY, NIM_BASE_URL, HOST, PORT
 
     STUDY_DIR = study_dir
@@ -74,7 +72,6 @@ def set_config(
     CACHE_DIR = cache_dir
     SUBJECT_THEMES = subject_themes
     CFG = cfg
-    SECRETS = secrets
     NIM_API_KEY = nim_api_key
     OPENCODE_ZEN_API_KEY = opencode_zen_api_key
     NIM_BASE_URL = nim_base_url
@@ -105,61 +102,85 @@ def _hue_rotate_hex(hex_color: str, degrees: int) -> str:
 # ─── Ingest state accessors (for route modules) ───
 
 def get_ingest_state():
-    """Return current ingest state dict."""
-    return {
-        "ingest_running": _ingest_running,
-        "pending_total": _ingest_total_pending,
-        "initial_total": _ingest_initial_total,
-        "wiki_pages_created": 0,  # computed by caller if needed
-        "last_created_name": _ingest_last_created_name,
-        "queue_length": 0,
-        "result": _ingest_result,
-    }
+    with _ingest_lock:
+        return {
+            "ingest_running": _ingest_running,
+            "pending_total": _ingest_total_pending,
+            "initial_total": _ingest_initial_total,
+            "wiki_pages_created": 0,
+            "last_created_name": _ingest_last_created_name,
+            "queue_length": 0,
+            "result": _ingest_result,
+        }
 
 
 def set_ingest_running(val: bool):
     global _ingest_running
-    _ingest_running = val
+    with _ingest_lock:
+        _ingest_running = val
 
 
 def set_ingest_result(val: dict):
     global _ingest_result
-    _ingest_result = val
+    with _ingest_lock:
+        _ingest_result = val
 
 
 def set_ingest_current_subject(val: str):
     global _ingest_current_subject
-    _ingest_current_subject = val
+    with _ingest_lock:
+        _ingest_current_subject = val
 
 
 def set_ingest_total_pending(val: int):
     global _ingest_total_pending
-    _ingest_total_pending = val
+    with _ingest_lock:
+        _ingest_total_pending = val
 
 
 def set_ingest_initial_total(val: int):
     global _ingest_initial_total
-    _ingest_initial_total = val
+    with _ingest_lock:
+        _ingest_initial_total = val
 
 
 def set_ingest_initial_wiki_count(val: int):
     global _ingest_initial_wiki_count
-    _ingest_initial_wiki_count = val
+    with _ingest_lock:
+        _ingest_initial_wiki_count = val
 
 
 def set_ingest_last_created_name(val: str):
     global _ingest_last_created_name
-    _ingest_last_created_name = val
+    with _ingest_lock:
+        _ingest_last_created_name = val
 
 
 def get_upload_in_progress():
-    global _upload_in_progress
-    return _upload_in_progress
+    with _upload_lock:
+        return _upload_in_progress
 
 
 def set_upload_in_progress(val: bool):
     global _upload_in_progress
-    _upload_in_progress = val
+    with _upload_lock:
+        _upload_in_progress = val
+
+
+def try_acquire_upload_lock():
+    """Atomic test-and-set for upload lock. Returns True if acquired."""
+    global _upload_in_progress
+    with _upload_lock:
+        if _upload_in_progress:
+            return False
+        _upload_in_progress = True
+        return True
+
+
+def release_upload_lock():
+    global _upload_in_progress
+    with _upload_lock:
+        _upload_in_progress = False
 
 
 # ─── Shared path utilities ───
@@ -190,7 +211,7 @@ def slugify(text: str) -> str:
 
 def run_markitdown(input_path: str, output_path: str) -> tuple[bool, str]:
     """Convert a file to markdown using MarkItDown. Returns (success, stderr)."""
-    md_bin = shutil.which("markitdown") or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/markitdown")
+    md_bin = shutil.which("markitdown")
     try:
         result = subprocess.run(
             [md_bin, input_path, "-o", output_path],
@@ -235,6 +256,20 @@ def _subject_exists(subject: str) -> bool:
     """Check if a subject directory exists under vault subjects/."""
     subj_dir = os.path.join(VAULT, "subjects", subject)
     return os.path.isdir(subj_dir)
+
+
+def _get_originals_set(subject: str) -> set:
+    """Build a set of stem names (no ext) from originals/{subject}/."""
+    orig_dir = os.path.join(VAULT, "originals", subject)
+    if not os.path.isdir(orig_dir):
+        return set()
+    stems = set()
+    for fname in os.listdir(orig_dir):
+        if fname.startswith("."):
+            continue
+        f_no_ext, _ = os.path.splitext(fname)
+        stems.add(f_no_ext)
+    return stems
 
 
 def _find_original(subject: str, basename: str) -> str | None:
@@ -481,7 +516,7 @@ def _extract_code_blocks(content):
     lines = content.splitlines()
     i = 0
     while i < len(lines):
-        if lines[i].startswith("`"):
+        if lines[i].startswith("```"):
             lang = lines[i][3:].strip()
             code = []
             i += 1
@@ -680,7 +715,7 @@ def _cascade_delete(subject, base_name, delete_raw=True):
     return result
 
 
-def _list_entries(abs_dir, vault_prefix, subject):
+def _list_entries(abs_dir, vault_prefix, subject, originals_set=None):
     entries = []
     try:
         names = sorted(os.listdir(abs_dir))
@@ -694,13 +729,15 @@ def _list_entries(abs_dir, vault_prefix, subject):
         entry = {"name": name, "path": rel_path}
         if os.path.isdir(abs_path):
             entry["type"] = "dir"
-            entry["children"] = _list_entries(abs_path, rel_path, subject)
+            entry["children"] = _list_entries(abs_path, rel_path, subject, originals_set)
         else:
             entry["type"] = "file"
-            orig_filename = _find_original(subject, name)
-            entry["has_original"] = orig_filename is not None
-            if orig_filename:
-                entry["original_path"] = f"originals/{subject}/{orig_filename}"
+            if originals_set:
+                name_no_ext, _ = os.path.splitext(name)
+                entry["has_original"] = name_no_ext in originals_set
+            else:
+                orig_filename = _find_original(subject, name)
+                entry["has_original"] = orig_filename is not None
         entries.append(entry)
     return entries
 
@@ -926,7 +963,8 @@ def _parse_relationships(subject):
                 continue
             fpath = os.path.join(dpath, fname)
             try:
-                raw = open(fpath, encoding="utf-8").read()
+                with open(fpath, encoding="utf-8") as _f:
+                    raw = _f.read()
             except OSError:
                 continue
             body = FRONTMATTER_RE2.sub("", raw)

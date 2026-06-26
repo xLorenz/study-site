@@ -11,6 +11,7 @@ from .types import CHATS_DIR, MAX_HISTORY_MESSAGES
 
 
 _background_tasks = {}  # task_id -> TaskInfo
+_tasks_lock = threading.Lock()
 
 
 class TaskInfo:
@@ -35,6 +36,8 @@ def load_chat(subject):
         return []
 
 
+_chat_save_lock = threading.Lock()
+
 def save_chat(subject, messages):
     """Save chat history to disk, trimmed to MAX_HISTORY_MESSAGES.
 
@@ -48,7 +51,6 @@ def save_chat(subject, messages):
         if m["role"] == "assistant":
             entry = {"role": "assistant", "content": m["content"]}
             if "tool_calls" in m and m["tool_calls"]:
-                # Strip 'result' from each tool call to avoid 181KB bloat
                 trimmed_tcs = []
                 for tc in m["tool_calls"]:
                     clean = {k: v for k, v in tc.items() if k != "result"}
@@ -56,15 +58,17 @@ def save_chat(subject, messages):
                 entry["tool_calls"] = trimmed_tcs
             trimmed.append(entry)
         elif m["role"] == "tool":
-            # Keep tool role messages — they carry tool_call_id + content
             trimmed.append({k: v for k, v in m.items() if k != "result"})
         elif m["role"] == "user":
             trimmed.append({"role": "user", "content": m["content"]})
     if len(trimmed) > MAX_HISTORY_MESSAGES:
         trimmed = trimmed[-MAX_HISTORY_MESSAGES:]
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"messages": trimmed}, f, ensure_ascii=False, indent=2)
+        with _chat_save_lock:
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump({"messages": trimmed}, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, path)
     except Exception as e:
         print(f"Error saving chat for {subject}: {e}")
 
@@ -73,10 +77,11 @@ def delete_chat_file(subject):
     """Delete the chat history file for a subject."""
     path = os.path.join(CHATS_DIR, f"{subject}.json")
     try:
-        if os.path.isfile(path):
-            os.remove(path)
-            return True
-        return False
+        with _chat_save_lock:
+            if os.path.isfile(path):
+                os.remove(path)
+                return True
+            return False
     except Exception as e:
         print(f"Error deleting chat for {subject}: {e}")
         return False
@@ -86,7 +91,8 @@ def start_background_task(subject, user_message, conversation, model):
     """Spawn a daemon thread running stream_chat(). Returns task_id."""
     task_id = uuid.uuid4().hex[:8]
     task = TaskInfo(subject, model)
-    _background_tasks[task_id] = task
+    with _tasks_lock:
+        _background_tasks[task_id] = task
 
     thread = threading.Thread(
         target=_run_task,
@@ -222,7 +228,10 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         task.buffer.put({"type": "_task_done"})
         task.done.set()
         # Clean up after 60s
-        threading.Timer(60, lambda: _background_tasks.pop(task_id, None)).start()
+        def _cleanup(tid=task_id):
+            with _tasks_lock:
+                _background_tasks.pop(tid, None)
+        threading.Timer(60, _cleanup).start()
 
 
 def _tool_label(name, arguments_raw):
@@ -245,4 +254,5 @@ def _tool_label(name, arguments_raw):
 
 def get_task(task_id):
     """Get a background task by ID."""
-    return _background_tasks.get(task_id)
+    with _tasks_lock:
+        return _background_tasks.get(task_id)
