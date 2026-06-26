@@ -616,21 +616,47 @@ function showToast(message, type = 'info') {
 
 // ── Markdown Rendering ──
 function renderMarkdown(container, content) {
- container.innerHTML = marked.parse(content);
- // Render LaTeX math with KaTeX auto-render
- if (typeof renderMathInElement === 'function') {
-  renderMathInElement(container, {
-   delimiters: [
-    {left: '$$', right: '$$', display: true},
-    {left: '\\[', right: '\\]', display: true},
-    {left: '$', right: '$', display: false},
-    {left: '\\(', right: '\\)', display: false}
-   ],
-   throwOnError: false
+ // Pre-process: protect LaTeX from marked.js
+ var placeholders = [];
+ var counter = 0;
+ function protect(regex, display) {
+  content = content.replace(regex, function(match, inner) {
+   var id = 'LATEX_PH_' + counter + '_PH_';
+   counter++;
+   placeholders.push({id: id, inner: inner, display: display});
+   return id;
   });
  }
+ protect(/\\\[([\s\S]*?)\\\]/g, true);
+ protect(/\\\(([\s\S]*?)\\\)/g, false);
+ protect(/\$\$([\s\S]*?)\$\$/g, true);
+ protect(/\$([^\n$]*?)\$/g, false);
+
+ container.innerHTML = marked.parse(content, { gfm: true, breaks: true });
+
+ // Restore LaTeX placeholders — render with KaTeX
+ if (window.katex && placeholders.length > 0) {
+  for (var i = 0; i < placeholders.length; i++) {
+   var p = placeholders[i];
+   try {
+    var html = katex.renderToString(p.inner, {
+     displayMode: p.display,
+     throwOnError: false
+    });
+    while (container.innerHTML.indexOf(p.id) !== -1) {
+     container.innerHTML = container.innerHTML.replace(p.id, html);
+    }
+   } catch(e) {
+    while (container.innerHTML.indexOf(p.id) !== -1) {
+     container.innerHTML = container.innerHTML.replace(p.id,
+      '<span class="math-error">' + p.inner + '</span>');
+    }
+   }
+  }
+ }
+
  container.querySelectorAll('pre code').forEach(block => {
- const btn = document.createElement('button');
+ var btn = document.createElement('button');
  btn.className = 'copy-btn';
  btn.textContent = '\u2398';
  btn.onclick = () => {
