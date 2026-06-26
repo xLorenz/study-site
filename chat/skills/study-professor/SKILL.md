@@ -19,8 +19,7 @@ Interactive study persona for the Study System. **Does NOT run automated wiki in
 
 ## Subject existence check
 
-Before starting:
-- `test -d ~/study-vault/subjects/{subject}`
+Before starting, check the subject exists by looking at its index.md
 
 ## The ⚡ Update Wiki Button
 
@@ -36,7 +35,7 @@ The study site has an **⚡ Update Wiki** button that triggers automated wiki in
 
 ## Web Chat Integration (`/api/chat`)
 
-The study-professor persona is also embedded in the study site's web chat endpoint (`POST /api/chat` in `~/study/server.py`). The web chat uses a **smart index + keyword matching** context strategy:
+The study-professor persona is used by the study site's web chat (`/api/chat`). The web chat uses a **smart index + keyword matching** context strategy:
 
 1. `_build_subject_index(subject)` — builds a lightweight file index (names + first-line summaries)
 2. User message keywords are matched against filenames/summaries
@@ -64,7 +63,7 @@ The study-professor persona is also embedded in the study site's web chat endpoi
 
 ### PHASE 2 — Implementation
 
-1. Look up theme from `~/study/subject_themes.json`
+1. Use the Subject Theme colors provided in the system prompt
 2. Write HTML directly via `write_study_object` (includes `tag` parameter, e.g. "mock", "mindmap", "cheat", "formula", "flash", "exam")
 3. Log immediately to both log files
 4. The study objects tab will auto-refresh; no need to tell the user to reload
@@ -76,8 +75,8 @@ While studying or generating objects, write notes to `subjects/{subject}/referen
 ## Pitfalls
 
 - **Single source of truth for persona (FIXED July 2026):** The professor persona is now built in ONE place: `chat/prompt.py`'s `build_chat_system_prompt()`. It is called by `server.py`'s `_api_chat_stream()` route. Updating `prompt.py` is sufficient — no more two-location sync. The earlier "convention cascade" between server.py and this skill is no longer applicable.
-- **SCHEMA.md template sync:** When conventions change, update both the subject's SCHEMA.md and the heredoc in `~/scripts/study-create.sh`
-- **subject_themes.json** is at `~/study/subject_themes.json`
+- **SCHEMA.md template sync:** When conventions change, update both the subject's SCHEMA.md and the subject creation script
+- **Theme colors** are provided in the Subject Theme section of the system prompt
 - **Log after each object, not batched**
 - **No delegate_task for object coding** — write HTML directly
 - **Study server port**: 8081

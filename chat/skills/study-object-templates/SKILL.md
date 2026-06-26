@@ -28,7 +28,7 @@ This skill describes the **6 canonical HTML template formats** stored at `~/.her
 - Text: `#e2e2e8`, secondary `#6a6a7a` / `#b0b0c0`
 - Surfaces: `#111118`, `#18181c`, `#1f1f2a`
 - Borders: `#1e1e2a`, hover `#2a2a3a`
-- Accent varies by subject/theme (from `subject_themes.json`)
+- Accent varies by subject/theme (use the theme colors from the system prompt's Subject Theme section)
 
 ### Fonts
 - **Body**: `'Inter', system-ui, -apple-system, sans-serif`
@@ -118,8 +118,7 @@ STEP 1 — SCHEMA & CONTENT DESIGN
   - Write ALL question content yourself — no delegation
 
 STEP 2 — THEME LOOKUP
-  - Read ~/study/subject_themes.json
-  - Extract subject's {primary, secondary, accent, icon} colors
+  - The subject's theme colors (primary, secondary, accent, icon) are in the system prompt's Subject Theme section
   - Title gradient = linear-gradient(135deg, primary, secondary)
   - Section h2 color = secondary (or accent)
   - Alert border-color = accent with transparency
@@ -135,9 +134,9 @@ STEP 3 — HTML STRUCTURE
   - Alerts in .alert for side-notes
 
 STEP 4 — SAVE & LOG
-  - Save to ~/study-vault/objects/{subject}/{slug}-v{N}.html
-  - Pass `tag` parameter to `write_study_object` (e.g. "mock", "cheat", "mindmap", "formula", "flash", "exam")
-  - Append log to both ~/study-vault/log.md and subjects/{subject}/wiki/log.md
+  - Call `write_study_object` with filename, tag, and full HTML
+  - Pass `tag` parameter (e.g. "mock", "cheat", "mindmap", "formula", "flash", "exam")
+  - Log to subjects/{subject}/wiki/log.md
 ```
 
 ---
@@ -297,8 +296,8 @@ STEP 1 — CONTENT DESIGN
   - Cover all major topic areas from the wiki
   - Write ALL question content yourself — the point is your understanding drives the questions
 
-STEP 2 — THEME LOOKUP
-  - Read subject_themes.json, pick primary/secondary/accent for header gradient
+STEP 2 — THEME
+  - Use the theme colors (primary, secondary, accent) from the system prompt's Subject Theme section
   - Flashcards use accent for option hover, correct indicator, next-button
 
 STEP 3 — SETUP FRAMEWORK
@@ -315,9 +314,9 @@ STEP 4 — ADJUSTMENTS
   - For HARD mode: use orange accent, more challenging content, add "HARD MODE" badge
 
 STEP 5 — SAVE & LOG
-  - Save as ~/study-vault/objects/{subject}/{slug}-v{N}.html
-  - Pass `tag` parameter to `write_study_object` (e.g. "flash")
-  - Log to both vault-wide and subject log.md
+  - Call `write_study_object` with filename, tag, and full HTML
+  - Pass `tag` parameter (e.g. "flash")
+  - Log to subjects/{subject}/wiki/log.md
 ```
 
 ---
@@ -444,7 +443,7 @@ STEP 1 — CONTENT DESIGN
   - Design ALL content yourself: descriptions, explanations, code examples for detail panel
 
 STEP 2 — THEME
-  - Use subject_themes.json colors
+  - Use the theme colors (primary, secondary, accent) from the system prompt's Subject Theme section
   - The COLORS map must have keys matching all .cat values in data
 
 STEP 3 — HTML FRAMEWORK
@@ -468,9 +467,9 @@ STEP 4 — JS STRUCTURE
   - Keyboard shortcuts: Escape closes panel/search, / opens search
 
 STEP 5 — SAVE & LOG
-  - Save as ~/study-vault/objects/{subject}/{slug}-v{N}.html
-  - Pass `tag` parameter to `write_study_object` (e.g. "mindmap")
-  - Log to both vault-wide and subject log.md
+  - Call `write_study_object` with filename, tag, and full HTML
+  - Pass `tag` parameter (e.g. "mindmap")
+  - Log to subjects/{subject}/wiki/log.md
 ```
 
 ---
@@ -608,8 +607,8 @@ STEP 3 — ANSWER TOGGLES
   - Include the JavaScript toggle function in a <script> tag at the bottom
 
 STEP 4 — SAVE & LOG
-  - Save to ~/study-vault/objects/{subject}/{slug}-v{N}.html
-  - Append log to ~/study-vault/log.md and subjects/{subject}/wiki/log.md
+  - Call `write_study_object` with filename, tag, and full HTML
+  - Log to subjects/{subject}/wiki/log.md
 ```
 
 ---
@@ -635,7 +634,7 @@ When the user asks for a study object, pick by type keyword:
 
 ## Design Notes Convention
 
-Before coding, write a design plan to `~/study-vault/subjects/{subject}/references/object-{slug}-design.md` using the `write_design_notes` tool:
+Before coding, write a design plan using the `write_design_notes` tool (which saves to `subjects/{subject}/references/`):
 
 ```markdown
 ## Design Plan: {type} — {subject}
