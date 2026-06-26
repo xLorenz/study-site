@@ -2484,33 +2484,44 @@ function drawGraph() {
   // Compute max link_count for edge weight normalization
   const maxLinks = Math.max(1, ...graphNodes.map(n => n.link_count || 0));
 
+  // Pre-compute frame state (adjacency sets, highlight flags)
+  const selectedConnected = new Set();
+  if (selectedNode) {
+    for (const e of graphEdges) {
+      if (e.source === selectedNode.id) selectedConnected.add(e.target);
+      if (e.target === selectedNode.id) selectedConnected.add(e.source);
+    }
+  }
+  const hlIds = window._highlightedNodeIds;
+  const hasHighlights = hlIds && hlIds.size > 0;
+
   // ── 1. Draw halos (faded radial gradients, behind everything) ──
   for (const node of graphNodes) {
     const isSelected = selectedNode && selectedNode.id === node.id;
     const hovered = node === hoveredNode;
-    const connected = selectedNode && graphEdges.some(e =>
-      (e.source === selectedNode.id && e.target === node.id) ||
-      (e.target === selectedNode.id && e.source === node.id)
-    );
+    const connected = selectedConnected.has(node.id);
     let isDimmed = selectedNode && !isSelected && !connected;
     // Tool highlights: dim non-highlighted nodes (keep selected visible)
-    if (window._highlightedNodeIds && window._highlightedNodeIds.size > 0) {
-      if (!isSelected && !window._highlightedNodeIds.has(node.id)) {
+    if (hasHighlights) {
+      if (!isSelected && !hlIds.has(node.id)) {
         isDimmed = true;
       }
     }
-    const isToolHighlighted = window._highlightedNodeIds && window._highlightedNodeIds.has(node.id);
+    const isToolHighlighted = hasHighlights && hlIds.has(node.id);
     const theme = subjectThemes[node.subject] || {};
     const fillColor = theme.primary || '#6366f1';
     const typeHalo = getHaloForNode(node);
-    const haloSize = node.radius * 3.5;
-    const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, haloSize);
-    gradient.addColorStop(0, isDimmed ? 'rgba(26,26,46,0.08)' : typeHalo.halo);
-    gradient.addColorStop(1, 'transparent');
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, haloSize, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
-    ctx.fill();
+    // Skip halo for dimmed nodes (nearly invisible, saves gradient allocation)
+    if (!isDimmed) {
+      const haloSize = node.radius * 3.5;
+      const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, haloSize);
+      gradient.addColorStop(0, typeHalo.halo);
+      gradient.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, haloSize, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
 
     // Outer glow for hover/selected
     if (hovered || isSelected || isToolHighlighted) {
@@ -2537,8 +2548,8 @@ function drawGraph() {
 
   // ── 2. Draw edges ──
   for (const edge of graphEdges) {
-    const src = graphNodes.find(n => n.id === edge.source);
-    const tgt = graphNodes.find(n => n.id === edge.target);
+    const src = graphNodeMap.get(edge.source);
+    const tgt = graphNodeMap.get(edge.target);
     if (!src || !tgt) continue;
 
     const isHighlighted = selectedNode &&
@@ -2546,10 +2557,9 @@ function drawGraph() {
     const isDimmed = selectedNode && !isHighlighted;
 
     // Edge connecting two tool-highlighted nodes: draw brighter
-    const isToolHighlighted = window._highlightedNodeIds && window._highlightedNodeIds.size > 0 &&
-      window._highlightedNodeIds.has(edge.source) && window._highlightedNodeIds.has(edge.target);
+    const isToolHighlighted = hasHighlights && hlIds.has(edge.source) && hlIds.has(edge.target);
     // Dim edges when tool highlights are active but this edge doesn't connect two highlighted nodes
-    const isToolDimmed = window._highlightedNodeIds && window._highlightedNodeIds.size > 0 && !isToolHighlighted;
+    const isToolDimmed = hasHighlights && !isToolHighlighted;
 
     // Edge weight: combined link density of source + target
     const weight = ((src.link_count || 0) + (tgt.link_count || 0)) / 2;
@@ -2589,24 +2599,18 @@ function drawGraph() {
   }
 
   // ── Draw nodes ──
-  const isHovered = n => n === hoveredNode;
-  const isConnected = (node) => selectedNode && graphEdges.some(e =>
-    (e.source === selectedNode.id && e.target === node.id) ||
-    (e.target === selectedNode.id && e.source === node.id)
-  );
-
   for (const node of graphNodes) {
     const isSelected = selectedNode && selectedNode.id === node.id;
-    const connected = isConnected(node);
-    const hovered = isHovered(node);
+    const connected = selectedConnected.has(node.id);
+    const hovered = node === hoveredNode;
     let isDimmed = selectedNode && !isSelected && !connected;
     // Tool highlights: dim non-highlighted nodes (keep selected visible)
-    if (window._highlightedNodeIds && window._highlightedNodeIds.size > 0) {
-      if (!isSelected && !window._highlightedNodeIds.has(node.id)) {
+    if (hasHighlights) {
+      if (!isSelected && !hlIds.has(node.id)) {
         isDimmed = true;
       }
     }
-    const isToolHighlighted = window._highlightedNodeIds && window._highlightedNodeIds.has(node.id);
+    const isToolHighlighted = hasHighlights && hlIds.has(node.id);
     const theme = subjectThemes[node.subject] || {};
     const fillColor = theme.primary || '#6366f1';
 
@@ -2655,23 +2659,19 @@ function drawGraph() {
   }
 
   // Labels on top (second pass)
-  drawNodeLabels(ctx);
+  drawNodeLabels(ctx, selectedConnected, hasHighlights, hlIds);
   ctx.restore();
 }
 
 // ── Draw node labels (always on top, second pass) ──
-function drawNodeLabels(ctx) {
+function drawNodeLabels(ctx, selectedConnected, hasHighlights, hlIds) {
   for (const node of graphNodes) {
     const isSelected = selectedNode && selectedNode.id === node.id;
     const hovered = node === hoveredNode;
-    const connected = selectedNode && graphEdges.some(e =>
-      (e.source === selectedNode.id && e.target === node.id) ||
-      (e.target === selectedNode.id && e.source === node.id)
-    );
+    const connected = selectedConnected.has(node.id);
     let isDimmed = selectedNode && !isSelected && !connected;
-    // Tool highlights: dim non-highlighted nodes (keep selected visible)
-    if (window._highlightedNodeIds && window._highlightedNodeIds.size > 0) {
-      if (!isSelected && !window._highlightedNodeIds.has(node.id)) {
+    if (hasHighlights) {
+      if (!isSelected && !hlIds.has(node.id)) {
         isDimmed = true;
       }
     }

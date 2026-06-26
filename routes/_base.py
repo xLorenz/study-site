@@ -5,6 +5,7 @@ import email.parser
 import email.policy
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -175,9 +176,13 @@ THEME_PALETTE = [
 ]
 
 
+# Random offset so the first subject's color varies per deployment
+_PALETTE_OFFSET = random.randint(0, 9) if THEME_PALETTE else 0
+
+
 def _get_palette_index(subject_count: int) -> int:
-    """Return the palette index for the Nth subject (0-based)."""
-    return subject_count % len(THEME_PALETTE) if THEME_PALETTE else 0
+    """Return the palette index for the Nth subject (0-based), offset randomly."""
+    return (subject_count + _PALETTE_OFFSET) % len(THEME_PALETTE) if THEME_PALETTE else 0
 
 
 def _generate_muted_theme(subject_count: int) -> dict:
