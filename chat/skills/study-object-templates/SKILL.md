@@ -180,6 +180,7 @@ Comprehensive answer key with navigation, Q&A pairs, cross-references.
 STEP 1 — CONTENT DESIGN
   - Read SCHEMA.md for subject conventions (including language: wiki content follows the raw sources' language)
   - Read all wiki files
+  - Read existing design notes from subjects/{subject}/references/ for context
   - For each question in the exam being solved, write:
     a) The question (formatted as .q)
     b) The complete answer (formatted as .a)
@@ -587,6 +588,7 @@ No dependencies, no state management, no confetti. Each exercise has its own ind
 ```markdown
 STEP 1 — CONTENT DESIGN
   - Read ALL raw practice files (not just wiki summaries) from subjects/{subject}/raw/
+  - Read existing design notes from subjects/{subject}/references/ for context
   - For each topic the user requested, identify the 1-2 hardest problems in that practice file
   - Look for exercises that combine multiple concepts (e.g. "cascarón esférico + Gauss + densidad")
   - Design 1 exercise per topic cluster (or combine closely related topics into 1 exercise)
@@ -634,7 +636,7 @@ When the user asks for a study object, pick by type keyword:
 
 ## Design Notes Convention
 
-Before coding, write a design plan using the `write_design_notes` tool (which saves to `subjects/{subject}/references/`):
+Before coding, **read existing design notes** from `subjects/{subject}/references/` using `read_vault_file(path='references/object-{slug}-design.md')` or list files by attempting common slugs. Then write your design plan using `write_design_notes` (saves to `subjects/{subject}/references/`):
 
 ```markdown
 ## Design Plan: {type} — {subject}
