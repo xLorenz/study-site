@@ -6,7 +6,7 @@ import shutil
 
 from ._base import (
     _subject_exists, _normalize_name, _generate_muted_theme, _log_action,
-    _get_last_theme_primary,
+    _read_theme_from_vault,
     get_ingest_state,
 )
 
@@ -238,8 +238,10 @@ def handle_create_subject(handler):
     with open(os.path.join(raw_dir, ".ingested.json"), "w", encoding="utf-8") as f:
         json.dump({"ingested": [], "last_ingested": None}, f)
 
-    # Generate muted theme colors from last subject's primary
-    theme = _generate_muted_theme(_get_last_theme_primary())
+    # Pick a theme from the curated palette (count existing subjects for index)
+    subs_dir = os.path.join(vault, "subjects")
+    existing = [d for d in os.listdir(subs_dir) if not d.startswith(".") and os.path.isdir(os.path.join(subs_dir, d))] if os.path.isdir(subs_dir) else []
+    theme = _generate_muted_theme(len(existing))
 
     # Write _theme.md inside the vault (model-readable via read_vault_file)
     theme_md_path = os.path.join(subj_dir, "references", "_theme.md")

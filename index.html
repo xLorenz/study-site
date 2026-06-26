@@ -2179,6 +2179,7 @@ const graphTooltip = document.getElementById('graph-tooltip');
 
 let graphNodes = [];
 let graphEdges = [];
+let graphNodeMap = null;
 let animFrameId = null;
 let lastInteraction = Date.now();
 let useThrottle = false;
@@ -2304,6 +2305,8 @@ function initGraph(data) {
   });
 
   graphEdges = data.edges || [];
+  graphNodeMap = new Map(graphNodes.map(n => [n.id, n]));
+  window._graphSettled = false;
   selectedNode = null;
   hoveredNode = null;
 
@@ -2357,73 +2360,86 @@ function simulationStep() {
   const cy = h / 2;
   const n = graphNodes.length;
 
-  // ── Apply forces ──
-  // Repulsion (all pairs) + collision detection
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const a = graphNodes[i];
-      const b = graphNodes[j];
-      let dx = b.x - a.x;
-      let dy = b.y - a.y;
-      let dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 1) dist = 1;
+  // ── Skip physics when graph is fully settled ──
+  const recentlyInteracted = (Date.now() - lastInteraction) < 1000;
+  const skipPhysics = window._graphSettled && !recentlyInteracted && !dragNode;
 
-      // Size-proportional Coulomb repulsion (clamped to prevent nuke-and-oscillate)
-      const repMag = REPULSION * (a.radius + b.radius) / 30;
-      const force = Math.min(repMag / (dist * dist), 50);
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      if (!a.pinned) { a.vx -= fx; a.vy -= fy; }
-      if (!b.pinned) { b.vx += fx; b.vy += fy; }
+  let maxSpeed = 0;
 
-      // Hard-sphere collision (prevent overlap)
-      const minDist = (a.radius + b.radius) * COLLISION_RADIUS;
-      if (dist < minDist) {
-        const overlap = (minDist - dist) / 2;
-        const cx2 = (dx / dist) * overlap;
-        const cy2 = (dy / dist) * overlap;
-        if (!a.pinned) { a.x -= cx2; a.y -= cy2; }
-        if (!b.pinned) { b.x += cx2; b.y += cy2; }
+  if (!skipPhysics) {
+    // ── Apply forces ──
+    // Repulsion (all pairs) + collision detection
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = graphNodes[i];
+        const b = graphNodes[j];
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) dist = 1;
+
+        // Skip far pairs — repulsion and collision are negligible
+        if (dist > 600) continue;
+
+        // Size-proportional Coulomb repulsion (clamped to prevent nuke-and-oscillate)
+        const repMag = REPULSION * (a.radius + b.radius) / 30;
+        const force = Math.min(repMag / (dist * dist), 50);
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        if (!a.pinned) { a.vx -= fx; a.vy -= fy; }
+        if (!b.pinned) { b.vx += fx; b.vy += fy; }
+
+        // Hard-sphere collision (prevent overlap)
+        const minDist = (a.radius + b.radius) * COLLISION_RADIUS;
+        if (dist < minDist) {
+          const overlap = (minDist - dist) / 2;
+          const cx2 = (dx / dist) * overlap;
+          const cy2 = (dy / dist) * overlap;
+          if (!a.pinned) { a.x -= cx2; a.y -= cy2; }
+          if (!b.pinned) { b.x += cx2; b.y += cy2; }
+        }
       }
     }
-  }
 
-  // Spring (edges)
-  for (const edge of graphEdges) {
-    const src = graphNodes.find(nd => nd.id === edge.source);
-    const tgt = graphNodes.find(nd => nd.id === edge.target);
-    if (!src || !tgt) continue;
-    let dx = tgt.x - src.x;
-    let dy = tgt.y - src.y;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 1) dist = 1;
-    const displacement = dist - SPRING_LENGTH;
-    const force = SPRING_K * displacement;
-    const fx = (dx / dist) * force;
-    const fy = (dy / dist) * force;
-    if (!src.pinned) { src.vx += fx; src.vy += fy; }
-    if (!tgt.pinned) { tgt.vx -= fx; tgt.vy -= fy; }
-  }
+    // Spring (edges)
+    for (const edge of graphEdges) {
+      const src = graphNodeMap.get(edge.source);
+      const tgt = graphNodeMap.get(edge.target);
+      if (!src || !tgt) continue;
+      let dx = tgt.x - src.x;
+      let dy = tgt.y - src.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) dist = 1;
+      const displacement = dist - SPRING_LENGTH;
+      const force = SPRING_K * displacement;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      if (!src.pinned) { src.vx += fx; src.vy += fy; }
+      if (!tgt.pinned) { tgt.vx -= fx; tgt.vy -= fy; }
+    }
 
-  // Center gravity
-  for (const node of graphNodes) {
-    if (node.pinned) continue;
-    node.vx += (cx - node.x) * CENTER_GRAVITY;
-    node.vy += (cy - node.y) * CENTER_GRAVITY;
-  }
+    // Center gravity
+    for (const node of graphNodes) {
+      if (node.pinned) continue;
+      node.vx += (cx - node.x) * CENTER_GRAVITY;
+      node.vy += (cy - node.y) * CENTER_GRAVITY;
+    }
 
-  // ── Update positions ──
-  let maxSpeed = 0;
-  for (const node of graphNodes) {
-    if (node.pinned) { node.vx = 0; node.vy = 0; continue; }
-    node.vx *= DAMPING;
-    node.vy *= DAMPING;
-    if (Math.abs(node.vx) < MIN_VELOCITY) node.vx = 0;
-    if (Math.abs(node.vy) < MIN_VELOCITY) node.vy = 0;
-    node.x += node.vx;
-    node.y += node.vy;
-    const speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
-    if (speed > maxSpeed) maxSpeed = speed;
+    // ── Update positions ──
+    for (const node of graphNodes) {
+      if (node.pinned) { node.vx = 0; node.vy = 0; continue; }
+      node.vx *= DAMPING;
+      node.vy *= DAMPING;
+      if (Math.abs(node.vx) < MIN_VELOCITY) node.vx = 0;
+      if (Math.abs(node.vy) < MIN_VELOCITY) node.vy = 0;
+      node.x += node.vx;
+      node.y += node.vy;
+      const speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
+      if (speed > maxSpeed) maxSpeed = speed;
+    }
+
+    // ── Track settled state ──
+    window._graphSettled = maxSpeed < SETTLE_VELOCITY;
   }
 
   // ── Auto zoom-to-fit after 2s ──

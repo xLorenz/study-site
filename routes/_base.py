@@ -103,7 +103,8 @@ def _read_theme_from_vault(subject: str) -> dict:
 
 def _build_themes_dict() -> dict:
     """Scan all vault subjects for _theme.md and build a full themes dict."""
-    themes = {"_default": {"primary": "#6b7db3", "secondary": "#8fa4cc", "accent": "#aec0de", "icon": "\U0001f4da"}}
+    default_theme = dict(THEME_PALETTE[0]) if THEME_PALETTE else {"primary": "#6b7db3", "secondary": "#8fa4cc", "accent": "#aec0de", "icon": "\U0001f4da"}
+    themes = {"_default": default_theme}
     subs_dir = os.path.join(VAULT, "subjects")
     if os.path.isdir(subs_dir):
         for name in sorted(os.listdir(subs_dir)):
@@ -118,15 +119,15 @@ def _build_themes_dict() -> dict:
 
 
 def _get_last_theme_primary() -> str:
-    """Get the primary color of the last-created subject for color rotation."""
+    """Get the primary color of the last-created subject."""
     subs_dir = os.path.join(VAULT, "subjects")
     if not os.path.isdir(subs_dir):
-        return "#6b7db3"
+        return THEME_PALETTE[0]["primary"] if THEME_PALETTE else "#6b7db3"
     subjects = sorted(s for s in os.listdir(subs_dir) if not s.startswith(".") and os.path.isdir(os.path.join(subs_dir, s)))
     if not subjects:
-        return "#6b7db3"
+        return THEME_PALETTE[0]["primary"] if THEME_PALETTE else "#6b7db3"
     theme = _read_theme_from_vault(subjects[-1])
-    return theme.get("primary", "#6b7db3")
+    return theme.get("primary", THEME_PALETTE[0]["primary"] if THEME_PALETTE else "#6b7db3")
 
 
 # ─── Shared utilities ───
@@ -158,16 +159,31 @@ def _hue_rotate_hex(hex_color: str, degrees: int) -> str:
     return _hsv_to_hex((h + degrees / 360) % 1.0, s, v)
 
 
-def _generate_muted_theme(prev_primary: str) -> dict:
-    """Generate a color theme from a previous subject's primary (moderate saturation)."""
-    h, s, v = _hex_to_hsv(prev_primary)
-    primary_h = (h + 40 / 360) % 1.0
-    return {
-        "primary": _hsv_to_hex(primary_h, 0.55, 0.75),
-        "secondary": _hsv_to_hex((primary_h + 20 / 360) % 1.0, 0.50, 0.85),
-        "accent": _hsv_to_hex((primary_h + 10 / 360) % 1.0, 0.60, 0.65),
-        "icon": "\U0001f4da",
-    }
+# Curated palette — colors that work well on the dark theme background.
+# Ordered so adjacent colors are visually distinct. Cycles after 10.
+THEME_PALETTE = [
+    {"primary": "#5b7fc4", "secondary": "#7a9ed4", "accent": "#4d70b8", "icon": "\U0001f4da"},
+    {"primary": "#4db0b0", "secondary": "#6ec4c4", "accent": "#3da0a0", "icon": "\U0001f4da"},
+    {"primary": "#5da06c", "secondary": "#78b584", "accent": "#4d915e", "icon": "\U0001f4da"},
+    {"primary": "#9b7bd6", "secondary": "#b59be2", "accent": "#856ac0", "icon": "\U0001f4da"},
+    {"primary": "#d49b4d", "secondary": "#e0b07a", "accent": "#c48a3d", "icon": "\U0001f4da"},
+    {"primary": "#d47b9b", "secondary": "#e09bb4", "accent": "#bf6890", "icon": "\U0001f4da"},
+    {"primary": "#5baad4", "secondary": "#7fc0e0", "accent": "#4a99bf", "icon": "\U0001f4da"},
+    {"primary": "#c4a84d", "secondary": "#d9bf78", "accent": "#b5973d", "icon": "\U0001f4da"},
+    {"primary": "#d46b6b", "secondary": "#e08f8f", "accent": "#bf5a5a", "icon": "\U0001f4da"},
+    {"primary": "#7b8cd4", "secondary": "#9baae0", "accent": "#6a7abf", "icon": "\U0001f4da"},
+]
+
+
+def _get_palette_index(subject_count: int) -> int:
+    """Return the palette index for the Nth subject (0-based)."""
+    return subject_count % len(THEME_PALETTE) if THEME_PALETTE else 0
+
+
+def _generate_muted_theme(subject_count: int) -> dict:
+    """Pick a theme from the curated palette by subject count."""
+    idx = _get_palette_index(subject_count)
+    return dict(THEME_PALETTE[idx])
 
 
 # ─── Ingest state accessors (for route modules) ───

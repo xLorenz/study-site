@@ -44,7 +44,7 @@ def build_chat_system_prompt(subject):
         with open(theme_path, encoding="utf-8") as f:
             theme_content = f.read()
     else:
-        theme_content = f"# {subject} — Theme\n\nprimary: #6b7db3\nsecondary: #8fa4cc\naccent: #aec0de\nicon: 📚\n"
+        theme_content = f"# {subject} — Theme\n\nprimary: #5b7fc4\nsecondary: #7a9ed4\naccent: #4d70b8\nicon: 📚\n"
     sections.append(f"## Subject Theme\n\n{theme_content.strip()}\n\n"
                     "Use these colors when creating HTML study objects. "
                     "Title gradient = linear-gradient(135deg, primary, secondary). "

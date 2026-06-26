@@ -4,7 +4,7 @@ import json
 import os
 
 from ._base import (
-    VAULT, STUDY_DIR,
+    VAULT, STUDY_DIR, THEME_PALETTE,
     _subject_exists, _resolve_vault_path, _find_original, _has_original,
     _list_entries, _get_originals_set, _count_md_files, _count_objects, _infer_object_type,
     _ensure_object_meta, slugify, run_markitdown, parse_multipart,
@@ -29,7 +29,7 @@ def handle_subjects(handler):
                 continue
             if not os.path.isdir(os.path.join(subs_dir, name)):
                 continue
-            theme = _read_theme_from_vault(name) or {"primary": "#6b7db3", "secondary": "#8fa4cc", "accent": "#aec0de", "icon": "\U0001f4da"}
+            theme = _read_theme_from_vault(name) or (dict(THEME_PALETTE[0]) if THEME_PALETTE else {"primary": "#6b7db3", "secondary": "#8fa4cc", "accent": "#aec0de", "icon": "\U0001f4da"})
             subjects.append({
                 "name": name,
                 "theme": theme,
