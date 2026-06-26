@@ -18,6 +18,7 @@ from .files import (
     handle_object_content,
     handle_upload,
     handle_delete_file,
+    handle_delete_object,
     handle_search,
     handle_original,
     handle_pending_state,
@@ -62,6 +63,7 @@ def register(handler_class):
     handler_class._api_object_content = lambda self, params: handle_object_content(self, params)
     handler_class._api_upload = lambda self: handle_upload(self)
     handler_class._api_delete_file = lambda self: handle_delete_file(self)
+    handler_class._api_delete_object = lambda self: handle_delete_object(self)
     handler_class._api_search = lambda self, params: handle_search(self, params)
     handler_class._api_original = lambda self, params: handle_original(self, params)
     handler_class._api_pending_state = lambda self, params: handle_pending_state(self, params)

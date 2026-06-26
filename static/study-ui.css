@@ -109,7 +109,7 @@
 .tree-item-action:hover{
   background:var(--surface-2);color:var(--text);
   box-shadow:0 0 6px rgba(99,102,241,0.1)}
-.tree-item-action.delete-btn:hover{color:#f87171}
+.tree-item-action.delete-btn:hover,.tree-item-delete:hover{color:#f87171}
 .tree-item-action svg{display:block}
 
 /* Updated preview toolbar buttons with standard glow */

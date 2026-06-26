@@ -182,6 +182,57 @@ def handle_object_content(handler, params):
     handler._send_file(abs_path, "text/html; charset=utf-8")
 
 
+def handle_delete_object(handler):
+    """POST /api/delete-object — delete a study object (.html + .meta.json)."""
+    try:
+        cl = int(handler.headers.get("Content-Length", 0))
+        if cl > 1_000_000:
+            handler._send_json(413, {"error": "body_too_large", "detail": "JSON body exceeds 1 MB limit"})
+            return
+        body = json.loads(handler.rfile.read(cl).decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        handler._send_json(400, {"error": "invalid_body", "detail": "Expected JSON body"})
+        return
+
+    rel_path = body.get("path", "")
+    if not rel_path:
+        handler._send_json(400, {"error": "missing_path", "detail": "path is required"})
+        return
+
+    abs_path = _resolve_vault_path(rel_path)
+    if abs_path is None:
+        handler._send_json(403, {"error": "path_traversal", "detail": "Path traversal detected"})
+        return
+
+    parts = rel_path.split("/")
+    if len(parts) < 3 or parts[0] != "objects":
+        handler._send_json(403, {"error": "forbidden", "detail": "Only objects/ paths can be deleted"})
+        return
+
+    if not rel_path.endswith(".html"):
+        handler._send_json(400, {"error": "not_an_html_file", "detail": "Only .html files can be deleted"})
+        return
+
+    if not os.path.isfile(abs_path):
+        handler._send_json(404, {"error": "not_found", "detail": "Object file not found"})
+        return
+
+    subject = parts[1]
+    filename = os.path.basename(rel_path)
+
+    os.remove(abs_path)
+    deleted = [f"objects/{subject}/{filename}"]
+
+    meta_path = abs_path + ".meta.json"
+    if os.path.isfile(meta_path):
+        os.remove(meta_path)
+        deleted.append(f"objects/{subject}/{filename}.meta.json")
+
+    _log_action(subject, "DELETE_OBJECT", filename)
+
+    handler._send_json(200, {"subject": subject, "filename": filename, "deleted": deleted})
+
+
 def handle_upload(handler):
     """POST /api/upload — multipart upload with MarkItDown conversion + auto-ingest."""
     if not try_acquire_upload_lock():

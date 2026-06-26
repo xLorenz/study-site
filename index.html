@@ -578,6 +578,8 @@ const TYPE_BADGES = {
  mindmap: { label: 'MINDMAP', color: '#a78bfa' },
  formula: { label: 'FORMULA', color: '#f59e0b' },
  flash: { label: 'FLASH', color: '#22c55e' },
+ exam: { label: 'EXAM', color: '#fb923c' },
+ solutions: { label: 'SOLUTIONS', color: '#2dd4bf' },
  unknown: { label: '?', color: '#505068' },
 };
 
@@ -717,10 +719,12 @@ async function reloadObjectTree(subject, highlightPath) {
       const badgeLabel = tag ? tag.toUpperCase() : '?';
       const badgeColor = tag ? tagColor(tag) : TYPE_BADGES.unknown.color;
       const path = encodeURIComponent(obj.path);
-      return '<div class="tree-item" onclick="onObjectClick(\'' + obj.path + '\', this)">' +
+      const objPath = obj.path;
+      return '<div class="tree-item" onclick="onObjectClick(\'' + objPath + '\', this)">' +
         '<span class="type-badge" style="background:' + badgeColor + '">' + badgeLabel + '</span>' +
         '<span class="tree-item-name" title="' + obj.name + '">' + obj.name + '</span>' +
         '<a href="/api/object-content?path=' + path + '" download="' + obj.name + '" class="tree-item-action" onclick="event.stopPropagation()" title="Download">⬇</a>' +
+        '<span class="tree-item-action tree-item-delete" onclick="event.stopPropagation(); deleteObject(\'' + objPath + '\')" title="Delete object">✕</span>' +
         '</div>';
     }).join('');
     if (highlightPath) _highlightTreeItemByPath(highlightPath);
@@ -737,6 +741,31 @@ function onObjectClick(path, el) {
   el.classList.add('tree-item-highlight');
   _activeTreeItem = el;
   showObject(path);
+}
+
+// ── Delete object from tree ──
+async function deleteObject(path) {
+  const name = path.split('/').pop();
+  if (!confirm('Delete "' + name + '"?')) return;
+  try {
+    const res = await fetch('/api/delete-object', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Delete failed');
+    // If the deleted object was open, hide the frame
+    if (currentPreviewPath === path) {
+      document.getElementById('object-frame').style.display = 'none';
+      document.getElementById('main-placeholder').style.display = '';
+      currentPreviewPath = '';
+    }
+    reloadObjectTree(currentSubject);
+    showToast('Deleted ' + name, 'success');
+  } catch (e) {
+    showToast('✗ ' + e.message, 'danger');
+  }
 }
 
 // Find and highlight tree item by path (for auto-open from AI creation)

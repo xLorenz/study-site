@@ -65,6 +65,33 @@ def get_tool_definitions():
         {
             "type": "function",
             "function": {
+                "name": "update_study_object",
+                "description": "Update an existing HTML study object's content and/or tag. "
+                               "Use this to fix errors, improve content, or retag an existing object. "
+                               "Overwrites the file in-place (no versioning).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Existing filename (e.g. 'exam-1.html'). Must match exactly."
+                        },
+                        "html_content": {
+                            "type": "string",
+                            "description": "Optional new HTML content to overwrite the file."
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "Optional new tag (max 7 lowercase letters only). Overwrites the existing tag."
+                        }
+                    },
+                    "required": ["filename"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "write_study_video",
                 "description": "Create an animated manim video explaining a concept. "
                                "Use this when asked for animated explanations, math/algorithm visualizations, "
@@ -169,6 +196,10 @@ def get_tool_definitions():
                         "skill_name": {
                             "type": "string",
                             "description": "Skill directory name (e.g. 'manim-video', 'study-professor', 'study-object-templates')"
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Optional sub-path within the skill directory (e.g. 'templates/01-mock-exam.md'). If omitted, reads SKILL.md."
                         }
                     },
                     "required": ["skill_name"]
@@ -283,6 +314,14 @@ def write_study_object(subject, filename, html_content, tag=None):
         target_path = os.path.join(objects_dir, f"{base}-v{version}{ext}")
         real_target = os.path.realpath(target_path)
 
+    # Basic HTML well-formedness check
+    warnings = []
+    content_lower = html_content.lower()
+    if "<!doctype html" not in content_lower and "<html" not in content_lower:
+        warnings.append("Missing DOCTYPE or <html> tag")
+    if "</html>" not in content_lower:
+        warnings.append("Missing closing </html> tag")
+
     with open(real_target, "w", encoding="utf-8") as f:
         f.write(html_content)
 
@@ -292,11 +331,64 @@ def write_study_object(subject, filename, html_content, tag=None):
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump({"tag": tag, "created": datetime.now(timezone.utc).isoformat()}, f)
 
-    return {
+    result = {
         "path": os.path.relpath(real_target, VAULT_DIR),
         "filename": os.path.basename(real_target),
         "subject": subject,
         "tag": tag
+    }
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
+def update_study_object(subject, filename, html_content=None, tag=None):
+    """Update an existing study object's content and/or tag in-place."""
+    filename = _normalize_filename(filename)
+    if not filename.endswith(".html"):
+        filename += ".html"
+
+    if tag:
+        tag = tag.strip().lower()
+        tag = re.sub(r'[^a-z]', '', tag)[:7]
+        if not tag:
+            tag = None
+
+    objects_dir = os.path.join(VAULT_DIR, "objects", subject)
+    target_path = os.path.join(objects_dir, filename)
+
+    real_objects_dir = os.path.realpath(objects_dir)
+    real_target = os.path.realpath(target_path)
+    if not real_target.startswith(real_objects_dir + os.sep):
+        return {"error": "Path traversal prevented"}
+
+    if not os.path.isfile(real_target):
+        return {"error": f"Object '{filename}' not found in subject '{subject}'"}
+
+    if html_content is not None:
+        with open(real_target, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+    if tag is not None:
+        meta_path = os.path.join(objects_dir, f"{filename}.meta.json")
+        existing = {}
+        if os.path.isfile(meta_path):
+            try:
+                with open(meta_path, encoding="utf-8") as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        meta = {"tag": tag, "created": existing.get("created", datetime.now(timezone.utc).isoformat())}
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f)
+
+    return {
+        "path": os.path.relpath(real_target, VAULT_DIR),
+        "filename": os.path.basename(real_target),
+        "subject": subject,
+        "tag": tag if tag is not None else None,
+        "content_updated": html_content is not None,
+        "tag_updated": tag is not None,
     }
 
 
@@ -509,10 +601,13 @@ def write_study_video(subject, filename, script, scene_name, tag=None):
     }
 
 
-def read_skill(skill_name):
-    """Read a skill from chat/skills/ directory."""
+def read_skill(skill_name, path=None):
+    """Read a skill from chat/skills/ directory. Optional sub-path for reading template files."""
     skills_dir = os.path.join(STUDY_DIR, "chat", "skills")
-    skill_path = os.path.join(skills_dir, skill_name, "SKILL.md")
+    if path:
+        skill_path = os.path.join(skills_dir, skill_name, path)
+    else:
+        skill_path = os.path.join(skills_dir, skill_name, "SKILL.md")
     if os.path.isfile(skill_path):
         with open(skill_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -521,6 +616,8 @@ def read_skill(skill_name):
             if end != -1:
                 content = content[end + 3:].strip()
         return content
+    if path:
+        return f"<!-- Skill '{skill_name}/{path}' not found in chat/skills/ -->"
     return f"<!-- Skill '{skill_name}' not found in chat/skills/ -->"
 
 
@@ -573,6 +670,16 @@ def execute_tool(subject, tool_call_name, args_json_str):
             return {"error": "Missing 'filename' or 'html_content' argument"}
         return write_study_object(subject, filename, html_content, tag)
 
+    elif tool_call_name == "update_study_object":
+        filename = args.get("filename", "")
+        html_content = args.get("html_content", None)
+        tag = args.get("tag", None)
+        if not filename:
+            return {"error": "Missing 'filename' argument"}
+        if html_content is None and tag is None:
+            return {"error": "Provide 'html_content' and/or 'tag' to update"}
+        return update_study_object(subject, filename, html_content, tag)
+
     elif tool_call_name == "write_study_video":
         filename = args.get("filename", "")
         script = args.get("script", "")
@@ -603,9 +710,10 @@ def execute_tool(subject, tool_call_name, args_json_str):
 
     elif tool_call_name == "read_skill":
         skill_name = args.get("skill_name", "")
+        path = args.get("path", None)
         if not skill_name:
             return {"error": "Missing 'skill_name' argument"}
-        return read_skill(skill_name)
+        return read_skill(skill_name, path)
 
     elif tool_call_name == "write_design_notes":
         filename = args.get("filename", "")

@@ -205,6 +205,8 @@ class StudyHandler(http.server.BaseHTTPRequestHandler):
                 self._api_create_subject()
             elif path == "/api/delete-subject":
                 self._api_delete_subject()
+            elif path == "/api/delete-object":
+                self._api_delete_object()
             else:
                 self._send_json(405, {"error": "method_not_allowed", "detail": f"POST not allowed on {path}"})
         except Exception as e:
