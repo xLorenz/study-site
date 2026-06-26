@@ -5,8 +5,8 @@ import os
 import shutil
 
 from ._base import (
-    _subject_exists, _normalize_name, _hue_rotate_hex, _log_action,
-    _read_theme_from_vault, _get_last_theme_primary,
+    _subject_exists, _normalize_name, _generate_muted_theme, _log_action,
+    _get_last_theme_primary,
     get_ingest_state,
 )
 
@@ -238,21 +238,18 @@ def handle_create_subject(handler):
     with open(os.path.join(raw_dir, ".ingested.json"), "w", encoding="utf-8") as f:
         json.dump({"ingested": [], "last_ingested": None}, f)
 
-    # Generate rotated theme colors from last subject's primary
-    last_primary = _get_last_theme_primary()
-    primary = _hue_rotate_hex(last_primary, 40)
-    secondary = _hue_rotate_hex(primary, 20)
-    accent = _hue_rotate_hex(primary, 10)
+    # Generate muted theme colors from last subject's primary
+    theme = _generate_muted_theme(_get_last_theme_primary())
 
     # Write _theme.md inside the vault (model-readable via read_vault_file)
     theme_md_path = os.path.join(subj_dir, "references", "_theme.md")
     os.makedirs(os.path.dirname(theme_md_path), exist_ok=True)
     with open(theme_md_path, "w", encoding="utf-8") as f:
         f.write(f"# {display_name} — Theme\n\n"
-                f"primary: {primary}\n"
-                f"secondary: {secondary}\n"
-                f"accent: {accent}\n"
-                f"icon: \U0001f4da\n\n"
+                f"primary: {theme['primary']}\n"
+                f"secondary: {theme['secondary']}\n"
+                f"accent: {theme['accent']}\n"
+                f"icon: {theme['icon']}\n\n"
                 f"Use these colors for title gradients, section headings, "
                 f"and alert borders in study objects.\n")
 
