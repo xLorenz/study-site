@@ -2205,11 +2205,11 @@ let settleFrameCount = 0;         // Frames since all nodes settled
 let hasZoomedToFit = false;       // Whether we've auto-fitted once
 
 // Physics constants (balanced Obsidian-style spread)
-const REPULSION = 25000;
-const SPRING_LENGTH = 240;
+const REPULSION = 60000;
+const SPRING_LENGTH = 460;
 const SPRING_K = 0.003;
-const CENTER_GRAVITY = 0.0015;
-const DAMPING = 0.85;
+const CENTER_GRAVITY = 0.0005;
+const DAMPING = 0.72;
 const MIN_VELOCITY = 0.005;
 const COLLISION_RADIUS = 1.4;
 const SETTLE_VELOCITY = 0.1;
@@ -2383,7 +2383,7 @@ function simulationStep() {
 
         // Size-proportional Coulomb repulsion (clamped to prevent nuke-and-oscillate)
         const repMag = REPULSION * (a.radius + b.radius) / 30;
-        const force = Math.min(repMag / (dist * dist), 50);
+        const force = Math.min(repMag / (dist * dist), 35);
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         if (!a.pinned) { a.vx -= fx; a.vy -= fy; }
