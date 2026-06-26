@@ -5,8 +5,8 @@ import os
 import shutil
 
 from ._base import (
-    SUBJECT_THEMES,
     _subject_exists, _normalize_name, _hue_rotate_hex, _log_action,
+    _read_theme_from_vault, _get_last_theme_primary,
     get_ingest_state,
 )
 
@@ -238,49 +238,23 @@ def handle_create_subject(handler):
     with open(os.path.join(raw_dir, ".ingested.json"), "w", encoding="utf-8") as f:
         json.dump({"ingested": [], "last_ingested": None}, f)
 
-    themes_path = os.path.join(_study_dir(), "subject_themes.json")
-    if os.path.isfile(themes_path):
-        try:
-            with open(themes_path, encoding="utf-8") as f:
-                themes = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            themes = {"_default": {"primary": "#6366f1", "secondary": "#a78bfa", "accent": "#22d3ee", "icon": "\U0001f4da"}}
+    # Generate rotated theme colors from last subject's primary
+    last_primary = _get_last_theme_primary()
+    primary = _hue_rotate_hex(last_primary, 40)
+    secondary = _hue_rotate_hex(primary, 20)
+    accent = _hue_rotate_hex(primary, 10)
 
-        subjects = {k: v for k, v in themes.items() if k != "_default"}
-        if subjects:
-            last_primary = list(subjects.values())[-1]["primary"]
-        else:
-            last_primary = "#6366f1"
-
-        primary = _hue_rotate_hex(last_primary, 40)
-        secondary = _hue_rotate_hex(primary, 20)
-        accent = _hue_rotate_hex(primary, 10)
-
-        themes[normalized] = {
-            "primary": primary,
-            "secondary": secondary,
-            "accent": accent,
-            "icon": "\U0001f4da",
-        }
-
-        with open(themes_path, "w", encoding="utf-8") as f:
-            json.dump(themes, f, indent=2)
-
-        SUBJECT_THEMES.clear()
-        SUBJECT_THEMES.update(themes)
-
-        # Write _theme.md inside the vault (model-readable via read_vault_file)
-        theme_md_path = os.path.join(subj_dir, "references", "_theme.md")
-        os.makedirs(os.path.dirname(theme_md_path), exist_ok=True)
-        with open(theme_md_path, "w", encoding="utf-8") as f:
-            t = themes[normalized]
-            f.write(f"# {display_name} — Theme\n\n"
-                    f"primary: {t['primary']}\n"
-                    f"secondary: {t['secondary']}\n"
-                    f"accent: {t['accent']}\n"
-                    f"icon: {t['icon']}\n\n"
-                    f"Use these colors for title gradients, section headings, "
-                    f"and alert borders in study objects.\n")
+    # Write _theme.md inside the vault (model-readable via read_vault_file)
+    theme_md_path = os.path.join(subj_dir, "references", "_theme.md")
+    os.makedirs(os.path.dirname(theme_md_path), exist_ok=True)
+    with open(theme_md_path, "w", encoding="utf-8") as f:
+        f.write(f"# {display_name} — Theme\n\n"
+                f"primary: {primary}\n"
+                f"secondary: {secondary}\n"
+                f"accent: {accent}\n"
+                f"icon: \U0001f4da\n\n"
+                f"Use these colors for title gradients, section headings, "
+                f"and alert borders in study objects.\n")
 
     vault_idx = os.path.join(_vault(), "index.md")
     with open(vault_idx, "a", encoding="utf-8") as f:
@@ -330,18 +304,7 @@ def handle_delete_subject(handler):
     if os.path.isfile(chat_file):
         os.remove(chat_file)
 
-    themes_path = os.path.join(_study_dir(), "subject_themes.json")
-    if os.path.isfile(themes_path):
-        try:
-            with open(themes_path, encoding="utf-8") as f:
-                themes = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            themes = {}
-        themes.pop(normalized, None)
-        with open(themes_path, "w", encoding="utf-8") as f:
-            json.dump(themes, f, indent=2)
-        SUBJECT_THEMES.clear()
-        SUBJECT_THEMES.update(themes)
+    # _theme.md is inside subj_dir, already removed by rmtree above
 
     vault_idx = os.path.join(_vault(), "index.md")
     if os.path.isfile(vault_idx):

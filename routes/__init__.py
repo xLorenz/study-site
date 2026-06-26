@@ -80,11 +80,11 @@ def register(handler_class):
     handler_class._api_regenerate_index = lambda self, params: handle_regenerate_index(self, params)
 
 
-def setup_routes(handler_class, study_dir: str, vault: str, cache_dir: str, subject_themes: dict, cfg: dict,
+def setup_routes(handler_class, study_dir: str, vault: str, cache_dir: str, cfg: dict,
                  nim_api_key: str, opencode_zen_api_key: str, nim_base_url: str, host: str, port: int):
     """Initialize shared config in _base module and patch route modules with correct values."""
     from ._base import set_config
-    set_config(study_dir, vault, cache_dir, subject_themes, cfg,
+    set_config(study_dir, vault, cache_dir, cfg,
                nim_api_key, opencode_zen_api_key, nim_base_url, host, port)
 
     # Patch module-level imports in all route modules (they imported stale empty strings)
@@ -92,10 +92,7 @@ def setup_routes(handler_class, study_dir: str, vault: str, cache_dir: str, subj
     for mod in [files, system, ingest, chat, admin]:
         mod.VAULT = _b.VAULT
         mod.STUDY_DIR = _b.STUDY_DIR
-        mod.SUBJECT_THEMES = _b.SUBJECT_THEMES
 
-    # Make SUBJECT_THEMES accessible via handler.SUBJECT_THEMES
     handler_class.VAULT = _b.VAULT
     handler_class.STUDY_DIR = _b.STUDY_DIR
-    handler_class.SUBJECT_THEMES = _b.SUBJECT_THEMES
     handler_class.CACHE_DIR = _b.CACHE_DIR

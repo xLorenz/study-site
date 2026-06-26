@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 """Study server — zero external dependencies. Port 8081."""
 
-import email.parser
-import email.policy
 import http.server
 import json
 import os
-import re
 import shutil
 import signal
 import socketserver
-import subprocess
 import sys
 import threading
-import time
-import unicodedata
 import urllib.parse
 import yaml
 
@@ -79,9 +73,6 @@ if not NIM_API_KEY and not OPENCODE_ZEN_API_KEY:
     print("   LLM features (chat, wiki ingest) will fail without API keys.")
 
 from routes import register, setup_routes
-
-with open(os.path.join(STUDY_DIR, "subject_themes.json")) as f:
-    SUBJECT_THEMES = json.load(f)
 
 
 class StudyHandler(http.server.BaseHTTPRequestHandler):
@@ -238,7 +229,6 @@ if __name__ == "__main__":
         study_dir=STUDY_DIR,
         vault=VAULT,
         cache_dir=CACHE_DIR,
-        subject_themes=SUBJECT_THEMES,
         cfg=CFG,
         nim_api_key=NIM_API_KEY,
         opencode_zen_api_key=OPENCODE_ZEN_API_KEY,

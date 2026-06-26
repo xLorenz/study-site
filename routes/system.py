@@ -6,9 +6,9 @@ import re
 from datetime import datetime, date as _date
 
 from ._base import (
-    VAULT, STUDY_DIR, SUBJECT_THEMES, CFG,
+    VAULT, STUDY_DIR, CFG,
     _subject_exists, _resolve_vault_path, _read_node_meta, _parse_relationships,
-    _regenerate_index, _log_action,
+    _regenerate_index, _log_action, _build_themes_dict,
 )
 
 
@@ -126,8 +126,8 @@ def handle_regenerate_index(handler, params):
 
 
 def handle_themes(handler):
-    """GET /api/themes — return SUBJECT_THEMES."""
-    handler._send_json(200, {"themes": SUBJECT_THEMES})
+    """GET /api/themes — return themes from vault."""
+    handler._send_json(200, {"themes": _build_themes_dict()})
 
 
 def handle_skill(handler, skill_name):

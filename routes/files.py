@@ -10,6 +10,7 @@ from ._base import (
     _ensure_object_meta, slugify, run_markitdown, parse_multipart,
     _read_ingested, _read_pending_deletes, _write_pending_deletes,
     _cascade_delete, _regenerate_index, _log_action,
+    _read_theme_from_vault,
     try_acquire_upload_lock, release_upload_lock,
     get_ingest_state, set_ingest_running,
 )
@@ -28,7 +29,7 @@ def handle_subjects(handler):
                 continue
             if not os.path.isdir(os.path.join(subs_dir, name)):
                 continue
-            theme = handler.SUBJECT_THEMES.get(name, handler.SUBJECT_THEMES.get("_default", {}))
+            theme = _read_theme_from_vault(name) or {"primary": "#6366f1", "secondary": "#a78bfa", "accent": "#22d3ee", "icon": "\U0001f4da"}
             subjects.append({
                 "name": name,
                 "theme": theme,

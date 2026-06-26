@@ -41,7 +41,6 @@ _upload_lock = threading.Lock()
 STUDY_DIR = ""
 VAULT = ""
 CACHE_DIR = ""
-SUBJECT_THEMES = {}
 CFG = {}
 NIM_API_KEY = ""
 OPENCODE_ZEN_API_KEY = ""
@@ -55,7 +54,6 @@ def set_config(
     study_dir: str,
     vault: str,
     cache_dir: str,
-    subject_themes: dict,
     cfg: dict,
     nim_api_key: str,
     opencode_zen_api_key: str,
@@ -64,19 +62,71 @@ def set_config(
     port: int,
 ):
     """Inject configuration from server.py."""
-    global STUDY_DIR, VAULT, CACHE_DIR, SUBJECT_THEMES, CFG
+    global STUDY_DIR, VAULT, CACHE_DIR, CFG
     global NIM_API_KEY, OPENCODE_ZEN_API_KEY, NIM_BASE_URL, HOST, PORT
 
     STUDY_DIR = study_dir
     VAULT = vault
     CACHE_DIR = cache_dir
-    SUBJECT_THEMES = subject_themes
     CFG = cfg
     NIM_API_KEY = nim_api_key
     OPENCODE_ZEN_API_KEY = opencode_zen_api_key
     NIM_BASE_URL = nim_base_url
     HOST = host
     PORT = port
+
+
+# ─── Vault-based theme helpers ───
+
+def _parse_theme_md(content: str) -> dict:
+    """Parse a _theme.md file's key: value lines into a dict."""
+    theme = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if ":" in line and not line.startswith("#"):
+            k, _, v = line.partition(":")
+            theme[k.strip().lower()] = v.strip()
+    return theme
+
+
+def _read_theme_from_vault(subject: str) -> dict:
+    """Read subject theme from vault references/_theme.md. Returns dict or empty."""
+    theme_path = os.path.join(VAULT, "subjects", subject, "references", "_theme.md")
+    if os.path.isfile(theme_path):
+        try:
+            with open(theme_path, encoding="utf-8") as f:
+                return _parse_theme_md(f.read())
+        except OSError:
+            pass
+    return {}
+
+
+def _build_themes_dict() -> dict:
+    """Scan all vault subjects for _theme.md and build a full themes dict."""
+    themes = {"_default": {"primary": "#6366f1", "secondary": "#a78bfa", "accent": "#22d3ee", "icon": "\U0001f4da"}}
+    subs_dir = os.path.join(VAULT, "subjects")
+    if os.path.isdir(subs_dir):
+        for name in sorted(os.listdir(subs_dir)):
+            if name.startswith("."):
+                continue
+            if not os.path.isdir(os.path.join(subs_dir, name)):
+                continue
+            theme = _read_theme_from_vault(name)
+            if theme:
+                themes[name] = theme
+    return themes
+
+
+def _get_last_theme_primary() -> str:
+    """Get the primary color of the last-created subject for color rotation."""
+    subs_dir = os.path.join(VAULT, "subjects")
+    if not os.path.isdir(subs_dir):
+        return "#6366f1"
+    subjects = sorted(s for s in os.listdir(subs_dir) if not s.startswith(".") and os.path.isdir(os.path.join(subs_dir, s)))
+    if not subjects:
+        return "#6366f1"
+    theme = _read_theme_from_vault(subjects[-1])
+    return theme.get("primary", "#6366f1")
 
 
 # ─── Shared utilities ───
