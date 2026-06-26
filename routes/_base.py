@@ -103,7 +103,7 @@ def _read_theme_from_vault(subject: str) -> dict:
 
 def _build_themes_dict() -> dict:
     """Scan all vault subjects for _theme.md and build a full themes dict."""
-    themes = {"_default": {"primary": "#7c8aa0", "secondary": "#9aa9b8", "accent": "#b0c4d8", "icon": "\U0001f4da"}}
+    themes = {"_default": {"primary": "#6b7db3", "secondary": "#8fa4cc", "accent": "#aec0de", "icon": "\U0001f4da"}}
     subs_dir = os.path.join(VAULT, "subjects")
     if os.path.isdir(subs_dir):
         for name in sorted(os.listdir(subs_dir)):
@@ -121,12 +121,12 @@ def _get_last_theme_primary() -> str:
     """Get the primary color of the last-created subject for color rotation."""
     subs_dir = os.path.join(VAULT, "subjects")
     if not os.path.isdir(subs_dir):
-        return "#7c8aa0"
+        return "#6b7db3"
     subjects = sorted(s for s in os.listdir(subs_dir) if not s.startswith(".") and os.path.isdir(os.path.join(subs_dir, s)))
     if not subjects:
-        return "#7c8aa0"
+        return "#6b7db3"
     theme = _read_theme_from_vault(subjects[-1])
-    return theme.get("primary", "#7c8aa0")
+    return theme.get("primary", "#6b7db3")
 
 
 # ─── Shared utilities ───
@@ -159,13 +159,13 @@ def _hue_rotate_hex(hex_color: str, degrees: int) -> str:
 
 
 def _generate_muted_theme(prev_primary: str) -> dict:
-    """Generate a muted color theme from a previous subject's primary."""
+    """Generate a color theme from a previous subject's primary (moderate saturation)."""
     h, s, v = _hex_to_hsv(prev_primary)
     primary_h = (h + 40 / 360) % 1.0
     return {
-        "primary": _hsv_to_hex(primary_h, 0.35, 0.75),
-        "secondary": _hsv_to_hex((primary_h + 20 / 360) % 1.0, 0.30, 0.85),
-        "accent": _hsv_to_hex((primary_h + 10 / 360) % 1.0, 0.40, 0.65),
+        "primary": _hsv_to_hex(primary_h, 0.55, 0.75),
+        "secondary": _hsv_to_hex((primary_h + 20 / 360) % 1.0, 0.50, 0.85),
+        "accent": _hsv_to_hex((primary_h + 10 / 360) % 1.0, 0.60, 0.65),
         "icon": "\U0001f4da",
     }
 

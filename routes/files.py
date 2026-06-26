@@ -29,7 +29,7 @@ def handle_subjects(handler):
                 continue
             if not os.path.isdir(os.path.join(subs_dir, name)):
                 continue
-            theme = _read_theme_from_vault(name) or {"primary": "#7c8aa0", "secondary": "#9aa9b8", "accent": "#b0c4d8", "icon": "\U0001f4da"}
+            theme = _read_theme_from_vault(name) or {"primary": "#6b7db3", "secondary": "#8fa4cc", "accent": "#aec0de", "icon": "\U0001f4da"}
             subjects.append({
                 "name": name,
                 "theme": theme,
