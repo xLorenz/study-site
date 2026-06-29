@@ -2,10 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-*.hermes-tmp*
-*.pre-rewrite-backup
 *.bak
-study-plan/
 .env
 
 .cache/
