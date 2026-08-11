@@ -65,6 +65,24 @@ def get_tool_definitions():
         {
             "type": "function",
             "function": {
+                "name": "read_study_object",
+                "description": "Read an existing HTML study object's content from the subject's objects/ directory. "
+                               "Use this BEFORE calling update_study_object to see the current content. "
+                               "If 'filename' is omitted, lists the existing objects for the subject.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Optional existing object filename (e.g. 'exam-1.html'). If omitted, returns a list of all objects."
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "update_study_object",
                 "description": "Update an existing HTML study object's content and/or tag. "
                                "Use this to fix errors, improve content, or retag an existing object. "
@@ -340,6 +358,69 @@ def write_study_object(subject, filename, html_content, tag=None):
     if warnings:
         result["warnings"] = warnings
     return result
+
+
+def read_study_object(subject, filename=None):
+    """Read an existing study object's HTML content (or list objects)."""
+    objects_dir = os.path.join(VAULT_DIR, "objects", subject)
+    real_objects_dir = os.path.realpath(objects_dir)
+
+    if not filename:
+        # List mode
+        if not os.path.isdir(objects_dir):
+            return {"objects": [], "subject": subject}
+        objects = []
+        for fname in sorted(os.listdir(objects_dir)):
+            if fname.startswith(".") or not fname.endswith(".html") or fname.endswith(".meta.json"):
+                continue
+            fpath = os.path.join(objects_dir, fname)
+            tag = None
+            meta_path = f"{fpath}.meta.json"
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, encoding="utf-8") as f:
+                        tag = json.load(f).get("tag")
+                except (json.JSONDecodeError, OSError):
+                    pass
+            objects.append({
+                "filename": fname,
+                "tag": tag,
+                "size_bytes": os.path.getsize(fpath),
+            })
+        return {"objects": objects, "subject": subject}
+
+    base = _normalize_filename(os.path.basename(filename))
+    if not base.endswith(".html"):
+        base += ".html"
+
+    target_path = os.path.join(objects_dir, base)
+    real_target = os.path.realpath(target_path)
+    if not real_target.startswith(real_objects_dir + os.sep):
+        return {"error": "Path traversal prevented"}
+
+    if not os.path.isfile(real_target):
+        return {"error": f"Object '{base}' not found in subject '{subject}'. Use read_study_object without filename to list existing objects."}
+
+    with open(real_target, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    tag = None
+    meta_path = f"{real_target}.meta.json"
+    if os.path.isfile(meta_path):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                tag = json.load(f).get("tag")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {
+        "path": os.path.relpath(real_target, VAULT_DIR),
+        "filename": base,
+        "subject": subject,
+        "tag": tag,
+        "size_bytes": os.path.getsize(real_target),
+        "content": content,
+    }
 
 
 def update_study_object(subject, filename, html_content=None, tag=None):
@@ -669,6 +750,10 @@ def execute_tool(subject, tool_call_name, args_json_str):
         if not filename or not html_content:
             return {"error": "Missing 'filename' or 'html_content' argument"}
         return write_study_object(subject, filename, html_content, tag)
+
+    elif tool_call_name == "read_study_object":
+        filename = args.get("filename") or None
+        return read_study_object(subject, filename)
 
     elif tool_call_name == "update_study_object":
         filename = args.get("filename", "")
