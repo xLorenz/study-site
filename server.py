@@ -244,7 +244,10 @@ if __name__ == "__main__":
 
     def _shutdown(signum, frame):
         print("\nShutting down gracefully...")
-        httpd.shutdown()
+        # shutdown() blocks until serve_forever() returns, so it must run on a
+        # separate thread — calling it directly in the signal handler (main
+        # thread) deadlocks against serve_forever().
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
