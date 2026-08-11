@@ -43,12 +43,9 @@ Long-form comprehensive multi-topic exam with per-exercise show/hide answer butt
 
 ## CSS framework
 
+Use the shared palette from the SKILL.md **Common Patterns** section (backgrounds, text, borders, surfaces). Set `--primary`, `--secondary`, `--accent` from `references/_theme.md` (primary/secondary/accent) — do not hardcode fixed defaults. Template-specific additions only:
 ```css
 :root {
-  --bg: #0a0a0f; --surface: #111118; --surface2: #18181c; --surface3: #1f1f2a;
-  --border: #1e1e2a; --border2: #2a2a3a;
-  --text: #e2e2e8; --text2: #b0b0c0; --text3: #6a6a7a;
-  --primary: #4fc1ff; --secondary: #a78bfa; --accent: #2dd4bf;
   --gold: #fbbf24; --green: #4ade80; --red: #f87171; --orange: #fb923c;
   --radius: 12px; --radius-sm: 8px;
 }

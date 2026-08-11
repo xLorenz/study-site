@@ -6,7 +6,7 @@ description: "Canonical reference for the 7 HTML template formats (static mock e
 
 # Study Object Templates
 
-This skill describes **7 canonical HTML template formats**. The `study-professor` skill points here when generating study objects — **always load this skill** (`skill_view(name='study-object-templates')`) before generating any new study object, then read the specific template file from `templates/`.
+This skill describes **7 canonical HTML template formats**. The `study-professor` skill points here when generating study objects — **always load this skill** (`read_skill(skill_name='study-object-templates')`) before generating any new study object, then read the specific template file from `templates/`.
 
 ## Available Templates
 
@@ -20,7 +20,7 @@ This skill describes **7 canonical HTML template formats**. The `study-professor
 | 6 | Formula Deck | `templates/06-formula-deck.md` | None (static) | `formula` |
 | 7 | Interactive Exam (Toggle Answers) | `templates/07-interactive-exam.md` | Minimal JS show/hide | `exam` |
 
-To load a template: `skill_view(name='study-object-templates', path='templates/01-mock-exam.md')`
+To load a template: `read_skill(skill_name='study-object-templates', path='templates/01-mock-exam.md')`
 
 ---
 

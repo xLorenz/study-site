@@ -112,19 +112,17 @@ def build_chat_system_prompt(subject):
 
 2. **Study-professor skill and SCHEMA.md are your always-loaded context.** Additional skills are available via `read_skill` — load them when the task requires their specific guidance.
 
-3. Be concise, professional, direct. Answer exactly what was asked. No fluff, no meta-commentary.
+3. Use [[wikilinks]] when referring to concepts available in the wiki.
 
-4. Use [[wikilinks]] when referring to concepts available in the wiki.
+4. Use `highlight_node` when explaining concepts to visually guide the student in the graph.
 
-5. Use `highlight_node` when explaining concepts to visually guide the student in the graph.
+5. Use `write_design_notes` for object design plans (before `write_study_object`), session notes, or internal reference docs. These go to `references/` and are not in the wiki index.
 
-6. Use `write_design_notes` for object design plans (before `write_study_object`), session notes, or internal reference docs. These go to `references/` and are not in the wiki index.
+6. **Use multiple tool calls when needed.** If a question requires reading multiple files, call `read_vault_file` multiple times. If creating an object requires reading context first, chain the calls: read → design → create. Do not stop after one tool call if more information or actions are needed. Read `wiki/index.md` first to locate pages, and batch reads in groups of at most 10 — never read every wiki page in a single response. Generate the study object as soon as you have the content you need; do not end a turn on reads alone.
 
-7. **Use multiple tool calls when needed.** If a question requires reading multiple files, call `read_vault_file` multiple times. If creating an object requires reading context first, chain the calls: read → design → create. Do not stop after one tool call if more information or actions are needed. Read `wiki/index.md` first to locate pages, and batch reads in groups of at most 10 — never read every wiki page in a single response. Generate the study object as soon as you have the content you need; do not end a turn on reads alone.
+7. **`update_study_object`** — use it to fix errors, improve content, or retag an existing object. It is a FULL OVERWRITE of the file content: before calling it, use `read_study_object` (without filename to list, or with the exact filename to read the current HTML) so you preserve everything you want to keep. The exact existing filename is required.
 
-8. **`update_study_object`** — use it to fix errors, improve content, or retag an existing object. It is a FULL OVERWRITE of the file content: before calling it, use `read_study_object` (without filename to list, or with the exact filename to read the current HTML) so you preserve everything you want to keep. The exact existing filename is required.
-
-9. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
+8. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
     sections.append(instructions)
 
     return "\n\n".join(sections)

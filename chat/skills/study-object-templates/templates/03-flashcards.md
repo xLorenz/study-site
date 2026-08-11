@@ -63,12 +63,11 @@ const state = {
 ```
 
 ## CSS custom properties
+
+Use the shared palette from the SKILL.md **Common Patterns** section (backgrounds, text, borders, surfaces) and set the accent from `references/_theme.md`. Template-specific additions only:
 ```css
 :root {
-  --bg: #0a0a0f; --surface: #111118; --surface2: #181822; --surface3: #1f1f2c;
-  --border: #1e1e2a; --border2: #2a2a3a;
-  --text: #e2e2ec; --text2: #b0b0c0; --text3: #6a6a7a;
-  --accent: #a78bfa; --accent2: #7c3aed;
+  --accent2: #7c3aed;
   --gold: #fbbf24; --green: #4ade80; --red: #f87171;
   --blue: #4fc1ff; --orange: #fb923c; --pink: #f472b6; --teal: #2dd4bf;
   --radius: 14px; --radius-sm: 8px;
@@ -77,7 +76,7 @@ const state = {
 ```
 
 ## Hard mode differences
-- Accent: `#fb923c` (orange) instead of `#a78bfa` (purple)
+- Accent: orange (`#fb923c`) instead of the theme accent
 - Added `.badge-hard` element with "HARD MODE" label
 - Header max-width: 700px (vs 640px)
 - Content is harder/different questions but same data format

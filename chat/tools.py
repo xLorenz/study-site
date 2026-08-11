@@ -205,9 +205,11 @@ def get_tool_definitions():
             "type": "function",
             "function": {
                 "name": "read_skill",
-                "description": "Read a skill definition from the chat/skills/ directory. "
-                               "Use this to load creative/technical guidelines before generating content. "
-                               "Available skills: manim-video, study-professor, study-object-templates.",
+                "description": "Read a skill definition from the chat/skills/ directory. Load a skill BEFORE generating content it governs — it contains the working conventions. "
+                               "When to load each: 'study-professor' (persona; always loaded already, no need), "
+                               "'study-object-templates' — load whenever the user asks for ANY study object (mock exam, parcial, solutions, flashcards, quiz, mind map, cheat sheet, resumen, formula deck, interactive exam), even if they spelled it differently; "
+                               "'manim-video' — load for any animated explanation or video request. "
+                               "Use the optional path to read a bundled file only (e.g. 'templates/01-mock-exam.md').",
                 "parameters": {
                     "type": "object",
                     "properties": {
