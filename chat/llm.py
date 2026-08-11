@@ -127,7 +127,7 @@ def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries
                 extra_body=extra_body,
                 temperature=1,
                 top_p=0.95,
-                max_tokens=16384,
+                max_tokens=65536,
             )
         except Exception as e:
             last_exception = e
@@ -184,6 +184,7 @@ def stream_chat(messages, model, subject):
     current_messages = list(messages)
     tools_executed = False
     skip_rounds = 0
+    reasoning_only_rounds = 0
 
     while round_num < MAX_TOOL_ROUNDS:
         try:
@@ -244,6 +245,18 @@ def stream_chat(messages, model, subject):
             if chunk.choices[0].finish_reason:
                 finish_reason = chunk.choices[0].finish_reason
 
+        # Reasoning-only round (no content, no tool calls) — nudge the model to
+        # produce a visible answer instead of giving up with nothing.
+        if not full_content and full_reasoning and not tool_calls_buffer:
+            reasoning_only_rounds += 1
+            if reasoning_only_rounds > 2:
+                break
+            current_messages.append({
+                "role": "user",
+                "content": "Continúa: escribe ahora tu respuesta visible o realiza la siguiente llamada a herramienta.",
+            })
+            continue
+
         if finish_reason == "tool_calls" and tool_calls_buffer:
             sorted_calls = sorted(tool_calls_buffer.values(), key=lambda x: x.index)
             for i, tc in enumerate(sorted_calls):
@@ -276,6 +289,7 @@ def stream_chat(messages, model, subject):
 
             round_num += 1
             tools_executed = True
+            reasoning_only_rounds = 0
             continue
 
         # If we just executed tools, continue even if finish_reason is "stop" or "length"

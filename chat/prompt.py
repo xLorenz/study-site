@@ -79,11 +79,13 @@ def build_chat_system_prompt(subject):
     tools = [
         "read_vault_file",
         "write_study_object",
+        "update_study_object",
         "write_study_video",
         "write_wiki_page",
         "mark_file_ingested",
         "highlight_node",
         "read_skill",
+        "write_design_notes",
     ]
     tool_lines = "\n".join(f"  - `{t}`" for t in tools)
     skill_lines = "\n".join(f"  - `{s}` (via `read_skill`)"
@@ -98,6 +100,7 @@ def build_chat_system_prompt(subject):
 1. **Choose the right tool for the user's request:**
    - `read_vault_file` — subject questions; prefer `wiki/` pages (including `wiki/src-{name}.md` source summaries), fall back to `raw/` only if concept not covered in wiki
    - `write_study_object` — static study aids: exams, cheat-sheets, mind maps, flashcards, formula decks, interactive exams
+   - `update_study_object` — fix errors, improve content, or retag an existing object
    - `write_study_video` — animated explanations, math/algorithm visualizations, step-by-step walkthroughs where motion adds clarity
    - `write_wiki_page` — create/update curated wiki documentation
    - `write_design_notes` — internal design docs, object blueprints, session notes (writes to references/)
@@ -115,9 +118,11 @@ def build_chat_system_prompt(subject):
 
 6. Use `write_design_notes` for object design plans (before `write_study_object`), session notes, or internal reference docs. These go to `references/` and are not in the wiki index.
 
-7. **Use multiple tool calls when needed.** If a question requires reading multiple files, call `read_vault_file` multiple times. If creating an object requires reading context first, chain the calls: read → design → create. Do not stop after one tool call if more information or actions are needed.
+7. **Use multiple tool calls when needed.** If a question requires reading multiple files, call `read_vault_file` multiple times. If creating an object requires reading context first, chain the calls: read → design → create. Do not stop after one tool call if more information or actions are needed. Read `wiki/index.md` first to locate pages, and batch reads in groups of at most 10 — never read every wiki page in a single response. Generate the study object as soon as you have the content you need; do not end a turn on reads alone.
 
-8. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
+8. **`update_study_object`** — use it to fix errors, improve content, or retag an existing object. Overwrites the file in-place; the exact existing filename is required.
+
+9. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
     sections.append(instructions)
 
     return "\n\n".join(sections)
