@@ -161,19 +161,13 @@ def _run_tool_loop(
     Returns:
         dict with keys: content, model, pages_created, tokens_used, status
     """
-    # Build ordered list of (provider, model) pairs to try
+    # Build ordered list of (provider, model) pairs to try: requested model
+    # first, then every other available model as fallback.
     from .llm import get_llm_client, get_extra_body, _is_429_error
-    primary_provider = PROVIDER_FOR_MODEL.get(model, "nvidia")
-    if primary_provider == "zen":
-        # Full fallback chain: Zen → NVIDIA v4-pro → v4-flash → glm-5.1
-        provider_chain = [
-            ("zen", model),
-            ("nvidia", "deepseek-ai/deepseek-v4-pro"),
-            ("nvidia", "deepseek-ai/deepseek-v4-flash"),
-            ("nvidia", "z-ai/glm-5.1"),
-        ]
-    else:
-        provider_chain = [("nvidia", model)]
+    provider_chain = [(PROVIDER_FOR_MODEL.get(model, "nvidia"), model)]
+    provider_chain += [
+        (PROVIDER_FOR_MODEL[m], m) for m in AVAILABLE_MODELS if m != model
+    ]
 
     tools = get_tool_definitions()
     # Ingest only needs read_vault_file, write_wiki_page, mark_file_ingested
@@ -442,7 +436,7 @@ def run_ingest(subject: str, model: str = None, on_progress: callable = None) ->
     Returns:
         dict with keys: pages_created, tokens_used, model, status, message, finished_at
     """
-    model = model or AVAILABLE_MODELS[0]
+    model = model or "z-ai/glm-5.2"
     start_time = time.time()
 
     _logger.info(f"=" * 60)

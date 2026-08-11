@@ -3,13 +3,10 @@ import os
 
 # Models by provider:
 #   deepseek-v4-flash-free  → OpenCode Zen (primary — fast, free)
-#   deepseek-ai/deepseek-v4-pro    → NVIDIA NIM (fallback)
-#   deepseek-ai/deepseek-v4-flash  → NVIDIA NIM (fallback — higher quality)
+#   z-ai/glm-5.2            → NVIDIA NIM (fallback)
 AVAILABLE_MODELS = [
-    "deepseek-v4-flash-free",       # OpenCode Zen (primary — fast, free)
-    "deepseek-ai/deepseek-v4-pro",  # NVIDIA NIM (fallback 1)
-    "deepseek-ai/deepseek-v4-flash", # NVIDIA NIM (fallback 2)
-    "z-ai/glm-5.1",                # NVIDIA NIM (fallback 3)
+    "deepseek-v4-flash-free",  # OpenCode Zen (primary — fast, free)
+    "z-ai/glm-5.2",            # NVIDIA NIM (fallback)
 ]
 
 # Provider endpoints
@@ -22,9 +19,7 @@ ZEN_API_KEY_ENV = "OPENCODE_ZEN_API_KEY"
 # Map each model to its provider
 PROVIDER_FOR_MODEL = {
     "deepseek-v4-flash-free": "zen",
-    "deepseek-ai/deepseek-v4-pro": "nvidia",
-    "deepseek-ai/deepseek-v4-flash": "nvidia",
-    "z-ai/glm-5.1": "nvidia",
+    "z-ai/glm-5.2": "nvidia",
 }
 
 MAX_HISTORY_MESSAGES = 20  # Context window limit

@@ -12,6 +12,7 @@ from .types import (
     NIM_BASE_URL,
     ZEN_BASE_URL,
     ZEN_API_KEY_ENV,
+    AVAILABLE_MODELS,
     PROVIDER_FOR_MODEL,
     MAX_TOOL_ROUNDS,
 )
@@ -172,24 +173,12 @@ def stream_chat(messages, model, subject):
     Tries the requested model first (determines provider from PROVIDER_FOR_MODEL).
     If it's a Zen model and rate-limited, falls back to NVIDIA.
     """
-    # Determine primary provider and build fallback list
-    primary_provider = PROVIDER_FOR_MODEL.get(model, "nvidia")
-    fallback_model = None
-    fallback_provider = None
-
-    if primary_provider == "zen":
-        # Full fallback chain: Zen → NVIDIA v4-pro → v4-flash → glm-5.1
-        models_to_try = [
-            ("zen", model),
-            ("nvidia", "deepseek-ai/deepseek-v4-pro"),
-            ("nvidia", "deepseek-ai/deepseek-v4-flash"),
-            ("nvidia", "z-ai/glm-5.1"),
-        ]
-    else:
-        # NVIDIA model — just use it directly
-        models_to_try = [
-            ("nvidia", model),
-        ]
+    # Build ordered (provider, model) chain: requested model first, then all
+    # other available models as fallback.
+    models_to_try = [(PROVIDER_FOR_MODEL.get(model, "nvidia"), model)]
+    models_to_try += [
+        (PROVIDER_FOR_MODEL[m], m) for m in AVAILABLE_MODELS if m != model
+    ]
 
     round_num = 0
     current_messages = list(messages)

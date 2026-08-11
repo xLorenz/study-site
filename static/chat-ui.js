@@ -79,12 +79,12 @@
         fetch('/api/model')
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                chat.availableModels = data.available_models || ['z-ai/glm-5.1', 'deepseek-ai/deepseek-v4-flash'];
+                chat.availableModels = data.available_models || ['z-ai/glm-5.2', 'deepseek-v4-flash-free'];
                 chat.model = data.model || chat.availableModels[0];
                 populateModelSelect();
             })
             ['catch'](function() {
-                chat.availableModels = ['deepseek-v4-flash-free', 'deepseek-ai/deepseek-v4-flash', 'z-ai/glm-5.1'];
+                chat.availableModels = ['deepseek-v4-flash-free', 'z-ai/glm-5.2'];
                 chat.model = chat.availableModels[0];
                 populateModelSelect();
             });
