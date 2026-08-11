@@ -247,12 +247,6 @@ def handle_upload(handler):
 
 def _do_upload(handler):
     """POST /api/upload — multipart upload with MarkItDown conversion."""
-    cl_str = handler.headers.get("Content-Length", "0")
-    content_length = int(cl_str) if cl_str.isdigit() else 0
-    if content_length > 52428800:
-        handler._send_json(413, {"error": "file_too_large", "detail": "File exceeds 50 MB limit"})
-        return
-
     ct = handler.headers.get("Content-Type", "")
     if "multipart/form-data" not in ct:
         handler._send_json(400, {"error": "invalid_content_type", "detail": "Expected multipart/form-data"})
