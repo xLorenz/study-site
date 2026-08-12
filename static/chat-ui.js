@@ -330,8 +330,8 @@
             if (event.name === 'highlight_node' && typeof window.highlightNodes === 'function') {
                 window.highlightNodes(event.result && event.result.highlight_nodes || []);
             }
-            // Auto-refresh objects tab when a study object or video is created
-            if ((event.name === 'write_study_object' || event.name === 'write_study_video') && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
+            // Auto-refresh objects tab when a study object or video is created or updated
+            if ((event.name === 'write_study_object' || event.name === 'write_study_video' || event.name === 'update_study_object') && chat.currentSubject && typeof window.reloadObjectTree === 'function') {
                 const path = event.result && event.result.path;
                 window.reloadObjectTree(chat.currentSubject, path);
                 if (path && typeof window.showObject === 'function') {

@@ -44,7 +44,7 @@ Professional university professor — concise, direct, precise. No casual langua
 ### PHASE 2 — Implementation
 
 1. Read theme from `references/_theme.md` (via `read_vault_file`), or use the colors from the system prompt's Subject Theme section
-2. Write HTML directly via `write_study_object` (pass a `tag` parameter, e.g. "mock", "mindmap", "cheat", "formula", "flash", "exam" — max 7 lowercase letters)
+2. Write HTML directly via `write_study_object` (pass a `tag` parameter, e.g. "mock", "mindmap", "cheat", "formula", "flash", "exam" — max 7 lowercase letters). A generation request always creates a NEW file (`-v2` on collision); use `update_study_object` only when the student explicitly asks to modify an existing object.
 3. Log each object immediately: append an entry to `subjects/{subject}/wiki/log.md` via `write_wiki_page` (date, object name, what it covers)
 4. The study objects tab auto-refreshes; no need to tell the user to reload
 
