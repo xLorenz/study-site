@@ -1,0 +1,161 @@
+/**
+ * cheat-sheet.css — canonical styles for the interactive cheat sheet.
+ * Copy verbatim into <style>. Only the :root theme vars come from the subject
+ * (read subjects/{subject}/references/_theme.md before coding):
+ *   --primary / --secondary / --accent  → theme primary/secondary/accent
+ *   --header-fg                        → dark readable text color for the header gradient
+ * The rest is fixed and production-tested — do not restyle.
+ */
+:root{
+  --bg:#0a0a0f; --surface:#111118; --surface2:#181822; --surface3:#1f1f2c;
+  --border:#1e1e2a; --border2:#2a2a3a;
+  --text:#e2e2ec; --text2:#b0b0c0; --text3:#6a6a7a;
+  --primary:#4db0b0; --secondary:#6ec4c4; --accent:#3da0a0;   /* ← theme */
+  --header-fg:#052020;                                         /* ← theme dark shade */
+  --gold:#fbbf24;
+  --radius:14px; --radius-sm:8px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:var(--bg);
+  background-image:radial-gradient(1200px 600px at 50% -10%, rgba(77,176,176,0.08), transparent 60%);
+  color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  min-height:100vh;padding:28px 16px 60px;
+}
+.wrap{max-width:1200px;margin:0 auto;}
+header{
+  background:linear-gradient(135deg,var(--primary),var(--secondary));
+  border-radius:18px;padding:22px 24px;color:var(--header-fg);
+  box-shadow:0 12px 40px rgba(77,176,176,0.25);margin-bottom:20px;
+}
+header h1{font-size:1.45rem;font-weight:800;letter-spacing:-0.02em;}
+header .sub{font-size:0.85rem;font-weight:500;opacity:0.85;margin-top:4px;}
+
+/* Toolbar */
+.toolbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:14px;padding:12px 14px;margin-bottom:18px;
+}
+.filter-btn{
+  font-family:'Inter',sans-serif;font-size:0.78rem;font-weight:700;
+  padding:7px 13px;border-radius:999px;border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .18s;
+}
+.filter-btn:hover{color:var(--text);border-color:var(--text3);}
+.filter-btn.active{
+  background:var(--fc,var(--primary));border-color:var(--fc,var(--primary));color:var(--header-fg);
+}
+.formula-toggle{
+  display:flex;align-items:center;gap:7px;margin-left:auto;
+  font-size:0.78rem;font-weight:600;color:var(--text2);cursor:pointer;user-select:none;
+}
+.formula-toggle input{accent-color:var(--gold);width:16px;height:16px;cursor:pointer;}
+.search-wrap{position:relative;display:flex;align-items:center;}
+.search-wrap input{
+  background:var(--surface2);border:1px solid var(--border2);border-radius:10px;
+  color:var(--text);font-family:'Inter',sans-serif;font-size:0.82rem;
+  padding:8px 30px 8px 12px;width:220px;outline:none;
+}
+.search-wrap input:focus{border-color:var(--primary);}
+.search-wrap input::placeholder{color:var(--text3);}
+.search-wrap .clear{
+  position:absolute;right:8px;color:var(--text3);cursor:pointer;font-size:0.8rem;padding:2px;
+}
+.search-wrap .clear:hover{color:var(--text);}
+#resultCount{font-size:0.75rem;color:var(--text3);font-family:'JetBrains Mono',monospace;}
+
+/* Fixed columns (cascade): the engine splits cards into --cols column divs,
+   assigned in reading order. Opening a card only pushes the cards below it
+   in its own column — columns are never rebalanced, so the rest of the
+   sheet stays put. */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(var(--cols, 3), 1fr);
+  gap:16px;
+  align-items:start;
+}
+.cc-col{
+  display:flex;flex-direction:column;gap:16px;
+}
+.cheat-card{
+  position:relative;min-height:96px;
+  background:var(--surface);border:1px solid var(--border);
+  border-left:4px solid var(--fc,var(--primary));
+  border-radius:12px;cursor:pointer;overflow:hidden;
+  transition:border-color .18s,box-shadow .18s,transform .18s;
+  animation:fadeUp .35s cubic-bezier(0.22,1,0.36,1) both;
+}
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(10px);}
+  to{opacity:1;transform:none;}
+}
+.cheat-card:hover{border-color:var(--border2);box-shadow:0 8px 30px rgba(0,0,0,0.35);transform:translateY(-2px);}
+.cheat-card.open{
+  overflow:visible;
+  box-shadow:0 20px 60px rgba(0,0,0,0.55);
+  border-color:var(--fc,var(--primary));
+  transform:none;
+}
+.cheat-card:focus-within{outline:2px solid var(--accent);outline-offset:2px;}
+.cc-header{
+  display:flex;flex-direction:column;gap:6px;padding:14px 15px 12px;
+  cursor:pointer;user-select:none;
+}
+.cc-header:hover .cc-title{color:var(--text);}
+.cc-top{display:flex;gap:6px;flex-wrap:wrap;}
+.cc-badge{
+  font-size:0.65rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;
+  color:var(--header-fg);padding:3px 9px;border-radius:999px;
+}
+.cc-badge.kind{background:var(--gold);}
+.cc-title{font-size:0.98rem;font-weight:700;line-height:1.3;color:var(--text2);transition:color .15s;}
+.cc-hint{
+  position:absolute;top:14px;right:15px;
+  font-size:1.05rem;font-weight:700;color:var(--text3);
+  transition:transform .3s cubic-bezier(0.22,1,0.36,1);
+}
+.cheat-card.open .cc-hint{transform:rotate(45deg);color:var(--fc,var(--primary));}
+.cc-body{
+  max-height:0;opacity:0;overflow:hidden;
+  padding:0 15px;
+  transition:max-height .38s cubic-bezier(0.22,1,0.36,1),opacity .3s ease;
+}
+.cheat-card.open .cc-body{max-height:900px;opacity:1;padding-bottom:14px;}
+.cc-summary{font-size:0.82rem;line-height:1.5;color:var(--text2);}
+.cc-formula{
+  margin-top:9px;font-family:'JetBrains Mono',monospace;font-size:0.92rem;
+  background:var(--surface2);border:1px solid var(--border2);border-radius:9px;
+  padding:10px 12px;color:var(--secondary);text-align:center;
+}
+.cc-detail{
+  margin-top:10px;font-size:0.84rem;line-height:1.65;color:var(--text2);
+}
+.cc-detail p{margin-bottom:8px;}
+.cc-detail h4{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);margin:10px 0 4px;}
+.cc-detail ul{padding-left:18px;}
+.cc-detail code{
+  font-family:'JetBrains Mono',monospace;font-size:0.9em;background:var(--surface3);
+  border:1px solid var(--border2);padding:1px 6px;border-radius:6px;color:var(--secondary);
+}
+
+/* KaTeX adjustments */
+.katex{font-size:1.02em;}
+
+@media (max-width:640px){
+  body{padding:16px 12px 50px;}
+  header h1{font-size:1.15rem;}
+  .search-wrap input{width:150px;}
+  .grid{--cols:1;}
+}
+@media print{
+  body{background:#fff;color:#111;padding:0;}
+  .toolbar{display:none;}
+  .cheat-card{min-height:0;border-left-width:3px;animation:none;}
+  .cheat-card .cc-body{max-height:none;opacity:1;padding-bottom:14px;}
+  .cc-hint{display:none;}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important;}
+}

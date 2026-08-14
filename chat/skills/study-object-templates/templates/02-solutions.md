@@ -35,9 +35,7 @@ Comprehensive answer key with navigation, Q&A pairs, cross-references.
 
 ```
 STEP 1 — CONTENT DESIGN
-  - Read SCHEMA.md for subject conventions
-  - Read all wiki files
-  - Read existing design notes from subjects/{subject}/references/ for context
+  - Follow the Common Build Flow in SKILL.md (SCHEMA.md → wiki → references → design notes)
   - For each question in the exam being solved, write:
     a) The question (formatted as .q)
     b) The complete answer (formatted as .a)

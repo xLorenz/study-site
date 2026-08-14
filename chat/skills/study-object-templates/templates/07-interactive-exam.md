@@ -43,7 +43,7 @@ Long-form comprehensive multi-topic exam with per-exercise show/hide answer butt
 
 ## CSS framework
 
-Use the shared palette from the SKILL.md **Common Patterns** section (backgrounds, text, borders, surfaces). Set `--primary`, `--secondary`, `--accent` from `references/_theme.md` (primary/secondary/accent) — do not hardcode fixed defaults. Template-specific additions only:
+Use the shared palette from the SKILL.md **Common Patterns** section (backgrounds, text, borders, surfaces). Read `subjects/{subject}/references/_theme.md` via `read_vault_file(path='references/_theme.md')` and set `--primary`, `--secondary`, `--accent` from it (primary/secondary/accent) — do not hardcode fixed defaults; the system prompt's Subject Theme section is only a fallback if the file is missing. Template-specific additions only:
 ```css
 :root {
   --gold: #fbbf24; --green: #4ade80; --red: #f87171; --orange: #fb923c;
@@ -72,7 +72,9 @@ Use subject-appropriate topic colors derived from the theme. Example pattern:
 .topic-tag.theme-b { border-color: #a78bfa44; color: #a78bfa; }
 ```
 
-## Toggle answer JavaScript (minimal)
+## Toggle answer JavaScript (canonical — copy verbatim)
+
+Copy `read_skill(skill_name='study-object-templates', path='assets/interactive-exam.js')` into a `<script>` tag at the bottom. It's the same three-line handler as below — don't rewrite it:
 
 ```javascript
 function toggleAnswer(id) {
@@ -88,6 +90,19 @@ function toggleAnswer(id) {
 
 No dependencies, no state management, no confetti. Each exercise has its own independent toggle.
 
+## Print behavior (required)
+
+`@media print` must force all answers visible — a printed exam with hidden answers is useless:
+
+```css
+@media print {
+  .btn-answer { display: none; }
+  .answer-box { display: block !important; }
+}
+```
+
+Both production exams use this pattern; keep it in every interactive exam.
+
 ## Content design rules
 
 1. **Select the hardest/comprehensive exercises** from each topic area
@@ -102,8 +117,8 @@ No dependencies, no state management, no confetti. Each exercise has its own ind
 
 ```
 STEP 1 — CONTENT DESIGN
-  - Read ALL raw practice files from subjects/{subject}/raw/
-  - Read existing design notes from subjects/{subject}/references/
+  - Follow the Common Build Flow in SKILL.md (SCHEMA.md → wiki → references → design notes)
+  - Read ALL raw practice files from subjects/{subject}/raw/ (practice files, not just wiki summaries — the specific exercises and numbers matter here)
   - For each requested topic, identify the 1-2 hardest problems in that practice file
   - Look for exercises that combine multiple concepts
   - Design 1 exercise per topic cluster
@@ -120,9 +135,16 @@ STEP 3 — ANSWER TOGGLES
   - Each exercise gets a unique answer box id: ans1, ans2, etc.
   - Each answer box is a sibling of the toggle button
   - Answers use .step per sub-question, .result for final results
-  - Include the JavaScript toggle function in a <script> tag at the bottom
+  - Copy the canonical toggle function from assets/interactive-exam.js into a <script> tag at the bottom
+  - Include the required @media print rule that expands all answers
 
-STEP 4 — SAVE & LOG
+STEP 4 — SELF-CHECK
+  - Every exercise has exactly one btn-answer + one answer-box, ids unique
+  - Each solution is step-by-step with the final result in a .result block
+  - Every sub-question (a, b, c, d) has a matching .step — no sub-question left unsolved
+  - Verify the math with an independent method where possible (alternate formula, unit check, sanity check of magnitudes)
+
+STEP 5 — SAVE & LOG
   - Call `write_study_object` with filename, tag="exam", and full HTML
   - Log to subjects/{subject}/wiki/log.md
 ```

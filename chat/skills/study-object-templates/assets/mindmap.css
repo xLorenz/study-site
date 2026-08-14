@@ -1,0 +1,193 @@
+/**
+ * mindmap.css — canonical styles for the interactive mind map.
+ * Copy verbatim into <style>. Only the accent vars come from the subject theme
+ * (read subjects/{subject}/references/_theme.md before coding):
+ *   --primary / --secondary / --accent → theme primary/secondary/accent
+ *   --header-fg                       → dark readable text color for header gradient
+ */
+:root{
+  --bg:#0a0a0f; --surface:#111118; --surface2:#18181c; --surface3:#1f1f2a;
+  --border:#1e1e2a; --border2:#2a2a3a;
+  --text:#e2e2e8; --text2:#b0b0c0; --text3:#6a6a7a;
+  --primary:#4fc1ff; --secondary:#a78bfa; --accent:#4fc1ff;  /* ← theme */
+  --header-fg:#08141f;                                        /* ← theme dark shade */
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  background:var(--bg);
+  background-image:radial-gradient(1200px 600px at 50% -10%, rgba(79,193,255,0.07), transparent 60%);
+  color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+
+/* Header */
+header{
+  background:linear-gradient(135deg,var(--primary),var(--secondary));
+  color:var(--header-fg);
+  padding:16px 22px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  flex-wrap:wrap;
+  z-index:5;
+}
+header h1{font-size:1.25rem;font-weight:800;letter-spacing:-0.02em;}
+header .subtitle{font-size:0.82rem;opacity:0.85;font-weight:500;}
+header .badge{
+  margin-left:auto;
+  background:rgba(0,0,0,0.18);border:1px solid rgba(0,0,0,0.22);
+  padding:5px 12px;border-radius:999px;font-size:0.78rem;font-weight:700;
+}
+.controls{display:flex;gap:8px;}
+.controls button{
+  font-family:'Inter',sans-serif;font-size:0.78rem;font-weight:700;
+  padding:7px 13px;border-radius:9px;border:1px solid rgba(0,0,0,0.25);
+  background:rgba(0,0,0,0.15);color:var(--header-fg);cursor:pointer;transition:all .18s;
+}
+.controls button:hover{background:rgba(0,0,0,0.28);}
+
+/* Map viewport — rings are SVG circles INSIDE the zoomed group so they
+   follow the map when zooming/panning (see mindmap.js, RING_FRACS) */
+#map-container{flex:1;position:relative;overflow:hidden;}
+svg{display:block;}
+.ring{fill:none;stroke:var(--border2);stroke-width:1px;opacity:0.35;pointer-events:none;}
+.link{stroke:var(--border2);stroke-width:1.5px;opacity:0.85;}
+.node{cursor:pointer;opacity:1;}
+/* Entrance: ONLY on .node-enter (added to newly created nodes in mindmap.js
+   and removed on animationend). Stable nodes never carry this class, so
+   expanding/collapsing a branch never re-animates the rest of the map. The
+   keyframes use the CSS `translate` property (NOT transform) so they compose
+   with the SVG transform attribute that positions each node. */
+.node-enter{opacity:0;animation:nodeIn .3s cubic-bezier(0.22,1,0.36,1) forwards;}
+@keyframes nodeIn{
+  from{opacity:0;translate:0 8px;}
+  to{opacity:1;translate:0 0;}
+}
+.node-circle{
+  stroke:var(--border);stroke-width:1.5px;fill:currentColor;transition:stroke .15s;
+  /* Subtle glow on every node, in its own color, large soft radius */
+  filter:drop-shadow(0 0 10px currentColor);
+  filter:drop-shadow(0 0 14px color-mix(in srgb, currentColor 40%, transparent));
+}
+.node:hover .node-circle{
+  stroke:var(--text2);stroke-width:2.5px;
+  filter:drop-shadow(0 0 18px color-mix(in srgb, currentColor 85%, transparent));
+}
+/* The root breathes between the subtle and a slightly stronger glow */
+.root-node .node-circle{
+  animation:rootPulse 3.2s ease-in-out infinite;
+}
+@keyframes rootPulse{
+  0%,100%{filter:drop-shadow(0 0 10px color-mix(in srgb, currentColor 45%, transparent));}
+  50%{filter:drop-shadow(0 0 20px color-mix(in srgb, currentColor 80%, transparent));}
+}
+.node-icon{font-size:12px;fill:currentColor;pointer-events:none;user-select:none;}
+.node-label{font-size:11px;font-weight:600;fill:var(--text2);pointer-events:none;user-select:none;}
+.node.match .node-circle{
+  stroke:#fff;stroke-width:2.5px;
+  filter:drop-shadow(0 0 8px rgba(255,255,255,0.75));
+}
+
+/* Tooltip */
+.tooltip-float{
+  position:fixed;z-index:40;max-width:260px;
+  background:var(--surface3);border:1px solid var(--border2);
+  border-radius:10px;padding:8px 11px;
+  font-size:0.78rem;line-height:1.45;color:var(--text2);
+  box-shadow:0 10px 30px rgba(0,0,0,0.5);
+  opacity:0;pointer-events:none;transition:opacity .15s;
+}
+.tooltip-float.visible{opacity:1;}
+
+/* Search box */
+.search-box{
+  position:fixed;top:76px;right:22px;z-index:30;
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface3);border:1px solid var(--border2);
+  border-radius:12px;padding:8px 12px;
+  box-shadow:0 12px 40px rgba(0,0,0,0.5);
+  transform:translateY(-8px);opacity:0;pointer-events:none;
+  transition:all .2s cubic-bezier(0.22,1,0.36,1);
+}
+.search-box.open{transform:none;opacity:1;pointer-events:auto;}
+.search-box input{
+  background:transparent;border:none;outline:none;
+  color:var(--text);font-family:'Inter',sans-serif;font-size:0.85rem;width:190px;
+}
+.search-box input::placeholder{color:var(--text3);}
+.search-close{cursor:pointer;color:var(--text3);font-size:0.9rem;padding:2px 6px;border-radius:6px;}
+.search-close:hover{color:var(--text);background:var(--surface2);}
+
+/* Detail panel */
+.panel-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.45);
+  opacity:0;pointer-events:none;transition:opacity .25s;z-index:20;
+}
+.panel-overlay.visible{opacity:1;pointer-events:auto;}
+.detail-panel{
+  position:fixed;top:0;right:-420px;bottom:0;width:min(400px,92vw);
+  background:var(--surface);border-left:1px solid var(--border2);
+  z-index:25;display:flex;flex-direction:column;
+  transition:right .3s cubic-bezier(0.22,1,0.36,1);
+  box-shadow:-20px 0 60px rgba(0,0,0,0.5);
+}
+.detail-panel.open{right:0;}
+.panel-header{
+  display:flex;align-items:center;gap:10px;
+  padding:16px 18px;border-bottom:1px solid var(--border);
+}
+.panel-header h2{font-size:1.05rem;font-weight:800;flex:1;letter-spacing:-0.01em;}
+.panel-header button{
+  background:var(--surface3);border:1px solid var(--border2);color:var(--text2);
+  border-radius:8px;font-size:0.85rem;padding:4px 9px;cursor:pointer;
+}
+.panel-header button:hover{color:var(--text);border-color:var(--text3);}
+.panel-breadcrumb{
+  padding:10px 18px;font-size:0.72rem;color:var(--text3);
+  font-family:'JetBrains Mono',monospace;letter-spacing:0.02em;
+  border-bottom:1px solid var(--border);
+}
+.panel-cat-bar{height:4px;}
+.panel-body{padding:18px;overflow-y:auto;flex:1;}
+.panel-desc{color:var(--text2);font-size:0.9rem;line-height:1.6;margin-bottom:14px;}
+.panel-detail .detail-section{margin-bottom:18px;}
+.panel-detail h3{
+  font-size:0.8rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:0.07em;color:var(--accent);margin-bottom:8px;
+}
+.panel-detail p,.panel-detail li{font-size:0.88rem;line-height:1.65;color:var(--text2);}
+.panel-detail ul{padding-left:18px;}
+.panel-detail .code-block{
+  font-family:'JetBrains Mono',monospace;font-size:0.8rem;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;overflow-x:auto;margin:8px 0;
+}
+.panel-detail .tag{
+  display:inline-block;font-size:0.7rem;font-weight:700;
+  padding:2px 9px;border-radius:999px;border:1px solid var(--border2);
+  color:var(--text2);margin:2px 4px 2px 0;
+}
+.panel-detail .rel-box{
+  background:var(--surface2);border:1px solid var(--border);
+  border-left:3px solid var(--accent);border-radius:8px;
+  padding:10px 12px;font-size:0.85rem;color:var(--text2);margin:8px 0;
+}
+
+@media (max-width:640px){
+  header{padding:12px 14px;gap:10px;}
+  header h1{font-size:1.05rem;}
+  .controls button{font-size:0.7rem;padding:6px 10px;}
+  .search-box{top:auto;bottom:16px;right:16px;left:16px;}
+  .search-box input{width:100%;}
+  .node-label{font-size:10px;}
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important;}
+  .node-enter{opacity:1 !important;}
+}

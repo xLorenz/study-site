@@ -37,16 +37,14 @@ Print-friendly static exam with theory questions and coding exercises. No JS int
 
 ```
 STEP 1 — SCHEMA & CONTENT DESIGN
-  - Read subjects/{subject}/SCHEMA.md for conventions
-  - Read ALL .md files in subjects/{subject}/wiki/ to understand content
-  - Read subjects/{subject}/references/ for any existing notes
+  - Follow the Common Build Flow in SKILL.md (SCHEMA.md → wiki → references → design notes)
   - Design exam content: decide theory questions (15-20 for full exam) and practical exercises (4-6)
   - Each question needs: question text, difficulty indicator, point value
   - Group by theme blocks (Theory, Practice, Design Patterns, UML, etc.)
   - Write ALL question content yourself — no delegation
 
 STEP 2 — THEME LOOKUP
-  - Read `references/_theme.md` via `read_vault_file` (or use the colors from the system prompt's Subject Theme section)
+  - Read `subjects/{subject}/references/_theme.md` via `read_vault_file(path='references/_theme.md')` — always read it first; the system prompt's Subject Theme section is only a fallback if the file is missing
   - Title gradient = linear-gradient(135deg, primary, secondary)
   - Section h2 color = secondary (or accent)
   - Alert border-color = accent with transparency

@@ -1,73 +1,50 @@
 # Template 6: Formula Deck
 
 ## Purpose
-Quick-reference formula cards showing formula, description, variable definitions, and usage notes. Print-friendly, no JS. Ideal for math, physics, statistics, and computational complexity.
+Interactive formula cards built with the **cheat-sheet engine** (assets/cheat-sheet.js + .css). Every theorem / formula / equation / constant is a card with `kind: 'formula'`, so it appears color-coded under its topic AND under the formulas-only toggle. Cards show the formula, a variables table, a numeric/dimensional verification, and a usage note. KaTeX renders the math when available; unicode fallback always works.
 
-## Structure
-```
-├── <head>
-│   ├── Google Fonts (Inter + JetBrains Mono)
-│   ├── <style> — dark theme, formula cards, accent borders
-│   └── </head>
-├── <body>
-│   ├── <div class="container">
-│   │   ├── <h1> — gradient title
-│   │   ├── <p class="subtitle"> — topic + formula count
-│   │   ├── <div class="section">  ← repeat per topic group
-│   │   │   ├── <h2> topic title
-│   │   │   ├── <div class="formula-card">  ← repeat per formula
-│   │   │   │   ├── <div class="formula-desc"> formula name / what it computes
-│   │   │   │   ├── <div class="formula"> the formula (monospace, accent color)
-│   │   │   │   ├── <table class="formula-vars"> variable definitions
-│   │   │   │   │   ├── <tr><td class="var">x</td><td>description</td></tr>
-│   │   │   │   │   └── ...
-│   │   │   │   └── <div class="formula-note"> usage hint / unit / edge case
-│   │   │   └── </div>
-│   │   └── </div>
-│   │   └── <div class="footer">
-│   └── </body>
-```
-
-## CSS details
-- `.formula-card`: card with `border-left: 4px solid var(--accent)`, subtle glow
-- `.formula`: monospace (`JetBrains Mono`), `font-size: 1.3rem`, accent color (`#4fc1ff` or theme accent)
-- `.formula-vars`: two-column table, `.var` column monospace and gold, descriptions in secondary text
-- `.formula-desc`: bold title text
-- `.formula-note`: italic, secondary text, small
-- Same dark theme, responsive, and print patterns as other templates
-- Container max-width: 900px
-- `.section` uses same card style as mock exam
-
-## Formula display patterns
-- Use `<span class="f-sym">` for symbols (italic), `<span class="f-op">` for operators, `<span class="f-num">` for numbers
-- Alternatively, use `.code > pre` for multi-line or complex formulas
-- For physics: include units in `.formula-note` or as a third column
+This template reuses the interactive cheat sheet's canonical engine — **do not write a separate formula-deck engine**. The only difference from Template 5 is content: all cards are formulas.
 
 ## Build steps
 
 ```
 STEP 1 — CONTENT DESIGN
-  - Read SCHEMA.md for subject conventions
-  - Read ALL wiki files and raw practice files for formula references
-  - Read subjects/{subject}/references/ for existing notes
-  - Collect all key formulas (15-30 depending on subject breadth)
-  - Each formula needs: name, formula expression, variable definitions (name + description), usage note
-  - Group into logical topic sections
+  - Follow the Common Build Flow in SKILL.md (SCHEMA.md → wiki → references → design notes)
+  - Read references/formula-deck-verification.md — the four card parts, dimensional analysis,
+    numeric sanity checks, cross-check with the wiki, common failure patterns
+    (missing 4πε₀/μ₀ factors, inverted ratios, validity conditions)
+  - Read references/cheat-sheet-selection.md — card anatomy and grouping rules
+  - Collect all key formulas (15-30 depending on subject breadth); group into 3-6 topic categories
+  - Each formula card needs:
+      title, summary (what it computes, 1 sentence),
+      formula in $$…$$ LaTeX + unicode fallback,
+      detail with: variables table (name + unit), verification (numeric example or
+      dimensional check), usage note (validity conditions, traps, sign conventions)
+  - Verify every formula: units consistent, one numeric example per topic group,
+    symbol-for-symbol match with the wiki
 
 STEP 2 — THEME LOOKUP
-  - Read `references/_theme.md` or use system prompt theme colors
-  - Formula text color uses accent
-  - Variable names in gold
-  - Border-left accent per formula card
+  - Read `subjects/{subject}/references/_theme.md` via `read_vault_file(path='references/_theme.md')` —
+    always read it first; the system prompt's Subject Theme section is only a fallback if the file is missing
+  - Set the `← theme` vars in the copied CSS; base TOPIC_COLORS hues on the theme
 
-STEP 3 — HTML STRUCTURE
-  - Write self-contained HTML with all CSS inline
-  - One .section per topic group
-  - Each formula in .formula-card with desc, formula, vars table, note
-  - For mathematical formulas, use styled spans or pre blocks
-  - Keep units and edge cases visible in .formula-note
+STEP 3 — ASSEMBLE (no rewrite)
+  - Copy assets/cheat-sheet.css into <style>, set the theme vars
+  - Copy assets/cheat-sheet.js into <script> verbatim
+  - Build the skeleton with the fixed element IDs (see templates/05-cheat-sheet.md)
+  - Fill in CARDS (all kind:'formula') and TOPIC_COLORS
+  - Every card: formula field with $$ delimiters AND unicode fallback AFTER them (see templates/05-cheat-sheet.md for the multi-CDN KaTeX + fallback rules)
+  - The formula field reads `'$$…$$  <unicode version>'` — the unicode text sits OUTSIDE the delimiters so it survives the no-KaTeX fallback
+  - #cardGrid must keep the engine's multi-column cascade layout (never a CSS grid; never fixed tall card heights)
 
-STEP 4 — SAVE & LOG
+STEP 4 — SELF-CHECK
+  - Every formula passed dimensional analysis (units of RHS reduce to units of result)
+  - At least one formula per topic verified with a numeric example (known textbook value)
+  - Formulas match the wiki symbol-for-symbol — variables never renamed
+  - Every card has all four parts: summary, formula, variables table with units, note with validity/trap
+  - KaTeX delimiters present ($$…$$) with the unicode fallback text AFTER the delimiters
+
+STEP 5 — SAVE & LOG
   - Call `write_study_object` with filename, tag="formula", and full HTML
   - Log to subjects/{subject}/wiki/log.md
 ```
