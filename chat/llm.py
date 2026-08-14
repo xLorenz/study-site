@@ -274,6 +274,10 @@ def stream_chat(messages, model, subject):
                     for tc in sorted_calls
                 ]
             }
+            # DeepSeek thinking mode requires reasoning_content to be echoed
+            # back on the next round (400 otherwise).
+            if full_reasoning:
+                assistant_msg["reasoning_content"] = full_reasoning
             current_messages.append(assistant_msg)
 
             for tc in sorted_calls:
@@ -299,7 +303,10 @@ def stream_chat(messages, model, subject):
             if skip_rounds > 5:
                 break
             if full_content:
-                current_messages.append({"role": "assistant", "content": full_content})
+                asst_msg = {"role": "assistant", "content": full_content}
+                if full_reasoning:
+                    asst_msg["reasoning_content"] = full_reasoning
+                current_messages.append(asst_msg)
             continue
 
         if finish_reason == "tool_calls":

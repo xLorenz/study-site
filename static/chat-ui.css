@@ -243,6 +243,23 @@
   margin-top: -6px;
 }
 
+/* ── Model Used Badge ── */
+.chat-msg-model {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+.chat-msg-model.fallback {
+  color: #e8a13c;
+  opacity: 1;
+}
+.chat-msg-model.fallback::before {
+  content: '⚠ ';
+}
+
 .chat-msg.assistant .chat-body p { margin: 5px 0; }
 .chat-msg.assistant .chat-body p:first-child { margin-top: 0; }
 .chat-msg.assistant .chat-body p:last-child { margin-bottom: 0; }

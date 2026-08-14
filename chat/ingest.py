@@ -175,9 +175,18 @@ def _run_tool_loop(
     tools = [t for t in tools if t["function"]["name"] in ingest_tool_names]
 
     # Active provider (set after first successful call, persists across rounds)
+    active_chain_idx = 0
     active_provider = None
     active_model = None
     active_client = None
+
+    def _is_fallback_error(e):
+        """True for 429 rate-limit or timeout errors — the cases that trigger
+        provider fallback."""
+        if _is_429_error(e):
+            return True
+        status = getattr(e, "status_code", 0) or getattr(e, "code", 0)
+        return "timeout" in str(e).lower() or "504" in str(e)
 
     def _try_chain(messages, tools, chain_idx_start=0):
         """Try API call across the provider chain. Returns (response, chain_index) on success."""
@@ -199,14 +208,13 @@ def _run_tool_loop(
                 return resp, idx
             except Exception as e:
                 _logger.warning(f"Provider '{prov}'/'{mdl}' failed: {e}")
-                if not _is_429_error(e):
-                    # Non-rate-limit error on first attempt — still fall through to retry
-                    if idx == 0 and len(provider_chain) > 1:
-                        _logger.info(f"  Falling back to next provider...")
-                        continue
-                    raise  # propagate to outer retry logic
-                # 429 — try next provider
-                continue
+                if _is_fallback_error(e):
+                    # 429/timeout — try next provider
+                    continue
+                if idx == 0 and len(provider_chain) > 1:
+                    _logger.info(f"  Falling back to next provider...")
+                    continue
+                raise  # propagate to outer retry logic
         return None, -1  # all providers failed
 
     round_num = 0
@@ -223,24 +231,48 @@ def _run_tool_loop(
         try:
             # Try active provider first (if known), otherwise start the chain
             if active_provider is not None:
-                # Use existing active provider
-                extra_body = get_extra_body(active_model, active_provider)
-                response = active_client.chat.completions.create(
-                    model=active_model,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice="auto",
-                    stream=False,
-                    extra_body=extra_body,
-                    temperature=0.3,
-                    max_tokens=LLM_MAX_TOKENS,
-                )
+                try:
+                    # Use existing active provider
+                    extra_body = get_extra_body(active_model, active_provider)
+                    response = active_client.chat.completions.create(
+                        model=active_model,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice="auto",
+                        stream=False,
+                        extra_body=extra_body,
+                        temperature=0.3,
+                        max_tokens=LLM_MAX_TOKENS,
+                    )
+                except Exception as e:
+                    _logger.warning(
+                        f"Active provider '{active_provider}'/'{active_model}' failed: {e}"
+                    )
+                    if not _is_fallback_error(e):
+                        raise
+                    # 429/timeout — fall back to the remaining providers in the chain
+                    response, chain_idx = _try_chain(
+                        messages, tools, chain_idx_start=active_chain_idx + 1
+                    )
+                    if response is None:
+                        raise Exception(
+                            f"All providers failed for round {round_num + 1} (last error: {e})"
+                        )
+                    prov, mdl = provider_chain[chain_idx]
+                    _logger.info(
+                        f"  Fallback: switching active provider to '{prov}'/'{mdl}'"
+                    )
+                    active_chain_idx = chain_idx
+                    active_provider = prov
+                    active_model = mdl
+                    active_client = get_llm_client(prov)
             else:
                 # First call — try provider chain
                 response, chain_idx = _try_chain(messages, tools)
                 if response is None:
                     raise Exception(f"All providers failed for round {round_num + 1}")
                 prov, mdl = provider_chain[chain_idx]
+                active_chain_idx = chain_idx
                 active_provider = prov
                 active_model = mdl
                 active_client = get_llm_client(prov)
@@ -276,6 +308,7 @@ def _run_tool_loop(
                             if response is None:
                                 raise Exception("All providers failed on retry")
                             prov, mdl = provider_chain[chain_idx]
+                            active_chain_idx = chain_idx
                             active_provider = prov
                             active_model = mdl
                             active_client = get_llm_client(prov)

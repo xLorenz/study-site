@@ -360,12 +360,23 @@
             }
             if (chat.currentAssistantMsg) {
                 chat.currentAssistantMsg.classList.remove('streaming');
+                var usedModel = event.model || chat.model;
+                var modelFooter = document.createElement('div');
+                modelFooter.className = 'chat-msg-model';
+                if (usedModel !== chat.model) {
+                    modelFooter.classList.add('fallback');
+                    modelFooter.textContent = 'Fallback: ' + usedModel + ' (selected: ' + chat.model + ')';
+                } else {
+                    modelFooter.textContent = usedModel;
+                }
+                chat.currentAssistantMsg.appendChild(modelFooter);
             }
             highlightWikilinks(chat.currentBodyDiv);
             var doneMsg = {
                 role: 'assistant',
                 content: chat.currentFullContent || event.content || '(solo razonamiento)'
             };
+            if (chat.currentFullReasoning) doneMsg.reasoning_content = chat.currentFullReasoning;
             if (chat.currentToolCalls.length > 0) doneMsg.tool_calls = chat.currentToolCalls;
             chat.messages.push(doneMsg);
             setChatEnabled(true);

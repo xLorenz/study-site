@@ -50,6 +50,8 @@ def save_chat(subject, messages):
     for m in messages:
         if m["role"] == "assistant":
             entry = {"role": "assistant", "content": m["content"]}
+            if m.get("reasoning_content"):
+                entry["reasoning_content"] = m["reasoning_content"]
             if "tool_calls" in m and m["tool_calls"]:
                 trimmed_tcs = []
                 for tc in m["tool_calls"]:
@@ -124,6 +126,9 @@ def _normalize_conversation(conversation):
     tool_id_idx = 0
     for msg in conversation:
         entry = {"role": msg["role"], "content": msg.get("content", "")}
+        if msg["role"] == "assistant" and msg.get("reasoning_content"):
+            # DeepSeek thinking mode: reasoning must be echoed back to the API
+            entry["reasoning_content"] = msg["reasoning_content"]
         if msg["role"] == "assistant" and "tool_calls" in msg and msg["tool_calls"]:
             # Check if any tool_call has a result (embedded) — if none do AND
             # there are no following tool messages, these are stale/orphaned
@@ -190,11 +195,13 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         messages.append({"role": "user", "content": user_message})
 
         assistant_content = ""
+        assistant_reasoning = ""
         tool_events = []  # collect tool_call/tool_result events for persistence
         for event in stream_chat(messages, task.model, task.subject):
             task.buffer.put(event)
             if event["type"] == "done":
                 assistant_content = event.get("content", "")
+                assistant_reasoning = event.get("reasoning", "")
             if event["type"] == "tool_call":
                 tool_events.append({
                     "id": event.get("id", ""),
@@ -216,6 +223,8 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         cleaned = [m for m in history if m["role"] in ("user", "assistant")]
         cleaned.append({"role": "user", "content": user_message})
         asst_msg = {"role": "assistant", "content": assistant_content}
+        if assistant_reasoning:
+            asst_msg["reasoning_content"] = assistant_reasoning
         if tool_events:
             asst_msg["tool_calls"] = tool_events
         cleaned.append(asst_msg)
