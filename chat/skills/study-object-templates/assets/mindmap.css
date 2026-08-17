@@ -191,3 +191,5 @@ svg{display:block;}
   *{animation:none !important;transition:none !important;}
   .node-enter{opacity:1 !important;}
 }
+.katex{font-size:1.02em;}
+.katex-display{overflow-x:auto;overflow-y:hidden;padding:6px 0;}

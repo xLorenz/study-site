@@ -118,6 +118,7 @@ function render(){
   document.getElementById('btnNext').disabled = !currentAnswered;
   document.getElementById('btnNext').textContent = finished ? 'Ver resultados' : 'Siguiente →';
   document.getElementById('btnReset').style.display = 'none';
+  renderMath();
 }
 
 function handleAnswer(cardIdx, chosen){
@@ -179,6 +180,84 @@ function renderResults(){
   document.getElementById('btnPrev').disabled = false;
   document.getElementById('btnNext').style.display = 'none';
   document.getElementById('btnReset').style.display = 'inline-block';
+  renderMath();
+}
+
+/* ── Math: KaTeX with unicode fallback (canonical) ── */
+function renderMath(){
+  if (window.renderMathInElement){
+    try {
+      renderMathInElement(document.body, {
+        delimiters: [
+          { left: '$$', right: '$$', display: false },
+          { left: '$', right: '$', display: false },
+          { left: '\\(', right: '\\)', display: false }
+        ],
+        throwOnError: false
+      });
+      return;
+    } catch (e){}
+  }
+  if (!katexTried) return;
+  stripMathMarkers();
+}
+
+function stripMathMarkers(){
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    if (n.parentElement && (n.parentElement.tagName === 'SCRIPT' || n.parentElement.tagName === 'STYLE')) return;
+    const t = n.nodeValue;
+    if (t.indexOf('$') !== -1) n.nodeValue = t.replace(/\$\$[^$]*?\$\$/g, '').replace(/\$[^$\n]*?\$/g, '').replace(/\\\([^)]*?\\\)/g, '');
+  });
+}
+
+let katexTried = false;
+const KATEX_CDNS = [
+  { css: 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css', js: 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js', auto: 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js' },
+  { css: 'https://unpkg.com/katex@0.16.11/dist/katex.min.css', js: 'https://unpkg.com/katex@0.16.11/dist/katex.min.js', auto: 'https://unpkg.com/katex@0.16.11/dist/contrib/auto-render.min.js' },
+  { css: 'https://cdnjs.cloudflare.com/ajax/libs/katex/0.16.11/katex.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/katex/0.16.11/katex.min.js', auto: 'https://cdnjs.cloudflare.com/ajax/libs/katex/0.16.11/contrib/auto-render.min.js' }
+];
+let katexCdnIdx = 0;
+function loadKaTeX(){
+  if (katexTried) return;
+  katexTried = true;
+  const cdn = KATEX_CDNS[katexCdnIdx];
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = cdn.css;
+  document.head.appendChild(css);
+  let remaining = 2;
+  let failed = false;
+  const done = () => {
+    remaining--;
+    if (remaining === 0 && !failed){ renderMath(); }
+    else if (failed) tryNext();
+  };
+  const fail = () => { failed = true; tryNext(); };
+  const tryNext = () => {
+    if (katexCdnIdx + 1 < KATEX_CDNS.length){
+      katexCdnIdx++;
+      katexTried = false;
+      loadKaTeX();
+    } else {
+      renderMath();
+    }
+  };
+  const main = document.createElement('script');
+  main.src = cdn.js;
+  main.onload = done;
+  main.onerror = fail;
+  document.head.appendChild(main);
+  const auto = document.createElement('script');
+  auto.src = cdn.auto;
+  auto.onload = done;
+  auto.onerror = fail;
+  document.head.appendChild(auto);
+  /* Safety: never leave formulas unrendered — fallback after 5s */
+  setTimeout(() => { if (!window.renderMathInElement){ failed = true; tryNext(); } }, 5000);
+  setTimeout(() => { if (!window.renderMathInElement) stripMathMarkers(); }, 6000);
 }
 
 /* Confetti */
@@ -229,3 +308,4 @@ document.addEventListener('keydown', e => {
 });
 
 initGame();
+loadKaTeX();

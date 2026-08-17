@@ -151,6 +151,7 @@ function renderMath(){
       renderMathInElement(document.body, {
         delimiters: [
           { left: '$$', right: '$$', display: false },
+          { left: '$', right: '$', display: false },
           { left: '\\(', right: '\\)', display: false }
         ],
         throwOnError: false
@@ -161,9 +162,18 @@ function renderMath(){
   /* KaTeX unavailable — drop the $$…$$ LaTeX blocks entirely and keep the
      unicode content that follows them (raw \frac would be unreadable). */
   document.querySelectorAll('.cc-formula').forEach(el => {
-    el.innerHTML = el.innerHTML
-      .replace(/\$\$[^$]*\$\$/g, '')
-      .replace(/\\\([^)]*\\\)/g, '');
+    el.innerHTML = el.innerHTML.replace(/\$\$[^$]*?\$\$/g, '').replace(/\$[^$\n]*?\$/g, '').replace(/\\\([^)]*?\\\)/g, '');
+  });
+}
+
+function stripMathMarkers(){
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    if (n.parentElement && (n.parentElement.tagName === 'SCRIPT' || n.parentElement.tagName === 'STYLE')) return;
+    const t = n.nodeValue;
+    if (t.indexOf('$') !== -1) n.nodeValue = t.replace(/\$\$[^$]*?\$\$/g, '').replace(/\$[^$\n]*?\$/g, '').replace(/\\\([^)]*?\\\)/g, '');
   });
 }
 
@@ -211,6 +221,7 @@ function loadKaTeX(){
   document.head.appendChild(auto);
   /* Safety: never leave formulas unrendered — fallback after 5s */
   setTimeout(() => { if (!window.renderMathInElement){ failed = true; tryNext(); } }, 5000);
+  setTimeout(() => { if (!window.renderMathInElement) stripMathMarkers(); }, 6000);
 }
 
 /* ── Events ── */
