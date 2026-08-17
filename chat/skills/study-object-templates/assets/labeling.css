@@ -1,0 +1,127 @@
+/**
+ * labeling.css - canonical styles for the diagram labeling engine.
+ * Copy verbatim into <style>. Only the :root theme vars come from the
+ * subject (read subjects/{subject}/references/_theme.md before coding):
+ *   --primary / --secondary / --accent  -> theme primary/secondary/accent
+ *   --header-fg                        -> dark readable text color for the header gradient
+ * The rest is fixed and production-tested - do not restyle.
+ */
+:root{
+  --bg:#0a0a0f; --surface:#111118; --surface2:#181822; --surface3:#1f1f2c;
+  --border:#1e1e2a; --border2:#2a2a3a;
+  --text:#e2e2ec; --text2:#b0b0c0; --text3:#6a6a7a;
+  --primary:#5b7fc4; --secondary:#7a9ed4; --accent:#4d70b8;   /* ← theme */
+  --header-fg:#0a1220;                                        /* ← theme dark shade */
+  --gold:#fbbf24; --green:#4ade80; --red:#f87171;
+  --radius:14px; --radius-sm:8px;
+  --transition:0.35s cubic-bezier(0.22,1,0.36,1);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:var(--bg);
+  background-image:radial-gradient(1200px 600px at 50% -10%, rgba(91,127,196,0.09), transparent 60%);
+  color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  min-height:100vh;
+  padding:28px 16px 100px;
+}
+.wrap{max-width:860px;margin:0 auto;}
+header{
+  background:linear-gradient(135deg,var(--primary),var(--secondary));
+  border-radius:18px;
+  padding:22px 24px;
+  color:var(--header-fg);
+  box-shadow:0 12px 40px rgba(91,127,196,0.25);
+  margin-bottom:22px;
+}
+header h1{font-size:1.45rem;font-weight:800;letter-spacing:-0.02em;}
+header .sub{font-size:0.85rem;font-weight:500;opacity:0.85;margin-top:4px;}
+#labelStatus{
+  margin-bottom:16px;font-size:0.9rem;color:var(--text2);
+  padding:12px 16px;background:var(--surface);
+  border:1px solid var(--border);border-radius:12px;
+}
+.figure{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px;
+  margin-bottom:18px;overflow-x:auto;
+}
+#labelSvg svg{display:block;margin:0 auto;}
+#labelSvg .badge{cursor:pointer;transition:opacity .15s;}
+#labelSvg .badge:hover{opacity:0.85;}
+#labelSvg .badge.assigned circle{stroke:var(--secondary);fill:#0f1726;}
+#labelSvg .badge.ok circle{stroke:var(--green);fill:#14532d;}
+#labelSvg .badge.bad circle{stroke:var(--red);fill:#7f1d1d;}
+#labelSvg .badge.revealed circle{stroke:var(--green);fill:#14532d;}
+#labelSvg .badge text{pointer-events:none;user-select:none;}
+.chips{
+  display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;
+  padding:16px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);
+}
+.label-chip{
+  font-family:'Inter',sans-serif;font-size:0.85rem;font-weight:600;
+  padding:8px 16px;border-radius:999px;cursor:pointer;
+  background:var(--surface3);color:var(--text);
+  border:1px solid var(--border2);transition:all .18s;
+}
+.label-chip:hover{border-color:var(--primary);transform:translateY(-1px);}
+.label-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.label-chip.selected{
+  border-color:var(--secondary);
+  background:var(--surface3);
+  box-shadow:0 0 0 3px rgba(122,158,212,0.3);
+  transform:translateY(-1px);
+}
+.label-chip.assigned{
+  background:rgba(122,158,212,0.12);border-color:var(--secondary);color:var(--secondary);
+}
+.label-chip.ok{background:rgba(74,222,128,0.16);border-color:var(--green);color:var(--green);}
+.label-chip.bad{background:rgba(248,113,113,0.14);border-color:var(--red);color:var(--red);}
+.label-chip.revealed{background:rgba(74,222,128,0.16);border-color:var(--green);color:var(--green);}
+#labelChips.nudge{animation:nudge .3s;}
+@keyframes nudge{
+  25%{transform:translateX(-5px);}
+  75%{transform:translateX(5px);}
+}
+.action-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+.action-row button{
+  font-family:'Inter',sans-serif;font-weight:700;font-size:0.85rem;
+  padding:10px 18px;border-radius:10px;cursor:pointer;transition:all .18s;
+}
+#labelCheck{
+  background:linear-gradient(135deg,var(--primary),var(--secondary));
+  border:none;color:var(--header-fg);
+}
+#labelCheck:hover{filter:brightness(1.1);}
+#labelReveal{
+  background:var(--surface2);color:var(--gold);
+  border:1px solid rgba(251,191,36,0.4);
+}
+#labelReveal:hover{border-color:var(--gold);}
+#labelReset{
+  background:var(--surface2);color:var(--text2);border:1px solid var(--border2);
+}
+#labelReset:hover{border-color:var(--primary);color:var(--text);}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+#labelScore{
+  margin-left:auto;font-family:'JetBrains Mono',monospace;
+  font-size:0.85rem;color:var(--secondary);font-weight:700;
+}
+@media (max-width:640px){
+  body{padding:16px 12px 90px;}
+  header h1{font-size:1.15rem;}
+  #labelScore{margin-left:0;width:100%;}
+}
+@media print{
+  body{background:#fff;color:#111;padding:0;}
+  .action-row,.chips,#labelStatus{display:none;}
+  .figure{border:1px solid #ccc;background:#fff;}
+  #labelSvg .badge.bad circle,#labelSvg .badge.assigned circle{stroke:#333;}
+}
+/* KaTeX adjustments */
+.katex{font-size:1.02em;}
+.katex-display{overflow-x:auto;overflow-y:hidden;padding:6px 0;}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important;}
+}

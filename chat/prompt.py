@@ -100,7 +100,7 @@ def build_chat_system_prompt(subject):
 
 1. **Choose the right tool for the user's request:**
    - `read_vault_file` — subject questions; prefer `wiki/` pages (including `wiki/src-{name}.md` source summaries), fall back to `raw/` only if concept not covered in wiki
-   - `write_study_object` — static study aids: exams, cheat-sheets, mind maps, flashcards, formula decks, interactive exams
+   - `write_study_object` — static and interactive study aids: exams, cheat-sheets, mind maps, flashcards, formula decks, interactive exams, timelines, matching games, diagram labeling, worked-example walkthroughs, quick-review decks, true/false rounds, comparison matrices
    - `read_study_object` — read an existing object's HTML content (or list objects) before editing it
    - `update_study_object` — fix errors, improve content, or retag an existing object
    - `write_study_video` — animated explanations, math/algorithm visualizations, step-by-step walkthroughs where motion adds clarity
@@ -122,7 +122,7 @@ def build_chat_system_prompt(subject):
 
 7. **`update_study_object` vs `write_study_object`.** A request to generate a new study object ("make me X", "hazme X", "create X") always means a NEW file via `write_study_object` — even if a similar object already exists; on filename collision the tool versions it automatically (`-v2`). Use `update_study_object` only when the user explicitly asks to modify an existing object ("fix the flashcards", "update the mind map", "change the tag"). It is a FULL OVERWRITE of the file content: before calling it, use `read_study_object` (without filename to list, or with the exact filename to read the current HTML) so you preserve everything you want to keep. The exact existing filename is required.
 
-8. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
+8. **Tags for study objects.** When calling `write_study_object` or `write_study_video`, you may pass an optional `tag` parameter (max 7 lowercase letters only, e.g. `mock`, `mindmap`, `flash`, `cheat`, `exam`, `formula`, `video`, `solutions`, `timeline`, `match`, `label`, `steps`, `review`, `tf`, `compare`). These are **free-form** — pick whatever tag best describes the object's type or content. The UI assigns a deterministic color from the tag string."""
     sections.append(instructions)
 
     return "\n\n".join(sections)

@@ -1,12 +1,12 @@
 ---
 name: study-object-templates
 title: "Study Object Templates — HTML Generation Reference"
-description: "Canonical reference for the 7 HTML template formats (static mock exam, solutions, interactive flashcards, mind maps, cheat sheets, formula decks, interactive exam with toggle answers). Used by study-professor when building interactive study aids."
+description: "Canonical reference for the 14 HTML template formats (static mock exam, solutions, interactive flashcards, mind maps, cheat sheets, formula decks, interactive exam with toggle answers, timelines, matching games, diagram labeling, worked-example walkthroughs, quick-review categorization decks, true/false rapid rounds, comparison matrices). Used by study-professor when building interactive study aids."
 ---
 
 # Study Object Templates
 
-This skill describes **7 canonical HTML template formats**. The `study-professor` skill points here when generating study objects — **always load this skill** (`read_skill(skill_name='study-object-templates')`) before generating any new study object, then read the specific template file from `templates/` and any references it points to.
+This skill describes **14 canonical HTML template formats**. The `study-professor` skill points here when generating study objects — **always load this skill** (`read_skill(skill_name='study-object-templates')`) before generating any new study object, then read the specific template file from `templates/` and any references it points to.
 
 ## Available Templates
 
@@ -19,12 +19,19 @@ This skill describes **7 canonical HTML template formats**. The `study-professor
 | 5 | Interactive Cheat Sheet | `templates/05-cheat-sheet.md` | Full JS (filters, search, expand) | `cheat` |
 | 6 | Formula Deck | `templates/06-formula-deck.md` | Full JS (cheat-sheet engine) | `formula` |
 | 7 | Interactive Exam (Toggle Answers) | `templates/07-interactive-exam.md` | Minimal JS show/hide | `exam` |
+| 8 | Interactive Timeline | `templates/08-timeline.md` | Full JS (era bands, filters, search, detail panel) | `timeline` |
+| 9 | Matching Game | `templates/09-matching-game.md` | Full JS (click-to-pair, win state) | `match` |
+| 10 | Diagram Labeling | `templates/10-diagram-labeling.md` | Full JS (SVG hotspots, check/reveal) | `label` |
+| 11 | Worked-Example Walkthrough | `templates/11-worked-example.md` | Full JS (progressive reveal, hints) | `steps` |
+| 12 | Quick Review (Categorization Deck) | `templates/12-quick-review.md` | Full JS (4-grade categorization, weak-pass re-review, tagged list) | `review` |
+| 13 | True/False Rapid Round | `templates/13-true-false.md` | Full JS (timer, instant feedback) | `tf` |
+| 14 | Comparison Matrix | `templates/14-comparison-matrix.md` | Full JS (sticky matrix, focus, search) | `compare` |
 
 To load a template: `read_skill(skill_name='study-object-templates', path='templates/01-mock-exam.md')`
 
 ## Bundled Assets (canonical boilerplate — copy, never rewrite)
 
-Templates 3, 4, 5 and 7 ship their interactive engine as canonical files in `assets/`. Copy them verbatim into the generated HTML and fill in only the data consts at the top (QUESTIONS, DATA, CARDS, etc.) — do not modify the engine functions. This guarantees production-tested behavior every run:
+Templates 3, 4, 5, 7, 8, 9, 10, 11, 12, 13 and 14 ship their interactive engine as canonical files in `assets/`. Copy them verbatim into the generated HTML and fill in only the data consts at the top (QUESTIONS, DATA, CARDS, EVENTS, PAIRS, etc.) — do not modify the engine functions. This guarantees production-tested behavior every run:
 
 | Asset | Used by | Read via |
 |-------|---------|----------|
@@ -35,6 +42,20 @@ Templates 3, 4, 5 and 7 ship their interactive engine as canonical files in `ass
 | `assets/cheat-sheet.js` — cheat sheet engine (topic filters, formulas-only toggle, search, fixed-column cascade card expansion via clickable headers, multi-CDN KaTeX with unicode fallback) | Templates 5 and 6 | same, `path='assets/cheat-sheet.js'` |
 | `assets/cheat-sheet.css` — cheat sheet styles | Templates 5 and 6 | same, `path='assets/cheat-sheet.css'` |
 | `assets/interactive-exam.js` — answer toggle handler | Template 7 | same, `path='assets/interactive-exam.js'` |
+| `assets/timeline.js` — timeline engine (era bands, proportional rail dots, era/category filters, search, synced list, detail modal) | Template 8 | same, `path='assets/timeline.js'` |
+| `assets/timeline.css` — timeline styles | Template 8 | same, `path='assets/timeline.css'` |
+| `assets/matching.js` — matching game engine (shuffled columns, click-to-pair, lock, error flash, win summary) | Template 9 | same, `path='assets/matching.js'` |
+| `assets/matching.css` — matching styles | Template 9 | same, `path='assets/matching.css'` |
+| `assets/labeling.js` — diagram labeling engine (SVG hotspots + numbered badges, chip↔hotspot assignment, check/reveal/reset) | Template 10 | same, `path='assets/labeling.js'` |
+| `assets/labeling.css` — labeling styles | Template 10 | same, `path='assets/labeling.css'` |
+| `assets/worked-example.js` — walkthrough engine (progressive step reveal, per-step hints, answer card, keyboard) | Template 11 | same, `path='assets/worked-example.js'` |
+| `assets/worked-example.css` — walkthrough styles | Template 11 | same, `path='assets/worked-example.css'` |
+| `assets/quick-review.js` — quick review engine (fixed 4-grade categorization, weak-pass re-review by priority, per-category summary bars, tagged list panel, keyboard) | Template 12 | same, `path='assets/quick-review.js'` |
+| `assets/quick-review.css` — quick review styles | Template 12 | same, `path='assets/quick-review.css'` |
+| `assets/tf.js` — true/false rapid round engine (intro + difficulty picker, per-question timer that freezes on answer, low-time warning, difficulty ramp 1→3, per-topic results + missed list) | Template 13 | same, `path='assets/tf.js'` |
+| `assets/tf.css` — true/false styles | Template 13 | same, `path='assets/tf.css'` |
+| `assets/comparison.js` — comparison matrix engine (sticky headers, column focus, search, expandable cells) | Template 14 | same, `path='assets/comparison.js'` |
+| `assets/comparison.css` — comparison matrix styles | Template 14 | same, `path='assets/comparison.css'` |
 
 ---
 
@@ -95,6 +116,9 @@ Read the subject's theme file — `subjects/{subject}/references/_theme.md` via 
 - Code blocks get light gray background
 - Interactive formats print their content expanded: template 7 must show all answers (rule in the template); flashcards print only correct options
 
+### Mathematics (LaTeX)
+Every formula in a study object is written as `$$LaTeX$$ fallback-text` — the LaTeX source between the `$$...$$` markers plus a plain-text fallback after them (e.g. `$$v = v_0 + a t$$ v = v₀ + a·t`). All interactive engines (templates 3-6, 8-14) load KaTeX from 3 CDNs and auto-render `$$...$$` (and `\(...\)`) on every dynamic render; when offline the fallback text stays visible and the LaTeX block is stripped. Never write bare LaTeX without its fallback, and never hardcode KaTeX markup by hand. Static templates (1, 2, 7) render LaTeX as unicode text directly.
+
 ### Accessibility (interactive templates)
 - `:focus-visible` outline on all interactive elements (options, buttons, controls)
 - Feedback regions announce via `role="status"` / `aria-live="polite"` (built into assets/flashcards.js)
@@ -116,6 +140,13 @@ When the user asks for a study object, pick by type keyword:
 | "cheat sheet", "reference card", "resumen" | Template 5 — Interactive Cheat Sheet | `cheat` |
 | "formula deck", "formulas" | Template 6 — Formula Deck (cheat-sheet engine, all `kind:'formula'` cards) | `formula` |
 | "interactive exam", "parcial with answers", "exam with toggle" | Template 7 — Interactive Exam (Toggle Answers) | `exam` |
+| "timeline", "linea de tiempo", "cronologia", "hitos", "milestones", "history of X" | Template 8 — Interactive Timeline | `timeline` |
+| "matching", "match", "parear", "emparejar", "pair the terms" | Template 9 — Matching Game | `match` |
+| "label the diagram", "rotular", "etiquetar", "partes de", "labeling" | Template 10 — Diagram Labeling | `label` |
+| "worked example", "ejemplo resuelto", "paso a paso", "walkthrough", "step by step" | Template 11 — Worked-Example Walkthrough | `steps` |
+| "quick review", "repaso rapido", "repaso rápido", "categorizar", "clasificar conceptos", "que me falta repasar", "anki" | Template 12 — Quick Review (Categorization Deck) | `review` |
+| "true/false", "verdadero o falso", "rapid round", "mitos", "myths" | Template 13 — True/False Rapid Round | `tf` |
+| "comparison", "comparar", "contrast", "matrix", "diferencias entre X e Y" | Template 14 — Comparison Matrix | `compare` |
 
 **Tag parameter**: Pass the suggested tag (max 7 lowercase letters) to `write_study_object` via the `tag` parameter. The UI assigns a deterministic color from the tag string.
 
