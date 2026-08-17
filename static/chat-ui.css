@@ -320,6 +320,13 @@
 }
 .chat-msg.assistant .chat-body strong { color: var(--text-bright); }
 
+/* ── Interleaved segments: spacing between text ⇄ tool boxes ── */
+.chat-msg.assistant .chat-body + .chat-body,
+.chat-msg.assistant .msg-tool-box + .chat-body,
+.chat-msg.assistant .msg-tool-read-group + .chat-body {
+  margin-top: 8px;
+}
+
 /* ── Reasoning Box ── */
 .msg-reasoning {
   display: none;
@@ -762,8 +769,8 @@
   max-width: 85%;
 }
 
-/* ── Streaming Cursor ── */
-.chat-msg.streaming .chat-body::after {
+/* ── Streaming Cursor (only on the final, active segment) ── */
+.chat-msg.streaming .chat-body:last-child::after {
   content: '';
   display: inline-block;
   width: 2px;

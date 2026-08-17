@@ -52,6 +52,8 @@ def save_chat(subject, messages):
             entry = {"role": "assistant", "content": m["content"]}
             if m.get("reasoning_content"):
                 entry["reasoning_content"] = m["reasoning_content"]
+            if m.get("segments"):
+                entry["segments"] = _trim_segments(m["segments"])
             if "tool_calls" in m and m["tool_calls"]:
                 trimmed_tcs = []
                 for tc in m["tool_calls"]:
@@ -73,6 +75,22 @@ def save_chat(subject, messages):
             os.replace(tmp_path, path)
     except Exception as e:
         print(f"Error saving chat for {subject}: {e}")
+
+
+def _trim_segments(segments):
+    """Strip 'result' fields from tool segments (keeps history lightweight)."""
+    trimmed = []
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        if seg.get("type") == "tools":
+            calls = []
+            for tc in seg.get("tool_calls", []) or []:
+                calls.append({k: v for k, v in tc.items() if k != "result"})
+            trimmed.append({"type": "tools", "tool_calls": calls})
+        else:
+            trimmed.append(seg)
+    return trimmed
 
 
 def delete_chat_file(subject):
@@ -197,23 +215,41 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
         assistant_content = ""
         assistant_reasoning = ""
         tool_events = []  # collect tool_call/tool_result events for persistence
+        segments = []  # interleaved [{"type": "text", "content"}, {"type": "tools", "tool_calls"}]
+        text_buf = ""
+        tools_buf = []
         for event in stream_chat(messages, task.model, task.subject):
             task.buffer.put(event)
             if event["type"] == "done":
                 assistant_content = event.get("content", "")
                 assistant_reasoning = event.get("reasoning", "")
-            if event["type"] == "tool_call":
-                tool_events.append({
+            elif event["type"] == "token":
+                text_buf += event["content"]
+            elif event["type"] == "tool_call":
+                if text_buf:
+                    segments.append({"type": "text", "content": text_buf})
+                    text_buf = ""
+                te = {
                     "id": event.get("id", ""),
                     "name": event.get("name", ""),
                     "arguments": event.get("arguments", "{}"),
                     "label": _tool_label(event.get("name", ""), event.get("arguments", "{}"))
-                })
-            if event["type"] == "tool_result":
-                for te in tool_events:
+                }
+                tools_buf.append(te)
+                tool_events.append(te)
+            elif event["type"] == "tool_result":
+                for te in tools_buf:
                     if te["name"] == event.get("name") and "result" not in te:
                         te["result"] = event.get("result")
                         break
+            elif event["type"] == "round_end":
+                if tools_buf:
+                    segments.append({"type": "tools", "tool_calls": tools_buf})
+                    tools_buf = []
+        if text_buf:
+            segments.append({"type": "text", "content": text_buf})
+        if tools_buf:
+            segments.append({"type": "tools", "tool_calls": tools_buf})
 
         # Save to chat history (clean: strip stale tool_calls from incoming conversation)
         history = _normalize_conversation(conversation)
@@ -227,6 +263,8 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
             asst_msg["reasoning_content"] = assistant_reasoning
         if tool_events:
             asst_msg["tool_calls"] = tool_events
+        if segments:
+            asst_msg["segments"] = segments
         cleaned.append(asst_msg)
         save_chat(subject, cleaned)
 

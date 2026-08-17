@@ -12,7 +12,7 @@
     currentSubject: null,
     abortController: null,
     currentAssistantMsg: null,
-    currentBodyDiv: null,
+    streamOrder: [],  // interleaved: {type:'text', content, div, sealed} | {type:'tools', calls:[...]}
     currentReasoningDiv: null,
     currentToolBoxes: [],
     currentReadGroup: null,
@@ -216,8 +216,8 @@
     chat.currentToolBoxes = [];
     chat.currentReadGroup = null;
     chat.currentToolCalls = [];
+    chat.streamOrder = [];
     chat.currentAssistantMsg = null;
-    chat.currentBodyDiv = null;
     chat.currentReasoningDiv = null;
     }
     }
@@ -226,9 +226,9 @@
         switch (event.type) {
             case 'token':
                 chat.currentFullContent += event.content;
-                if (chat.currentBodyDiv) {
-                    renderContent(chat.currentFullContent, chat.currentBodyDiv);
-                }
+                var seg = ensureBodySegment();
+                seg.content += event.content;
+                renderContent(seg.content, seg.div);
                 smartScroll();
                 break;
 
@@ -272,15 +272,17 @@
             // Track for persistence
             chat.currentToolCalls.push({ name: event.name, arguments: event.arguments, label: label });
 
+            // Close the current text segment — further tokens start a new one
+            sealSegment();
+            recordToolCall(event.name, event.arguments, label);
+
             if (isRead) {
                 if (chat.currentReadGroup) {
                     addToReadGroup(chat.currentReadGroup, label);
                 } else {
                     var group = createReadGroup();
                     chat.currentReadGroup = group;
-                    if (chat.currentBodyDiv) {
-                        chat.currentBodyDiv.parentNode.insertBefore(group, chat.currentBodyDiv.nextSibling);
-                    }
+                    chat.currentAssistantMsg.appendChild(group);
                     addToReadGroup(group, label);
                 }
             } else if (isHighlight || isMarkIngested) {
@@ -292,9 +294,7 @@
                 } else {
                     var group = createReadGroup();
                     chat.currentReadGroup = group;
-                    if (chat.currentBodyDiv) {
-                        chat.currentBodyDiv.parentNode.insertBefore(group, chat.currentBodyDiv.nextSibling);
-                    }
+                    chat.currentAssistantMsg.appendChild(group);
                     addToReadGroup(group, label);
                 }
             } else {
@@ -302,10 +302,7 @@
                 var box = createToolBox(isRead, label, event.name);
                 if (box) {
                     chat.currentToolBoxes.push(box);
-                    if (chat.currentBodyDiv) {
-                        var insertBefore = chat.currentReadGroup ? chat.currentReadGroup.nextSibling : chat.currentBodyDiv.nextSibling;
-                        chat.currentBodyDiv.parentNode.insertBefore(box, insertBefore);
-                    }
+                    chat.currentAssistantMsg.appendChild(box);
                 }
             }
             smartScroll();
@@ -343,16 +340,23 @@
             smartScroll();
             break;
 
+            case 'round_end':
+            // Segment boundary: this round's text + tools are done; any further
+            // tokens must start a new text segment (covers hidden tools too).
+            sealSegment();
+            // Reads group per segment — each round's reads collapse on their own
+            chat.currentReadGroup = null;
+            smartScroll();
+            break;
+
             case 'done':
-            // If we already accumulated tokens from the stream, keep them.
-            // Don't overwrite with event.content — that's only the *last round's*
-            // content and would erase earlier rounds (bug when tool calls span
-            // multiple rounds, e.g. read_vault_file then highlight_node).
+            // event.content now carries ALL rounds' text; prefer the accumulated
+            // stream tokens when present (they include per-segment rendering).
             if (!chat.currentFullContent && event.content) {
                 chat.currentFullContent = event.content;
-                if (chat.currentBodyDiv) {
-                    renderContent(chat.currentFullContent, chat.currentBodyDiv);
-                }
+                var seg = ensureBodySegment();
+                seg.content = event.content;
+                renderContent(seg.content, seg.div);
             }
             // Even if content is empty, still save the assistant message so it's not lost
             if (chat.currentReasoningDiv) {
@@ -371,13 +375,19 @@
                 }
                 chat.currentAssistantMsg.appendChild(modelFooter);
             }
-            highlightWikilinks(chat.currentBodyDiv);
+            for (var i = 0; i < chat.streamOrder.length; i++) {
+                if (chat.streamOrder[i].type === 'text') {
+                    highlightWikilinks(chat.streamOrder[i].div);
+                }
+            }
             var doneMsg = {
                 role: 'assistant',
                 content: chat.currentFullContent || event.content || '(solo razonamiento)'
             };
             if (chat.currentFullReasoning) doneMsg.reasoning_content = chat.currentFullReasoning;
             if (chat.currentToolCalls.length > 0) doneMsg.tool_calls = chat.currentToolCalls;
+            var histSegments = buildHistorySegments();
+            if (histSegments.length > 0) doneMsg.segments = histSegments;
             chat.messages.push(doneMsg);
             setChatEnabled(true);
             chat.streaming = false;
@@ -387,8 +397,8 @@
             chat.currentToolBoxes = [];
             chat.currentReadGroup = null;
             chat.currentToolCalls = [];
+            chat.streamOrder = [];
             chat.currentAssistantMsg = null;
-            chat.currentBodyDiv = null;
             chat.currentReasoningDiv = null;
             smartScroll();
             break;
@@ -402,8 +412,8 @@
                 chat.currentFullReasoning = '';
                 chat.currentToolBoxes = [];
                 chat.currentReadGroup = null;
+                chat.streamOrder = [];
                 chat.currentAssistantMsg = null;
-                chat.currentBodyDiv = null;
                 chat.currentReasoningDiv = null;
                 break;
                 }
@@ -419,6 +429,7 @@
         chat.currentToolBoxes = [];
         chat.currentReadGroup = null;
         chat.currentToolCalls = [];
+        chat.streamOrder = [];
 
         var msgDiv = document.createElement('div');
         msgDiv.className = 'chat-msg assistant streaming';
@@ -459,16 +470,53 @@
         msgDiv.appendChild(reasonDiv);
         chat.currentReasoningDiv = reasonDiv;
 
-        // Body div
-        var bodyDiv = document.createElement('div');
-        bodyDiv.className = 'chat-body';
-        msgDiv.appendChild(bodyDiv);
-        chat.currentBodyDiv = bodyDiv;
-
         var container = document.getElementById('chat-messages');
         container.appendChild(msgDiv);
         chat.currentAssistantMsg = msgDiv;
         smartScroll();
+    }
+
+    // ── Interleaved segments (text ⇄ tool boxes in stream order) ──
+
+    function ensureBodySegment() {
+        var segs = chat.streamOrder;
+        var last = segs[segs.length - 1];
+        if (last && last.type === 'text' && !last.sealed) return last;
+        var div = document.createElement('div');
+        div.className = 'chat-body';
+        chat.currentAssistantMsg.appendChild(div);
+        var seg = { type: 'text', content: '', div: div, sealed: false };
+        segs.push(seg);
+        return seg;
+    }
+
+    function sealSegment() {
+        var segs = chat.streamOrder;
+        var last = segs[segs.length - 1];
+        if (last && last.type === 'text') last.sealed = true;
+    }
+
+    function recordToolCall(name, argumentsRaw, label) {
+        var segs = chat.streamOrder;
+        var last = segs[segs.length - 1];
+        if (last && last.type === 'tools') {
+            last.calls.push({ name: name, arguments: argumentsRaw, label: label });
+        } else {
+            segs.push({ type: 'tools', calls: [{ name: name, arguments: argumentsRaw, label: label }] });
+        }
+    }
+
+    function buildHistorySegments() {
+        var segs = [];
+        for (var i = 0; i < chat.streamOrder.length; i++) {
+            var s = chat.streamOrder[i];
+            if (s.type === 'text') {
+                if (s.content) segs.push({ type: 'text', content: s.content });
+            } else {
+                if (s.calls.length > 0) segs.push({ type: 'tools', tool_calls: s.calls });
+            }
+        }
+        return segs;
     }
 
     function createToolBox(isRead, label, toolName) {
@@ -657,7 +705,7 @@
         }
         var countSpan = group.querySelector('.read-group-label strong');
         if (countSpan) countSpan.textContent = group._count;
-        div.insertBefore(group, div.firstChild);
+        div.appendChild(group);
     }
 
     // Render write tool boxes
@@ -691,8 +739,25 @@
             labelText = 'created <code>' + escapeHtml(w.label || 'object') + '</code>';
         }
         box.innerHTML = '<span class="tool-icon">' + icon + '</span><span class="tool-label">' + labelText + '</span>';
-        div.insertBefore(box, div.firstChild);
+        div.appendChild(box);
     }
+    }
+
+    // ── Render interleaved segments from saved history ──
+
+    function renderSegments(msgDiv, segments) {
+        for (var i = 0; i < segments.length; i++) {
+            var s = segments[i];
+            if (s.type === 'text') {
+                var body = document.createElement('div');
+                body.className = 'chat-body';
+                renderContent(s.content || '', body);
+                msgDiv.appendChild(body);
+                highlightWikilinks(body);
+            } else if (s.type === 'tools') {
+                renderToolCalls(msgDiv, s.tool_calls || []);
+            }
+        }
     }
 
     function addUserMessage(text) {
@@ -830,8 +895,8 @@
         chat.currentFullContent = '';
         chat.currentFullReasoning = '';
         chat.currentToolBoxes = [];
+        chat.streamOrder = [];
         chat.currentAssistantMsg = null;
-        chat.currentBodyDiv = null;
         chat.currentReasoningDiv = null;
 
         var container = document.getElementById('chat-messages');
@@ -895,6 +960,7 @@
         chat.currentFullContent = '';
         chat.currentFullReasoning = '';
         chat.currentToolBoxes = [];
+        chat.streamOrder = [];
 
         // Reset UI
         var container = document.getElementById('chat-messages');
@@ -960,7 +1026,11 @@
         } else if (msg.role === 'assistant') {
         var div = document.createElement('div');
         div.className = 'chat-msg assistant';
-        // Render tool calls before body
+        if (msg.segments && msg.segments.length > 0) {
+        // Interleaved layout: text ⇄ tool boxes in stream order
+        renderSegments(div, msg.segments);
+        } else {
+        // Legacy messages: tool calls on top, body below
         if (msg.tool_calls && msg.tool_calls.length > 0) {
         renderToolCalls(div, msg.tool_calls);
         }
@@ -968,8 +1038,9 @@
         body.className = 'chat-body';
         renderContent(msg.content || '', body);
         div.appendChild(body);
-        container.appendChild(div);
         highlightWikilinks(body);
+        }
+        container.appendChild(div);
         }
         }
          // Force scroll to bottom on load

@@ -185,6 +185,7 @@ def stream_chat(messages, model, subject):
     tools_executed = False
     skip_rounds = 0
     reasoning_only_rounds = 0
+    total_content = ""
 
     while round_num < MAX_TOOL_ROUNDS:
         try:
@@ -245,6 +246,10 @@ def stream_chat(messages, model, subject):
             if chunk.choices[0].finish_reason:
                 finish_reason = chunk.choices[0].finish_reason
 
+        # Accumulate this round's text into the total (all rounds concatenated,
+        # so the final `done` event carries the complete assistant message).
+        total_content += full_content
+
         # Reasoning-only round (no content, no tool calls) — nudge the model to
         # produce a visible answer instead of giving up with nothing.
         if not full_content and full_reasoning and not tool_calls_buffer:
@@ -294,6 +299,9 @@ def stream_chat(messages, model, subject):
             round_num += 1
             tools_executed = True
             reasoning_only_rounds = 0
+            # Segment boundary: this round's text + tool boxes are complete;
+            # any further tokens belong to a new text segment in the UI.
+            yield {"type": "round_end"}
             continue
 
         # If we just executed tools, continue even if finish_reason is "stop" or "length"
@@ -318,7 +326,7 @@ def stream_chat(messages, model, subject):
 
         break
 
-    if not full_content and full_reasoning:
-        full_content = f"(Modelo solo produjo razonamiento — {len(full_reasoning)} caracteres sin respuesta visible)"
+    if not total_content and full_reasoning:
+        total_content = f"(Modelo solo produjo razonamiento — {len(full_reasoning)} caracteres sin respuesta visible)"
 
-    yield {"type": "done", "model": current_model, "content": full_content, "reasoning": full_reasoning}
+    yield {"type": "done", "model": current_model, "content": total_content, "reasoning": full_reasoning}
