@@ -3,9 +3,13 @@ import os
 
 # Models by provider:
 #   deepseek-v4-flash-free  → OpenCode Zen (primary — fast, free)
+#   mimo-v2.5-free          → OpenCode Zen (free)
+#   nemotron-3-ultra-free   → OpenCode Zen (free)
 #   z-ai/glm-5.2            → NVIDIA NIM (fallback)
 AVAILABLE_MODELS = [
     "deepseek-v4-flash-free",  # OpenCode Zen (primary — fast, free)
+    "mimo-v2.5-free",          # OpenCode Zen (free)
+    "nemotron-3-ultra-free",   # OpenCode Zen (free)
     "z-ai/glm-5.2",            # NVIDIA NIM (fallback)
 ]
 
@@ -19,6 +23,8 @@ ZEN_API_KEY_ENV = "OPENCODE_ZEN_API_KEY"
 # Map each model to its provider
 PROVIDER_FOR_MODEL = {
     "deepseek-v4-flash-free": "zen",
+    "mimo-v2.5-free": "zen",
+    "nemotron-3-ultra-free": "zen",
     "z-ai/glm-5.2": "nvidia",
 }
 

@@ -246,6 +246,11 @@ def _run_task(task_id, task, subject, user_message, conversation, model):
                 if tools_buf:
                     segments.append({"type": "tools", "tool_calls": tools_buf})
                     tools_buf = []
+            elif event["type"] == "round_reset":
+                # Mid-stream retry after provider failure: drop the partial
+                # text/tools of the failed round (retry re-streams it).
+                text_buf = ""
+                tools_buf = []
         if text_buf:
             segments.append({"type": "text", "content": text_buf})
         if tools_buf:

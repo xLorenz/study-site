@@ -277,7 +277,8 @@
             recordToolCall(event.name, event.arguments, label);
 
             if (isRead) {
-                if (chat.currentReadGroup) {
+                if (chat.currentReadGroup && chat.currentAssistantMsg.lastChild === chat.currentReadGroup) {
+                    // Consecutive read — merge into the open group
                     addToReadGroup(chat.currentReadGroup, label);
                 } else {
                     var group = createReadGroup();
@@ -289,7 +290,7 @@
                 // No display box for highlight_node and mark_file_ingested
             } else if (isReadSkill) {
                 // read_skill goes to read group (collapsible)
-                if (chat.currentReadGroup) {
+                if (chat.currentReadGroup && chat.currentAssistantMsg.lastChild === chat.currentReadGroup) {
                     addToReadGroup(chat.currentReadGroup, label);
                 } else {
                     var group = createReadGroup();
@@ -344,8 +345,34 @@
             // Segment boundary: this round's text + tools are done; any further
             // tokens must start a new text segment (covers hidden tools too).
             sealSegment();
-            // Reads group per segment — each round's reads collapse on their own
-            chat.currentReadGroup = null;
+            smartScroll();
+            break;
+
+            case 'round_reset':
+            // Mid-stream provider failure (e.g. 504 idle timeout): drop this
+            // round's partial output — the backend re-streams it via fallback.
+            chat.currentFullContent = '';
+            chat.currentFullReasoning = '';
+            if (chat.currentReasoningDiv) {
+                chat.currentReasoningDiv.classList.remove('active');
+                var rb = chat.currentReasoningDiv.querySelector('.reasoning-body');
+                if (rb) rb.textContent = '';
+                var cc = chat.currentReasoningDiv.querySelector('.reasoning-char-count');
+                if (cc) cc.textContent = '0 chars';
+            }
+            var segs = chat.streamOrder;
+            var kept = [];
+            for (var i = 0; i < segs.length; i++) {
+                if (segs[i].type === 'text' && !segs[i].sealed) {
+                    // Partial text of the failed round — remove from DOM
+                    if (segs[i].div && segs[i].div.parentNode) {
+                        segs[i].div.parentNode.removeChild(segs[i].div);
+                    }
+                } else {
+                    kept.push(segs[i]);
+                }
+            }
+            chat.streamOrder = kept;
             smartScroll();
             break;
 
@@ -691,9 +718,13 @@
         }
     }
 
-    // Render read group (includes read_vault_file and read_skill)
+    // Render read group (includes read_vault_file and read_skill) — merges
+    // into a trailing read group when reads are consecutive (nothing else
+    // was appended after it).
     if (reads.length > 0) {
-        var group = createReadGroup();
+        var lastChild = div.lastChild;
+        var group = (lastChild && lastChild.className === 'msg-tool-read-group') ? lastChild : null;
+        if (!group) group = createReadGroup();
         for (var j = 0; j < reads.length; j++) {
             var icon = reads[j].name === 'read_skill' ? '\uD83D\uDCDA' : '\uD83D\uDCD6';
             var item = document.createElement('div');
@@ -705,7 +736,7 @@
         }
         var countSpan = group.querySelector('.read-group-label strong');
         if (countSpan) countSpan.textContent = group._count;
-        div.appendChild(group);
+        if (div.lastChild !== group) div.appendChild(group);
     }
 
     // Render write tool boxes

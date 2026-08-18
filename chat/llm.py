@@ -106,8 +106,18 @@ def _is_429_error(e):
     """Check if an exception is a 429 rate-limit error."""
     if isinstance(e, RateLimitError):
         return True
-    status = getattr(e, "status_code", 0) or getattr(e, "code", 0)
+    status = getattr(e, "status_code", 0) or getattr(e, "code", 0) or 0
     return status == 429
+
+
+def _is_fallback_error(e):
+    """Check if an exception warrants provider fallback: 429, 5xx, or timeout
+    (e.g. mid-stream 504 idle timeout). Non-retryable errors raise instead."""
+    if _is_429_error(e):
+        return True
+    status = getattr(e, "status_code", 0) or getattr(e, "code", 0) or 0
+    is_timeout = status == 0 or "timeout" in str(e).lower() or "504" in str(e)
+    return status >= 500 or is_timeout
 
 
 def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries=3):
@@ -134,7 +144,7 @@ def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries
             # Don't retry 429 — caller handles fallback
             if _is_429_error(e):
                 raise
-            status = getattr(e, "status_code", 0) or getattr(e, "code", 0)
+            status = getattr(e, "status_code", 0) or getattr(e, "code", 0) or 0
             is_timeout = status == 0 or "timeout" in str(e).lower() or "504" in str(e)
             if (status >= 500 or is_timeout) and attempt < max_retries - 1:
                 time.sleep(1 * (2 ** attempt))
@@ -143,23 +153,25 @@ def _api_call_with_retry(client, model, messages, tools, extra_body, max_retries
     raise last_exception
 
 
-def _try_model_round(models_to_try, current_messages, tools, extra_body_func, subject):
+def _try_model_round(models_to_try, current_messages, tools, extra_body_func, subject, start_index=0):
     """Try API call across a list of (provider, model) pairs for fallback.
 
-    Returns (stream, provider_used, model_used) on success.
-    Raises the last exception if all providers fail.
+    Starts at ``start_index`` (used to advance past models that failed
+    mid-stream). Returns (stream, provider_used, model_used, index_used) on
+    success. Raises the last exception if all providers fail.
     """
     last_exception = None
-    for provider, model in models_to_try:
+    for index in range(start_index, len(models_to_try)):
+        provider, model = models_to_try[index]
         try:
             client = get_llm_client(provider)
             extra_body = extra_body_func(model, provider)
             stream = _api_call_with_retry(client, model, current_messages, tools, extra_body)
-            return stream, provider, model
+            return stream, provider, model, index
         except Exception as e:
             last_exception = e
             # Only fall back if this is a connection/rate-limit error on the primary
-            if not _is_429_error(e) and not "timeout" in str(e).lower():
+            if not _is_fallback_error(e):
                 # Non-rate-limit, non-timeout error — don't waste time falling back
                 raise
             # Otherwise continue to next provider in list
@@ -186,12 +198,17 @@ def stream_chat(messages, model, subject):
     skip_rounds = 0
     reasoning_only_rounds = 0
     total_content = ""
+    # Index into models_to_try: advances on mid-stream failures (sticky
+    # fallback — a provider that times out mid-round is skipped on later
+    # rounds), resets to 0 after every successful round.
+    model_start_index = 0
 
     while round_num < MAX_TOOL_ROUNDS:
         try:
-            stream, actual_provider, actual_model = _try_model_round(
+            stream, actual_provider, actual_model, model_start_index = _try_model_round(
                 models_to_try, current_messages,
-                get_tool_definitions(), get_extra_body, subject
+                get_tool_definitions(), get_extra_body, subject,
+                start_index=model_start_index
             )
             # Remember which model/provider we're actually using for tool calls
             current_model = actual_model
@@ -205,46 +222,66 @@ def stream_chat(messages, model, subject):
         full_reasoning = ""
         finish_reason = None
 
-        for chunk in stream:
-            if not chunk.choices:
+        try:
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+
+                if delta.content:
+                    full_content += delta.content
+                    yield {"type": "token", "content": delta.content}
+
+                # Reasoning content (DeepSeek V4 specific)
+                reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+                if reasoning:
+                    full_reasoning += reasoning
+                    yield {"type": "reasoning", "content": reasoning}
+
+                # Tool calls accumulator
+                for tc_chunk in (delta.tool_calls or []):
+                    idx = tc_chunk.index
+                    if idx not in tool_calls_buffer:
+                        tool_calls_buffer[idx] = ToolCall(index=idx)
+                    buf = tool_calls_buffer[idx]
+                    chunk_id = tc_chunk.id or ""
+                    chunk_name = ""
+                    chunk_args = ""
+                    if hasattr(tc_chunk, "function") and tc_chunk.function:
+                        chunk_name = tc_chunk.function.name or ""
+                        chunk_args = tc_chunk.function.arguments or ""
+                    else:
+                        chunk_name = getattr(tc_chunk, "name", "") or ""
+                        chunk_args = getattr(tc_chunk, "arguments", "") or ""
+                    if chunk_id:
+                        buf = buf._replace(id=buf.id + chunk_id)
+                    if chunk_name:
+                        buf = buf._replace(name=buf.name + chunk_name)
+                    if chunk_args:
+                        buf = buf._replace(arguments=buf.arguments + chunk_args)
+                    tool_calls_buffer[idx] = buf
+
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+        except Exception as e:
+            # Mid-stream failure (e.g. 504 upstream idle timeout after the
+            # request started): the round never committed (no assistant message
+            # appended), so retry it from scratch on the next provider/model.
+            if _is_fallback_error(e):
+                if model_start_index >= len(models_to_try) - 1:
+                    yield {"type": "error", "message": f"LLM API error: {e}"}
+                    return
+                model_start_index += 1
+                # Tell the UI to drop this round's partial output (if any) —
+                # the retry will re-stream it.
+                yield {"type": "round_reset", "reason": str(e)}
                 continue
-            delta = chunk.choices[0].delta
+            yield {"type": "error", "message": f"LLM API error: {e}"}
+            return
 
-            if delta.content:
-                full_content += delta.content
-                yield {"type": "token", "content": delta.content}
-
-            # Reasoning content (DeepSeek V4 specific)
-            reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
-            if reasoning:
-                full_reasoning += reasoning
-                yield {"type": "reasoning", "content": reasoning}
-
-            # Tool calls accumulator
-            for tc_chunk in (delta.tool_calls or []):
-                idx = tc_chunk.index
-                if idx not in tool_calls_buffer:
-                    tool_calls_buffer[idx] = ToolCall(index=idx)
-                buf = tool_calls_buffer[idx]
-                chunk_id = tc_chunk.id or ""
-                chunk_name = ""
-                chunk_args = ""
-                if hasattr(tc_chunk, "function") and tc_chunk.function:
-                    chunk_name = tc_chunk.function.name or ""
-                    chunk_args = tc_chunk.function.arguments or ""
-                else:
-                    chunk_name = getattr(tc_chunk, "name", "") or ""
-                    chunk_args = getattr(tc_chunk, "arguments", "") or ""
-                if chunk_id:
-                    buf = buf._replace(id=buf.id + chunk_id)
-                if chunk_name:
-                    buf = buf._replace(name=buf.name + chunk_name)
-                if chunk_args:
-                    buf = buf._replace(arguments=buf.arguments + chunk_args)
-                tool_calls_buffer[idx] = buf
-
-            if chunk.choices[0].finish_reason:
-                finish_reason = chunk.choices[0].finish_reason
+        # Reset to the preferred model after a successful round — a provider
+        # that recovers is tried again next round.
+        model_start_index = 0
 
         # Accumulate this round's text into the total (all rounds concatenated,
         # so the final `done` event carries the complete assistant message).
