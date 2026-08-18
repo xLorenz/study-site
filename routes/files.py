@@ -417,6 +417,10 @@ def handle_search(handler, params):
     q_plain = ''.join(c for c in unicodedata.normalize('NFD', q_lower) if not unicodedata.combining(c))
 
     for dirpath, _, filenames in os.walk(root):
+        rel_parts = os.path.relpath(dirpath, root).split(os.sep)
+        if "references" in rel_parts:
+            continue
+        is_raw = "raw" in rel_parts
         for fn in filenames:
             if not fn.endswith(".md") or fn.startswith("."):
                 continue
@@ -428,6 +432,12 @@ def handle_search(handler, params):
                     content = f.read()
             except OSError:
                 continue
+
+            fn_plain = ''.join(
+                c for c in unicodedata.normalize('NFD', fn[:-3].lower())
+                if not unicodedata.combining(c))
+            in_title = q_plain in fn_plain
+            is_src = fn.startswith("src-")
 
             content_plain = ''.join(
                 c for c in unicodedata.normalize('NFD', content.lower())
@@ -474,9 +484,12 @@ def handle_search(handler, params):
                 "snippet": snippet,
                 "match_count": count,
                 "match_positions": match_positions,
+                "in_title": in_title,
+                "is_raw": is_raw,
+                "is_src": is_src,
             })
 
-    results.sort(key=lambda r: r["match_count"], reverse=False)
+    results.sort(key=lambda r: ((r["is_raw"] or r["is_src"]), not r["in_title"], -r["match_count"]))
     handler._send_json(200, {
         "query": q,
         "subject_filter": subject_filter,

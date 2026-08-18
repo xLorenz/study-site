@@ -66,7 +66,7 @@ a:hover{color:var(--text-bright)}
  display:flex;align-items:center;gap:var(--space-2);
  height:40px;padding:0 var(--space-3);
  background:var(--surface);border-bottom:1px solid var(--border);
- position:relative;z-index:var(--z-sidebar)}
+ position:relative;z-index:30}
 #header .logo{font-size:var(--font-size-md);font-weight:600;
  color:var(--text-bright);letter-spacing:-0.3px;
  background:linear-gradient(135deg,var(--accent),var(--violet));
@@ -397,14 +397,12 @@ border:1px dashed var(--border-2);margin:var(--space-2) 0}
  <button id="btn-toggle-left">
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
  </button>
- <span class="logo">study</span>
- <span style="flex:1"></span>
- <div id="header-search">
-   <input type="text" id="search-input" placeholder="🔎 Search...">
-   <div id="search-results"></div>
- </div>
- <span style="flex:1"></span>
-  <button id="btn-create-subject" class="btn-subject-action" title="Create subject">+</button>
+  <span class="logo">study</span>
+  <div id="header-search">
+    <input type="text" id="search-input" placeholder="🔎 Search...">
+    <div id="search-results"></div>
+  </div>
+   <button id="btn-create-subject" class="btn-subject-action" title="Create subject">+</button>
   <select id="subject-select">
   <option value="">— Select subject —</option>
   </select>
