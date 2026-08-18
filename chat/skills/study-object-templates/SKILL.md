@@ -119,6 +119,8 @@ Read the subject's theme file — `subjects/{subject}/references/_theme.md` via 
 ### Mathematics (LaTeX)
 Every formula in a study object is written as `$$LaTeX$$ fallback-text` — the LaTeX source between the `$$...$$` markers plus a plain-text fallback after them (e.g. `$$v = v_0 + a t$$ v = v₀ + a·t`). All interactive engines (templates 3-6, 8-14) load KaTeX from 3 CDNs and auto-render `$$...$$` (and `\(...\)`) on every dynamic render; when offline the fallback text stays visible and the LaTeX block is stripped. Never write bare LaTeX without its fallback, and never hardcode KaTeX markup by hand. Static templates (1, 2, 7) render LaTeX as unicode text directly.
 
+**CRITICAL — JS string escaping:** interactive templates embed their content as JS string literals (`const EXAMPLE = { body: '...' }`). In a JS string, `\f`/`\t` are form-feed/tab escapes and unknown escapes drop the backslash — so every LaTeX backslash in the file must be **doubled**: write `\\frac`, `\\rho`, `\\;`, `\\text{m/s}` etc. in the object HTML so the browser's string keeps a single `\`. Writing single backslashes silently corrupts the LaTeX (`\frac` becomes a control char + `rac`) and KaTeX renders it as red parse-error text. Delimiters (`$$`, `$`, `\(`/`\)`) need no escaping.
+
 ### Accessibility (interactive templates)
 - `:focus-visible` outline on all interactive elements (options, buttons, controls)
 - Feedback regions announce via `role="status"` / `aria-live="polite"` (built into assets/flashcards.js)

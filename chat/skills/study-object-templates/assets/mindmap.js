@@ -299,6 +299,15 @@ function renderMath(){
         ],
         throwOnError: false
       });
+      document.querySelectorAll('.formula,.cc-formula,.code-block').forEach(el => {
+        if (el.querySelector('.katex')){
+          let seen = false;
+          el.childNodes.forEach(n => {
+            if (n.nodeType === 3){ if (seen) n.nodeValue = ''; }
+            else if (n.nodeType === 1 && (n.classList.contains('katex') || n.querySelector('.katex'))) seen = true;
+          });
+        }
+      });
       return;
     } catch (e){}
   }
